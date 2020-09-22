@@ -37,10 +37,8 @@ class Field
      */
     public static function checkbox($args = []) {
 
-        $options = get_option(QUANT_SETTINGS_KEY);
-
         ?><div>
-            <input type="checkbox" id="<?= esc_attr($args['name']); ?>" value="1" name="<?= esc_attr($args['name']); ?>" <?= checked(1, $options['enabled'], false)  ?>>
+            <input type="checkbox" id="<?= esc_attr($args['name']); ?>" value="1" name="<?= esc_attr($args['name']); ?>" <?= checked(1, esc_attr($args['value']), false)  ?>>
             <label for="<?= esc_attr($args['name']); ?>"><?= !empty($args['description']) ? "{$args['description']}" : ''; ?></label>
         </div><?php
     

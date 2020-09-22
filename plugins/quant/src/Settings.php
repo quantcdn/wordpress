@@ -23,8 +23,11 @@ class Settings
     public static function register()
     {
         $key = QUANT_SETTINGS_KEY;
+        $seedKey = QUANT_SEED_KEY;
 
         register_setting($key, $key, [__CLASS__, 'sanitize']);
+        register_setting($seedKey, $seedKey, ["\Quant\Seed", 'seedSubmit']);
+
         add_settings_section('general', 'General', '__return_empty_string', $key);
         add_settings_section('seed', 'Seed', '__return_empty_string', $key);
         add_settings_section('api', 'API', '__return_empty_string', $key);
@@ -37,6 +40,7 @@ class Settings
         add_settings_field('quant_enabled', 'Quant Enabled', ['Quant\Field', 'checkbox'], $key, 'general', [
             'name' => "{$key}[enabled]",
             'description' => 'Enable QuantCDN integration',
+            'value' => $options['enabled'] ?? 0,
         ]);
 
         add_settings_field('quant_webserver_url', 'Webserver URL', ['Quant\Field', 'url'], $key, 'general', [
@@ -75,6 +79,31 @@ class Settings
         add_settings_field('quant_api_password', 'API Token', ['Quant\Field', 'text'], $key, 'api', [
             'name' => "{$key}[api_token]",
             'value' => $options['api_token'] ?? '',
+        ]);
+
+        /**
+         * Seed fields
+         */
+        $seedOptions = get_option(QUANT_SEED_KEY);
+
+        add_settings_section('seed', 'Seed content', '__return_empty_string', $seedKey);
+
+        add_settings_field('seed_posts', 'Posts', ['Quant\Field', 'checkbox'], $seedKey, 'seed', [
+            'name' => "{$seedKey}[posts]",
+            'description' => 'Post content',
+            'value' => $seedOptions['posts'] ?? 0,
+        ]);
+
+        add_settings_field('seed_pages', 'Pages', ['Quant\Field', 'checkbox'], $seedKey, 'seed', [
+            'name' => "{$seedKey}[pages]",
+            'description' => 'Page content',
+            'value' => $seedOptions['pages'] ?? 0,
+        ]);
+
+        add_settings_field('seed_theme_assets', 'Pages', ['Quant\Field', 'checkbox'], $seedKey, 'seed', [
+            'name' => "{$seedKey}[theme_assets]",
+            'description' => 'Theme assets',
+            'value' => $seedOptions['theme_assets'] ?? 0,
         ]);
     }
 

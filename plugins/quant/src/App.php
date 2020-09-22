@@ -48,6 +48,7 @@ final class App
     protected function constants()
     {
         define('QUANT_SETTINGS_KEY', 'wp_quant_settings');
+        define('QUANT_SEED_KEY', 'wp_quant_seed');
     }
 
     /**
@@ -80,5 +81,4 @@ final class App
         SettingsScreen::init();
         Settings::init();
     }
-
 }

@@ -152,7 +152,7 @@ class Client
             'url' => $permalink,
             'content' => $markup,
             'published' =>  get_post_status($id) === 'publish',
-            'content_timestamp' => get_post_timestamp($id),
+            'content_timestamp' => get_post_modified_time('U', false, $id),
             'info' => [
                 'author' => '@todo',
                 'log' => '@todo'

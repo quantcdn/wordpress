@@ -68,17 +68,33 @@ class SettingsScreen
      */
     public static function renderPage()
     {
+
+        $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'seed';
+
         ?><div class="wrap">
 
             <h2><?= get_admin_page_title(); ?></h2>
+
+            <h2 class="nav-tab-wrapper">
+                <a href="?page=quant&tab=seed" class="nav-tab <?php echo $active_tab == 'seed' ? 'nav-tab-active' : ''; ?>">Seed</a>
+                <a href="?page=quant&tab=settings" class="nav-tab <?php echo $active_tab == 'settings' ? 'nav-tab-active' : ''; ?>">Settings</a>
+            </h2>
+
             
-            <form method="post" action="<?= esc_url(admin_url('options.php')); ?>">
+            <form method="post" action="<?php echo esc_url( add_query_arg('tab', $active_tab, admin_url( 'options.php' )) ); ?>">
+
                 <?php
 
-                settings_fields(QUANT_SETTINGS_KEY);
-                do_settings_sections(QUANT_SETTINGS_KEY);
-
-                submit_button('Save Settings', 'primary', 'submit', false);
+                if( $active_tab == 'settings' ) {
+                    settings_fields(QUANT_SETTINGS_KEY);
+                    do_settings_sections(QUANT_SETTINGS_KEY);
+                    submit_button('Save Settings', 'primary', 'submit', false);
+                }
+                else {
+                    settings_fields(QUANT_SEED_KEY);
+                    do_settings_sections(QUANT_SEED_KEY);
+                    submit_button('Seed', 'primary', 'submit', false);
+                }
 
                 ?>
             </form>

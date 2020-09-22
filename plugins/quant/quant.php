@@ -15,6 +15,12 @@ if (!defined('ABSPATH')) {
 }
 
 require_once(__DIR__.'/src/App.php');
+require_once(__DIR__.'/wp-batch-processing/wp-batch-processing.php');
+
+/**
+ * Register batch handlers
+ */
+require_once(__DIR__.'/src/seed/PageBatch.php');
 
 function Quant()
 {
@@ -23,3 +29,15 @@ function Quant()
 
 register_activation_hook(__FILE__, [Quant(), 'activation']);
 register_deactivation_hook(__FILE__, [Quant(), 'deactivation']);
+
+
+/**
+ * Initialize the batches.
+ */
+function wp_batch_processing_init() {
+    $batch = new QuantPageBatch();
+    WP_Batch_Processor::get_instance()->register( $batch );
+    $batch = new QuantPostBatch();
+    WP_Batch_Processor::get_instance()->register( $batch );
+}
+add_action( 'wp_batch_processing_init', 'wp_batch_processing_init', 15, 1 );
