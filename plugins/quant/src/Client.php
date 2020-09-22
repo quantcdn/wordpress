@@ -65,7 +65,7 @@ class Client
         ];
 
         error_log(print_r($data, TRUE));
-        
+
         $args = [
             'headers' => $this->headers,
             'body' => json_encode($data),
@@ -81,7 +81,7 @@ class Client
 
     /**
      * Send markup via the Quant API. Returns detected assets.
-     * 
+     *
      * @param string $route
      * @param string $markup
      * @return array $assets
@@ -101,7 +101,7 @@ class Client
 
     /**
      * Send file via the Quant API.
-     * 
+     *
      * @param string $file
      *      The absolute path to the file on disk
      */
@@ -120,30 +120,92 @@ class Client
         foreach ($headers as $header => $value) {
           $curl_headers[] = "{$header}: {$value}";
         }
-      
+
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $this->endpoint);
         curl_setopt($ch, CURLOPT_POST, TRUE);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $curl_headers);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-      
+
         $data['data'] = curl_file_create(
           $path,
           mime_content_type($path),
           basename($path)
         );
-      
+
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-      
+
         $result = curl_exec($ch);
         $info = curl_getinfo($ch);
         curl_close($ch);
-      
+
         $response = json_decode($result);
 
         return $response;
     }
 
+    /**
+     * Send media/attachments if the existing md5 does not match
+     *
+     * @param $media Array
+     */
+    public function sendAttachments($media) {
+
+        foreach ($media as $item) {
+            $url = urldecode($item['path']);
+
+            // Ignore anything that isn't relative for now.
+            if (substr($url, 0, 1) != "/") {
+                continue;
+            }
+
+            // Strip query params.
+            $file = strtok($url, '?');
+
+            if (isset($item['existing_md5'])) {
+                // Skip file: MD5 matches.
+                if (file_exists(ABSPATH . $file) && md5_file(ABSPATH . $file) == $item['existing_md5']) {
+                    error_log("MD5 MATCHES: " . $file);
+                    continue;
+                }
+            }
+
+            if (file_exists(ABSPATH . $file)) {
+                error_log("SENDIG FILE: " . $file);
+                $this->file($file, ABSPATH . $file);
+            }
+        }
+    }
+
+    /**
+     * Send category markup to Quant.
+     *
+     * @param $id integer
+     */
+    public function sendCategory($id) {
+
+        $permalink = wp_make_link_relative(get_term_link($id));
+        $markup = $this->markupFromRoute($permalink);
+
+        $payload = [
+            'url' => $permalink,
+            'content' => $markup,
+            'published' =>  true,
+        ];
+
+        $res = json_decode($this->content($payload), TRUE);
+
+        if (isset($res['attachments'])) {
+            $media = array_merge($res['attachments']['js'], $res['attachments']['css'], $res['attachments']['media']['images'], $res['attachments']['media']['documents'], $res['attachments']['media']['video']);
+            $this->sendAttachments($media);
+        }
+    }
+
+    /**
+     * Send post/page markup to Quant.
+     *
+     * @param $id integer
+     */
     public function sendPost($id) {
         $permalink = wp_make_link_relative(get_permalink($id));
         $markup = $this->markupFromRoute($permalink);
@@ -164,33 +226,9 @@ class Client
 
         $res = json_decode($this->content($payload), TRUE);
 
-        $media = array_merge($res['attachments']['js'], $res['attachments']['css'], $res['attachments']['media']['images'], $res['attachments']['media']['documents'], $res['attachments']['media']['video']);
-
-        foreach ($media as $item) {
-            // @todo: Determine local vs. remote.
-            // @todo: Configurable to disallow remote files.
-            // @todo: Strip base domain.
-            $url = urldecode($item['path']);
-        
-            // Ignore anything that isn't relative for now.
-            if (substr($url, 0, 1) != "/") {
-                continue;
-            }
-
-            // Strip query params.
-            $file = strtok($url, '?');
-
-            if (isset($item['existing_md5'])) {
-                // Skip file: MD5 matches.
-                if (file_exists(ABSPATH . $file) && md5_file(ABSPATH . $file) == $item['existing_md5']) {
-                    continue;
-                }
-            }
-
-            if (file_exists(ABSPATH . $file)) {
-                $this->file($file, ABSPATH . $file);
-            }
-
+        if (isset($res['attachments'])) {
+            $media = array_merge($res['attachments']['js'], $res['attachments']['css'], $res['attachments']['media']['images'], $res['attachments']['media']['documents'], $res['attachments']['media']['video']);
+            $this->sendAttachments($media);
         }
     }
 
