@@ -182,13 +182,42 @@ class Client
      *
      * @param $id integer
      */
-    public function sendCategory($id) {
+    public function sendCategory($id, $page=null) {
 
         $permalink = wp_make_link_relative(get_term_link($id));
+
+        if (!empty($page)) {
+            $permalink .= "page/$page/";
+        }
+
         $markup = $this->markupFromRoute($permalink);
 
         $payload = [
             'url' => $permalink,
+            'content' => $markup,
+            'published' =>  true,
+        ];
+
+        $res = json_decode($this->content($payload), TRUE);
+
+        if (isset($res['attachments'])) {
+            $media = array_merge($res['attachments']['js'], $res['attachments']['css'], $res['attachments']['media']['images'], $res['attachments']['media']['documents'], $res['attachments']['media']['video']);
+            $this->sendAttachments($media);
+        }
+    }
+
+
+    /**
+     * Send arbitrary route markup to Quant.
+     *
+     * @param $id integer
+     */
+    public function sendRoute($route) {
+
+        $markup = $this->markupFromRoute($route);
+
+        $payload = [
+            'url' => $route,
             'content' => $markup,
             'published' =>  true,
         ];

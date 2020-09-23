@@ -31,7 +31,7 @@ class Settings
         add_settings_section('general', 'General', '__return_empty_string', $key);
         add_settings_section('seed', 'Seed', '__return_empty_string', $key);
         add_settings_section('api', 'API', '__return_empty_string', $key);
-        
+
         $options = get_option(QUANT_SETTINGS_KEY);
 
         /**
@@ -105,6 +105,7 @@ class Settings
             'description' => 'Theme assets',
             'value' => $seedOptions['theme_assets'] ?? 0,
         ]);
+
     }
 
     /**

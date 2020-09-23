@@ -4,21 +4,21 @@ use Quant\Client;
 
 if ( class_exists( 'WP_Batch' ) ) {
 	/**
-	 * Class QuantPageBatch
+	 * Class QuantHomeBatch
 	 */
-	class QuantPageBatch extends WP_Batch {
+	class QuantHomeBatch extends WP_Batch {
 
 		/**
 		 * Unique identifier of each batch
 		 * @var string
 		 */
-		public $id = 'quant_pages';
+		public $id = 'quant_home';
 
 		/**
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'All pages';
+		public $title = 'Home (and associated pages)';
 
 		/**
 		 * To setup the batch data use the push() method to add WP_Batch_Item instances to the queue.
@@ -29,14 +29,31 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 */
 		public function setup() {
 
-			$posts = get_pages(['nopaging' => true]);
+			// Homepage may either be as simple as pushing the "/" route.
+			// *or* pagination list when using "latest posts"
 
-			foreach ( $posts as $post ) {
-				$this->push( new WP_Batch_Item( $post->ID, array( 'post_id' => $post->ID ) ) );
-            }
+			$this->push( new WP_Batch_Item( 0, array( 'route' => "/" ) ) );
 
-            $this->client = new Client();
+			if ( get_option( 'show_on_front' ) == "page" ) {
+				return;
+			}
 
+			$posts = get_posts( [ 'nopaging' => true ] );
+
+			// Determine number of pages for pagination iteration.
+			$ppp = get_option( 'posts_per_page' );
+
+			$pages = ceil(count($posts) / $ppp);
+
+			// Push paginated results within category.
+			for ($i = 1; $i <= $pages; $i++) {
+				$this->push( new WP_Batch_Item( $i, array(
+						'route' => "/page/$i/",
+					)
+				));
+			}
+
+			$this->client = new Client();
 
 		}
 
@@ -53,21 +70,10 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 * @return bool|\WP_Error
 		 */
 		public function process( $item ) {
-
-			$post_id = $item->get_value( 'post_id' );
-
-			$this->client->sendPost($post_id);
+			$route = $item->get_value( 'route' );
+			$this->client->sendRoute($route);
 			return true;
 		}
 
-		/**
-		 * Called when specific process is finished (all items were processed).
-		 * This method can be overriden in the process class.
-		 * @return void
-		 */
-		public function finish() {
-			// Do something after process is finished.
-			// You have $this->items, etc.
-		}
 	}
 }

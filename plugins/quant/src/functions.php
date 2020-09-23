@@ -8,7 +8,6 @@ if (!empty($_SERVER['HTTP_QUANT_TOKEN'])) {
     remove_action('template_redirect', 'redirect_canonical');
 }
 
-
 if (!function_exists('quant_get_options')) {
     /**
      * Return the plugin settings/options
@@ -20,7 +19,6 @@ if (!function_exists('quant_get_options')) {
         return get_option(QUANT_SETTINGS_KEY);
     }
 }
-
 
 if (!function_exists('quant_is_enabled')) {
     /**
@@ -36,16 +34,14 @@ if (!function_exists('quant_is_enabled')) {
     quant_is_enabled();
 }
 
-
-
-if (!function_exists('quant_fire_webhook_save_post')) {
+if (!function_exists('quant_save_post')) {
     /**
-     * Fire a request to the webhook when a post is saved.
+     * Post updated Quant content on post save.
      *
      * @param int $id
      * @return void
      */
-    function quant_fire_webhook_save_post($id)
+    function quant_save_post($id)
     {
         // @todo: Support draft posts
         if (get_post_status($id) !== 'publish' || !quant_is_enabled()) {
@@ -55,16 +51,16 @@ if (!function_exists('quant_fire_webhook_save_post')) {
         $client = new Client();
         $client->sendPost($id);
     }
-    add_action('save_post', 'quant_fire_webhook_save_post');
+    add_action('save_post', 'quant_save_post');
 }
 
-if (!function_exists('quant_fire_webhook_unpublish_post')) {
+if (!function_exists('quant_unpublish_post')) {
     /**
      * Unpublish the route via Quant API on deletion.
      *
      * @return void
      */
-    function quant_fire_webhook_unpublish_post($id)
+    function quant_unpublish_post($id)
     {
         if (!quant_is_enabled()) {
             return;
@@ -78,5 +74,37 @@ if (!function_exists('quant_fire_webhook_unpublish_post')) {
         $client->unpublish($permalink);
 
     }
-    add_action('trashed_post', 'quant_fire_webhook_unpublish_post');
+    add_action('trashed_post', 'quant_unpublish_post');
+}
+
+
+if (!function_exists('quant_save_category')) {
+    /**
+     * Save updated category content to quant.
+     *
+     * @param int $id
+     * @return void
+     */
+    function quant_save_category($id)
+    {
+        $client = new Client();
+        $client->sendCategory($id);
+    }
+    add_action('edit_category', 'quant_save_category');
+    add_action('create_category', 'quant_save_category');
+}
+
+if (!function_exists('quant_delete_category')) {
+    /**
+     * Unpublish category route on delete.
+     *
+     * @param int $id
+     * @return void
+     */
+    function quant_delete_category($id)
+    {
+        // @todo: After category is deleted we cannot retrieve permalink.
+        // Need a "before_delete_category" hook.
+    }
+    add_action('delete_category', 'quant_delete_category');
 }

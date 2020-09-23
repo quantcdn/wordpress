@@ -43,5 +43,7 @@ function wp_batch_processing_init() {
     WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantTagBatch();
     WP_Batch_Processor::get_instance()->register( $batch );
+    $batch = new QuantHomeBatch();
+    WP_Batch_Processor::get_instance()->register( $batch );
 }
 add_action( 'wp_batch_processing_init', 'wp_batch_processing_init', 15, 1 );

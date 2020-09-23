@@ -29,10 +29,31 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 */
 		public function setup() {
 
-			$categories = get_categories();
+			$categories = get_categories( [ 'nopaging' => true ] );
+
+			// Determine number of pages for pagination iteration.
+			$ppp = get_option( 'posts_per_page' );
 
 			foreach ( $categories as $category ) {
-				$this->push( new WP_Batch_Item( $category->term_id, array( 'term_id' => $category->term_id ) ) );
+
+				$pages = ceil($category->count / $ppp);
+
+				// Push raw category URL.
+				$this->push( new WP_Batch_Item( $category->term_id, array( 'term_id' => $category->term_id, ) ) );
+
+				// Push paginated results within category.
+				for ($i = 1; $i <= $pages; $i++) {
+
+					// Batch items need unique integer ids
+					// This will be problematic if term ids are over 10M.
+					$itemId = $category->term_id + (10000000 + $i);
+
+					$this->push( new WP_Batch_Item( $itemId, array(
+							'term_id' => $category->term_id,
+							'page' => $i,
+						)
+					));
+				}
             }
 
 			$this->client = new Client();
@@ -52,10 +73,9 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 * @return bool|\WP_Error
 		 */
 		public function process( $item ) {
-
 			$term_id = $item->get_value( 'term_id' );
-
-			$this->client->sendCategory($term_id);
+			$page = $item->get_value( 'page' );
+			$this->client->sendCategory($term_id, $page);
 			return true;
 		}
 
