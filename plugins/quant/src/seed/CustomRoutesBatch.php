@@ -4,21 +4,21 @@ use Quant\Client;
 
 if ( class_exists( 'WP_Batch' ) ) {
 	/**
-	 * Class QuantHomeBatch
+	 * Class QuantCustomRoutesBatch
 	 */
-	class QuantHomeBatch extends WP_Batch {
+	class QuantCustomRoutesBatch extends WP_Batch {
 
 		/**
 		 * Unique identifier of each batch
 		 * @var string
 		 */
-		public $id = 'quant_home';
+		public $id = 'quant_custom_routes';
 
 		/**
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'Home (and associated pages)';
+		public $title = 'Custom routes and 404 page';
 
 		/**
 		 * To setup the batch data use the push() method to add WP_Batch_Item instances to the queue.
@@ -31,28 +31,16 @@ if ( class_exists( 'WP_Batch' ) ) {
 
 			$this->client = new Client();
 
-			// Homepage may either be as simple as pushing the "/" route.
-			// *or* pagination list when using "latest posts"
+			$seedOptions = get_option(QUANT_SEED_KEY);
+			$routes = explode("\n", $seedOptions['custom_routes']);
 
-			$this->push( new WP_Batch_Item( 0, array( 'route' => "/" ) ) );
-
-			if ( get_option( 'show_on_front' ) == "page" ) {
-				return;
+			foreach ($routes as $i => $route) {
+				$this->push( new WP_Batch_Item( $i, array( 'route' => $route ) ) );
 			}
 
-			$posts = get_posts( [ 'nopaging' => true ] );
-
-			// Determine number of pages for pagination iteration.
-			$ppp = get_option( 'posts_per_page' );
-
-			$pages = ceil(count($posts) / $ppp);
-
-			// Push paginated results within category.
-			for ($i = 1; $i <= $pages; $i++) {
-				$this->push( new WP_Batch_Item( $i, array(
-						'route' => "/page/$i/",
-					)
-				));
+			// Special case for 404 page.
+			if (!empty($seedOptions['404_route'])) {
+				$this->push( new WP_Batch_Item( count($routes) + 1, array( 'route' => $seedOptions['404_route'], 'is_404' => true ) ) );
 			}
 
 		}
@@ -71,6 +59,14 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 */
 		public function process( $item ) {
 			$route = $item->get_value( 'route' );
+			$is_404 = $item->get_value( 'is_404' );
+
+			if ($is_404) {
+				error_log("SEEDING THE 404 ROUTE");
+				$this->client->send404Route($route);
+				return true;
+			}
+
 			$this->client->sendRoute($route);
 			return true;
 		}

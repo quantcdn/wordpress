@@ -44,8 +44,6 @@ class Client
         $headers = $this->headers;
         $headers['quant-url'] = $route;
 
-        error_log("MEANT TO BE UNPUBLISHING $route");
-
         $args = [
             'headers' => $headers,
             'method' => 'PATCH'
@@ -192,6 +190,12 @@ class Client
 
         $markup = $this->markupFromRoute($permalink);
 
+        // Markup is blank on 404.
+        if (empty($markup)) {
+            $this->unpublish($permalink);
+            return;
+        }
+
         $payload = [
             'url' => $permalink,
             'content' => $markup,
@@ -216,8 +220,37 @@ class Client
 
         $markup = $this->markupFromRoute($route);
 
+        // Markup is blank on 404.
+        if (empty($markup)) {
+            $this->unpublish($route);
+            return;
+        }
+
         $payload = [
             'url' => $route,
+            'content' => $markup,
+            'published' =>  true,
+        ];
+
+        $res = json_decode($this->content($payload), TRUE);
+
+        if (isset($res['attachments'])) {
+            $media = array_merge($res['attachments']['js'], $res['attachments']['css'], $res['attachments']['media']['images'], $res['attachments']['media']['documents'], $res['attachments']['media']['video']);
+            $this->sendAttachments($media);
+        }
+    }
+
+    /**
+     * Send arbitrary route markup to Quant.
+     *
+     * @param $id integer
+     */
+    public function send404Route($route) {
+
+        $markup = $this->markupFromRoute($route, true);
+
+        $payload = [
+            'url' => "/_quant404",
             'content' => $markup,
             'published' =>  true,
         ];
@@ -238,6 +271,12 @@ class Client
     public function sendPost($id) {
         $permalink = wp_make_link_relative(get_permalink($id));
         $markup = $this->markupFromRoute($permalink);
+
+        // Markup is blank on 404.
+        if (empty($markup)) {
+            $this->unpublish($permalink);
+            return;
+        }
 
         $payload = [
             'url' => $permalink,
@@ -261,7 +300,14 @@ class Client
         }
     }
 
-    public function markupFromRoute($route) {
+    /**
+     * Retrieve markup from route.
+     *
+     * @param $route string
+     * @param $allow404 bool
+     * @return $markup or FALSE
+     */
+    public function markupFromRoute($route, $allow404 = false) {
         $endpoint = $this->webserver . $route;
         $args = [
             'headers' => [
@@ -271,6 +317,12 @@ class Client
         ];
 
         $response = wp_remote_get($endpoint, $args);
+        $status = wp_remote_retrieve_response_code($response);
+
+        if ($status == 404 && !$allow404) {
+            return FALSE;
+        }
+
         $body = wp_remote_retrieve_body($response);
         $body = $this->absoluteToRelative($body);
 

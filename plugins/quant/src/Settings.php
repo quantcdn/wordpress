@@ -26,10 +26,9 @@ class Settings
         $seedKey = QUANT_SEED_KEY;
 
         register_setting($key, $key, [__CLASS__, 'sanitize']);
-        register_setting($seedKey, $seedKey, ["\Quant\Seed", 'seedSubmit']);
+        register_setting($seedKey, $seedKey, [__CLASS__, 'sanitize']);
 
         add_settings_section('general', 'General', '__return_empty_string', $key);
-        add_settings_section('seed', 'Seed', '__return_empty_string', $key);
         add_settings_section('api', 'API', '__return_empty_string', $key);
 
         $options = get_option(QUANT_SETTINGS_KEY);
@@ -84,26 +83,26 @@ class Settings
         /**
          * Seed fields
          */
-        $seedOptions = get_option(QUANT_SEED_KEY);
+        $seedOptions = get_option($seedKey);
 
         add_settings_section('seed', 'Seed content', '__return_empty_string', $seedKey);
 
-        add_settings_field('seed_posts', 'Posts', ['Quant\Field', 'checkbox'], $seedKey, 'seed', [
-            'name' => "{$seedKey}[posts]",
-            'description' => 'Post content',
-            'value' => $seedOptions['posts'] ?? 0,
-        ]);
-
-        add_settings_field('seed_pages', 'Pages', ['Quant\Field', 'checkbox'], $seedKey, 'seed', [
-            'name' => "{$seedKey}[pages]",
-            'description' => 'Page content',
-            'value' => $seedOptions['pages'] ?? 0,
-        ]);
-
-        add_settings_field('seed_theme_assets', 'Pages', ['Quant\Field', 'checkbox'], $seedKey, 'seed', [
+        add_settings_field('seed_theme_assets', 'Theme assets', ['Quant\Field', 'checkbox'], $seedKey, 'seed', [
             'name' => "{$seedKey}[theme_assets]",
-            'description' => 'Theme assets',
+            'description' => 'Additional theme assets (fonts, images, js)',
             'value' => $seedOptions['theme_assets'] ?? 0,
+        ]);
+
+        add_settings_field('seed_404_route', '404 path', ['Quant\Field', 'text'], $seedKey, 'seed', [
+            'name' => "{$seedKey}[404_route]",
+            'description' => 'Route to use for 404 error pages',
+            'value' => $seedOptions['404_route'] ?? '/404',
+        ]);
+
+        add_settings_field('seed_custom_routes', 'Custom routes', ['Quant\Field', 'textarea'], $seedKey, 'seed', [
+            'name' => "{$seedKey}[custom_routes]",
+            'description' => 'Enter custom routes (e.g /path/to/route)',
+            'value' => $seedOptions['custom_routes'] ?? '/robots.txt',
         ]);
 
     }

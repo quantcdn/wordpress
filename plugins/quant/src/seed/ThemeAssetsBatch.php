@@ -4,21 +4,21 @@ use Quant\Client;
 
 if ( class_exists( 'WP_Batch' ) ) {
 	/**
-	 * Class QuantHomeBatch
+	 * Class QuantThemeAssetsBatch
 	 */
-	class QuantHomeBatch extends WP_Batch {
+	class QuantThemeAssetsBatch extends WP_Batch {
 
 		/**
 		 * Unique identifier of each batch
 		 * @var string
 		 */
-		public $id = 'quant_home';
+		public $id = 'quant_theme_assets';
 
 		/**
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'Home (and associated pages)';
+		public $title = 'All theme assets (css/js/images)';
 
 		/**
 		 * To setup the batch data use the push() method to add WP_Batch_Item instances to the queue.
@@ -31,28 +31,16 @@ if ( class_exists( 'WP_Batch' ) ) {
 
 			$this->client = new Client();
 
-			// Homepage may either be as simple as pushing the "/" route.
-			// *or* pagination list when using "latest posts"
+			$path = get_stylesheet_directory();
+			$directoryIterator = new \RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::SKIP_DOTS);
+			$iterator = new \RecursiveIteratorIterator($directoryIterator);
+			$regex = new \RegexIterator($iterator, '/^.+(.jpe?g|.png|.svg|.ttf|.woff|.woff2|.otf|.ico|.css|.js)$/i', \RecursiveRegexIterator::GET_MATCH);
 
-			$this->push( new WP_Batch_Item( 0, array( 'route' => "/" ) ) );
-
-			if ( get_option( 'show_on_front' ) == "page" ) {
-				return;
-			}
-
-			$posts = get_posts( [ 'nopaging' => true ] );
-
-			// Determine number of pages for pagination iteration.
-			$ppp = get_option( 'posts_per_page' );
-
-			$pages = ceil(count($posts) / $ppp);
-
-			// Push paginated results within category.
-			for ($i = 1; $i <= $pages; $i++) {
-				$this->push( new WP_Batch_Item( $i, array(
-						'route' => "/page/$i/",
-					)
-				));
+			$i = 1;
+			foreach ($regex as $name => $r) {
+				$route = str_replace(ABSPATH, '/', $name);
+				$this->push( new WP_Batch_Item( $i, array( 'route' => $route, 'file' => $name ) ) );
+				$i++;
 			}
 
 		}
@@ -71,7 +59,8 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 */
 		public function process( $item ) {
 			$route = $item->get_value( 'route' );
-			$this->client->sendRoute($route);
+			$file = $item->get_value( 'file' );
+			$this->client->file($route, $file);
 			return true;
 		}
 

@@ -80,7 +80,7 @@ class SettingsScreen
                 <a href="?page=quant&tab=settings" class="nav-tab <?php echo $active_tab == 'settings' ? 'nav-tab-active' : ''; ?>">Settings</a>
             </h2>
 
-            
+
             <form method="post" action="<?php echo esc_url( add_query_arg('tab', $active_tab, admin_url( 'options.php' )) ); ?>">
 
                 <?php
@@ -93,7 +93,7 @@ class SettingsScreen
                 else {
                     settings_fields(QUANT_SEED_KEY);
                     do_settings_sections(QUANT_SEED_KEY);
-                    submit_button('Seed', 'primary', 'submit', false);
+                    submit_button('Save Settings', 'primary', 'submit', false);
                 }
 
                 ?>
