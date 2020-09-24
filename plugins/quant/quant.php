@@ -54,7 +54,8 @@ function wp_batch_processing_init() {
 
     $batch = new QuantCustomRoutesBatch();
     WP_Batch_Processor::get_instance()->register( $batch );
-
+    $batch = new QuantArchivesBatch();
+    WP_Batch_Processor::get_instance()->register( $batch );
 
 }
 add_action( 'wp_batch_processing_init', 'wp_batch_processing_init', 15, 1 );
