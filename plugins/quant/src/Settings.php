@@ -24,9 +24,11 @@ class Settings
     {
         $key = QUANT_SETTINGS_KEY;
         $seedKey = QUANT_SEED_KEY;
+        $cronKey = QUANT_CRON_SETTINGS_KEY;
 
         register_setting($key, $key, [__CLASS__, 'sanitize']);
         register_setting($seedKey, $seedKey, [__CLASS__, 'sanitize']);
+        register_setting($cronKey, $cronKey, [__CLASS__, 'sanitize']);
 
         add_settings_section('general', 'General', '__return_empty_string', $key);
         add_settings_section('api', 'API', '__return_empty_string', $key);
@@ -105,6 +107,61 @@ class Settings
             'value' => $seedOptions['custom_routes'] ?? '/robots.txt',
         ]);
 
+
+        /**
+         * Cron settings fields
+         */
+        $cronOptions = get_option($cronKey);
+
+        add_settings_section('cron', 'Cron jobs', '__return_empty_string', $cronKey);
+
+        add_settings_field('cron_enabled', 'Cron enabled', ['Quant\Field', 'checkbox'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_enabled]",
+            'description' => 'Enable cron jobs',
+            'value' => $cronOptions['cron_enabled'] ?? 0,
+        ]);
+
+        add_settings_field('cron_schedule', 'Schedule', ['Quant\Field', 'text'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_schedule]",
+            'description' => 'Enter a cron schedule (e.g daily, hourly or twicedaily)',
+            'value' => $cronOptions['cron_schedule'] ?? 'daily',
+        ]);
+
+        add_settings_field('cron_home', 'Homepage', ['Quant\Field', 'checkbox'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_home]",
+            'description' => 'Homepage',
+            'value' => $cronOptions['cron_home'] ?? 0,
+        ]);
+
+        add_settings_field('cron_posts', 'Posts', ['Quant\Field', 'checkbox'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_posts]",
+            'description' => 'All posts',
+            'value' => $cronOptions['cron_posts'] ?? 0,
+        ]);
+
+        add_settings_field('cron_pages', 'Pages', ['Quant\Field', 'checkbox'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_pages]",
+            'description' => 'All pages',
+            'value' => $cronOptions['cron_pages'] ?? 0,
+        ]);
+
+        add_settings_field('cron_categories', 'Categories', ['Quant\Field', 'checkbox'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_categories]",
+            'description' => 'Categories',
+            'value' => $cronOptions['cron_categories'] ?? 0,
+        ]);
+
+        add_settings_field('cron_tags', 'Tags', ['Quant\Field', 'checkbox'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_tags]",
+            'description' => 'Tags',
+            'value' => $cronOptions['cron_tags'] ?? 0,
+        ]);
+
+        add_settings_field('cron_custom_routes', 'Custom routes', ['Quant\Field', 'textarea'], $cronKey, 'cron', [
+            'name' => "{$cronKey}[cron_custom_routes]",
+            'description' => 'Enter custom routes (e.g /path/to/route)',
+            'value' => $cronOptions['cron_custom_routes'] ?? '/robots.txt',
+        ]);
     }
 
     /**

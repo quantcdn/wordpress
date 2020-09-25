@@ -4,21 +4,21 @@ use Quant\Client;
 
 if ( class_exists( 'WP_Batch' ) ) {
 	/**
-	 * Class QuantCustomRoutesBatch
+	 * Class QuantCustomCronRoutesBatch
 	 */
-	class QuantCustomRoutesBatch extends WP_Batch {
+	class QuantCustomCronRoutesBatch extends WP_Batch {
 
 		/**
 		 * Unique identifier of each batch
 		 * @var string
 		 */
-		public $id = 'quant_custom_routes';
+		public $id = 'quant_custom_cron_routes';
 
 		/**
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'Custom routes and 404 page';
+		public $title = 'Custom routes (cron)';
 
 		/**
 		 * To setup the batch data use the push() method to add WP_Batch_Item instances to the queue.
@@ -31,16 +31,11 @@ if ( class_exists( 'WP_Batch' ) ) {
 
 			$this->client = new Client();
 
-			$seedOptions = get_option(QUANT_SEED_KEY);
-			$routes = explode("\n", $seedOptions['custom_routes']);
+			$seedOptions = get_option(QUANT_CRON_SETTINGS_KEY);
+			$routes = explode("\n", $seedOptions['cron_custom_routes']);
 
 			foreach ($routes as $i => $route) {
 				$this->push( new WP_Batch_Item( $i, array( 'route' => $route ) ) );
-			}
-
-			// Special case for 404 page.
-			if (!empty($seedOptions['404_route'])) {
-				$this->push( new WP_Batch_Item( count($routes) + 1, array( 'route' => $seedOptions['404_route'], 'is_404' => true ) ) );
 			}
 
 		}
@@ -59,13 +54,6 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 */
 		public function process( $item ) {
 			$route = $item->get_value( 'route' );
-			$is_404 = $item->get_value( 'is_404' );
-
-			if ($is_404) {
-				$this->client->send404Route($route);
-				return true;
-			}
-
 			$this->client->sendRoute($route);
 			return true;
 		}

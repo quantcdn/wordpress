@@ -76,10 +76,10 @@ class SettingsScreen
             <h2><?= get_admin_page_title(); ?></h2>
 
             <h2 class="nav-tab-wrapper">
-                <a href="?page=quant&tab=seed" class="nav-tab <?php echo $active_tab == 'seed' ? 'nav-tab-active' : ''; ?>">Seed</a>
+                <a href="?page=quant&tab=seed" class="nav-tab <?php echo $active_tab == 'seed' ? 'nav-tab-active' : ''; ?>">Seed Settings</a>
                 <a href="?page=quant&tab=settings" class="nav-tab <?php echo $active_tab == 'settings' ? 'nav-tab-active' : ''; ?>">Settings</a>
+                <a href="?page=quant&tab=cron" class="nav-tab <?php echo $active_tab == 'cron' ? 'nav-tab-active' : ''; ?>">Cron</a>
             </h2>
-
 
             <form method="post" action="<?php echo esc_url( add_query_arg('tab', $active_tab, admin_url( 'options.php' )) ); ?>">
 
@@ -90,9 +90,14 @@ class SettingsScreen
                     do_settings_sections(QUANT_SETTINGS_KEY);
                     submit_button('Save Settings', 'primary', 'submit', false);
                 }
-                else {
+                else if ( $active_tab == 'seed') {
                     settings_fields(QUANT_SEED_KEY);
                     do_settings_sections(QUANT_SEED_KEY);
+                    submit_button('Save Settings', 'primary', 'submit', false);
+                }
+                else if ( $active_tab == 'cron') {
+                    settings_fields(QUANT_CRON_SETTINGS_KEY);
+                    do_settings_sections(QUANT_CRON_SETTINGS_KEY);
                     submit_button('Save Settings', 'primary', 'submit', false);
                 }
 

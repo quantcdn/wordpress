@@ -62,8 +62,6 @@ class Client
             'published' => TRUE,
         ];
 
-        error_log(print_r($data, TRUE));
-
         $args = [
             'headers' => $this->headers,
             'body' => json_encode($data),
@@ -71,8 +69,6 @@ class Client
 
         $response = wp_remote_post($this->endpoint . '/redirect', $args);
         $body = wp_remote_retrieve_body($response);
-
-        error_log($body);
 
         return $body;
     }
@@ -163,13 +159,11 @@ class Client
             if (isset($item['existing_md5'])) {
                 // Skip file: MD5 matches.
                 if (file_exists(ABSPATH . $file) && md5_file(ABSPATH . $file) == $item['existing_md5']) {
-                    error_log("MD5 MATCHES: " . $file);
                     continue;
                 }
             }
 
             if (file_exists(ABSPATH . $file)) {
-                error_log("SENDIG FILE: " . $file);
                 $this->file($file, ABSPATH . $file);
             }
         }

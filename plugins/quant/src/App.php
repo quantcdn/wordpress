@@ -9,14 +9,14 @@ final class App
 {
     /**
      * Singleton instance
-     * 
+     *
      * @var null|App
      */
     private static $instance = null;
 
     /**
      * Create a new singleton instance
-     * 
+     *
      * @return App
      */
     public static function instance()
@@ -30,7 +30,7 @@ final class App
 
     /**
      * Bootstrap the plugin
-     * 
+     *
      * @return void
      */
     private function __construct()
@@ -48,6 +48,7 @@ final class App
     protected function constants()
     {
         define('QUANT_SETTINGS_KEY', 'wp_quant_settings');
+        define('QUANT_CRON_SETTINGS_KEY', 'wp_quant_cron_settings');
         define('QUANT_SEED_KEY', 'wp_quant_seed');
     }
 
