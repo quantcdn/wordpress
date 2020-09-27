@@ -27,8 +27,22 @@ function Quant()
     return Quant\App::instance();
 }
 
-register_activation_hook(__FILE__, [Quant(), 'activation']);
+/**
+ * Activate the Quant plugin
+ */
+function QuantActivate()
+{
+    // Generate a random string for internal token.
+    $token = get_option("quant_internal_token");
+
+    if (empty($token)) {
+        update_option("quant_internal_token", substr(str_shuffle(MD5(microtime())), 0, 10));
+    }
+}
+
+register_activation_hook(__FILE__, [QuantActivate(), Quant()]);
 register_deactivation_hook(__FILE__, [Quant(), 'deactivation']);
+
 
 
 /**

@@ -32,7 +32,7 @@ class Client
         ];
         $response = wp_remote_get($endpoint, $args);
 
-        if ($response['response']['code'] != 200) {
+        if (!is_array($response) || $response['response']['code'] != 200) {
             return FALSE;
         }
 
@@ -302,11 +302,14 @@ class Client
      * @return $markup or FALSE
      */
     public function markupFromRoute($route, $allow404 = false) {
+
+        $token = get_option('quant_internal_token');
+
         $endpoint = $this->webserver . $route;
         $args = [
             'headers' => [
                 'Host' => $this->host,
-                'Quant-Token' => 'ABC123',
+                'Quant-Token' => $token,
             ]
         ];
 

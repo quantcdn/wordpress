@@ -3,9 +3,13 @@
 use Quant\Client;
 
 if (!empty($_SERVER['HTTP_QUANT_TOKEN'])) {
-    // This is ensures content renders locally without redirection (e.g via localhost webserver with a Hostname set).
-    // @todo: Validate the Quant-Token (e.g for Draft content and prevent external abuse).
-    remove_action('template_redirect', 'redirect_canonical');
+
+    $token = get_option('quant_internal_token');
+
+    if ($token == $_SERVER['HTTP_QUANT_TOKEN']) {
+        remove_action('template_redirect', 'redirect_canonical');
+    }
+
 }
 
 if (!function_exists('quant_get_options')) {
