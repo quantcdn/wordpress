@@ -34,7 +34,7 @@ class WP_BP_Helper {
 	 * @param array $data
 	 */
 	public static function render( $view, $data = array() ) {
-		$path = WP_BP_PATH . 'views' . DIRECTORY_SEPARATOR . $view . '.php';
+		$path = QUANT_WP_BP_PATH . 'views' . DIRECTORY_SEPARATOR . $view . '.php';
 		if ( file_exists( $path ) ) {
 			if ( ! empty( $data ) ) {
 				extract( $data );

@@ -62,15 +62,15 @@ class WP_Batch_Processor_Admin {
 
 		wp_enqueue_script(
 			'wp-batch-processing',
-			WP_BP_URL . 'assets/processor.js',
+			QUANT_WP_BP_URL . 'assets/processor.js',
 			array( 'jquery' ),
-			filemtime( WP_BP_PATH . 'assets/processor.js' ),
+			filemtime( QUANT_WP_BP_PATH . 'assets/processor.js' ),
 			true
 		);
 		wp_localize_script( 'wp-batch-processing', 'DgBatchRunner', array(
 			'ajax_url' => admin_url( 'admin-ajax.php' ),
 			'nonce'    => wp_create_nonce( 'wp-batch-processing' ),
-			'batch_id' => isset( $_GET['id'] ) ? $_GET['id'] : 0,
+			'batch_id' => isset( $_GET['id'] ) ? sanitize_key($_GET['id']) : 0,
 			'delay'    => apply_filters( 'wp_batch_processing_delay', 0 ), // Set delay in seconds before processing the next item. Default 0. No delay.
 			'text'     => array(
 				'processing' => __( 'Processing...', 'wp-batch-processing' ),
@@ -111,7 +111,7 @@ class WP_Batch_Processor_Admin {
 	 */
 	public function plugin_page() {
 		$action = isset( $_GET['action'] ) ? $_GET['action'] : 'list';
-		$id     = isset( $_GET['id'] ) ? $_GET['id'] : 0;
+		$id     = isset( $_GET['id'] ) ? sanitize_key($_GET['id']) : 0;
 		switch ( $action ) {
 			case 'view':
 				$view = 'batch-view';

@@ -73,3 +73,45 @@ function wp_batch_processing_init() {
 
 }
 add_action( 'wp_batch_processing_init', 'wp_batch_processing_init', 15, 1 );
+
+/**
+ * Roundabout way of adding a post field.
+ *
+ * @param Resource $handle
+ *   A cURL resource handler.
+ */
+function quant_attach_file($handle) {
+    $info = curl_getinfo($handle);
+    $url = parse_url($info['url']);
+    $settings = get_option(QUANT_SETTINGS_KEY);
+
+    // We're only concerned about intercepting Quant calls.
+    if (strpos($info['url'], $settings['api_endpoint']) === -1) {
+        return;
+    }
+
+    // This is not a real API route, this is something specific
+    // to catch in this hook so that we can create the file
+    // stream with cURL.
+    if ($url['path'] != '/file-upload') {
+        return;
+    }
+
+    parse_str($url['query'], $query);
+
+    if (empty($query['path'])) {
+        return;
+    }
+
+    // Build the CURL options to stream the files.
+    curl_setopt($handle, CURLOPT_URL, $settings['api_endpoint']);
+
+    $data['data'] = curl_file_create(
+        $query['path'],
+        mime_content_type($query['path']),
+        basename($query['path'])
+    );
+
+    curl_setopt($handle, CURLOPT_POSTFIELDS, $data);
+}
+add_action('http_api_curl', 'quant_attach_file');

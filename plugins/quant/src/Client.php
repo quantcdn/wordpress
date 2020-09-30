@@ -105,37 +105,15 @@ class Client
         $headers['Content-type']  = 'application/binary';
         $headers['Quant-File-Url'] = $route;
 
+        $endpoint = $this->endpoint . '/file-upload?path=' . $path;
         $args = [
             'headers' => $headers,
         ];
 
-        // @todo: Replace with a Wordpress HTTP API request.
-        $curl_headers = array();
-        foreach ($headers as $header => $value) {
-          $curl_headers[] = "{$header}: {$value}";
-        }
+        $response = wp_remote_post($endpoint, $args);
+        $body = wp_remote_retrieve_body($response);
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $this->endpoint);
-        curl_setopt($ch, CURLOPT_POST, TRUE);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $curl_headers);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-
-        $data['data'] = curl_file_create(
-          $path,
-          mime_content_type($path),
-          basename($path)
-        );
-
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-
-        $result = curl_exec($ch);
-        $info = curl_getinfo($ch);
-        curl_close($ch);
-
-        $response = json_decode($result);
-
-        return $response;
+        return $body;
     }
 
     /**

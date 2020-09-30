@@ -52,7 +52,7 @@ class WP_Batch_Processing_Ajax_Handler {
 		}
 
 		// Validate the batch id.
-		$batch_id = isset( $_REQUEST['batch_id'] ) ? $_REQUEST['batch_id'] : false;
+		$batch_id = isset( $_REQUEST['batch_id'] ) ? sanitize_key($_REQUEST['batch_id']) : false;
 		if ( ! $batch_id ) {
 			wp_send_json_error( array(
 				'message' => 'Invalid batch id',
@@ -125,7 +125,7 @@ class WP_Batch_Processing_Ajax_Handler {
 			exit;
 		}
 		// Validate the batch id.
-		$batch_id = isset( $_REQUEST['batch_id'] ) ? $_REQUEST['batch_id'] : false;
+		$batch_id = isset( $_REQUEST['batch_id'] ) ? sanitize_key($_REQUEST['batch_id']) : false;
 		if ( ! $batch_id ) {
 			wp_send_json_error( array(
 				'message' => 'Invalid batch id',
