@@ -2,11 +2,11 @@
 
 use Quant\Client;
 
-if ( class_exists( 'WP_Batch' ) ) {
+if ( class_exists( 'Quant_WP_Batch' ) ) {
 	/**
 	 * Class QuantArchivesBatch
 	 */
-	class QuantArchivesBatch extends WP_Batch {
+	class QuantArchivesBatch extends Quant_WP_Batch {
 
 		/**
 		 * Unique identifier of each batch
@@ -58,7 +58,7 @@ if ( class_exists( 'WP_Batch' ) ) {
 					$url = wp_make_link_relative($year_vars[1]);
 
 					if (!empty($year_vars)) {
-						$this->push( new WP_Batch_Item( 0, array(
+						$this->push( new Quant_WP_Batch_Item( 0, array(
 								'route' => "{$url}",
 							)
 						));
@@ -68,7 +68,7 @@ if ( class_exists( 'WP_Batch' ) ) {
 					for ($i = 1; $i <= $pages; $i++) {
 						// Batch items need unique integer ids
 						$itemId = $year_index + (10000000 + $i);
-						$this->push( new WP_Batch_Item( $itemId, array(
+						$this->push( new Quant_WP_Batch_Item( $itemId, array(
 								'route' => "{$url}page/{$i}/",
 							)
 						));
@@ -86,7 +86,7 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 * - TRUE - If the item was processed successfully.
 		 * - WP_Error instance - If there was an error. Add message to display it in the admin area.
 		 *
-		 * @param WP_Batch_Item $item
+		 * @param Quant_WP_Batch_Item $item
 		 *
 		 * @return bool|\WP_Error
 		 */

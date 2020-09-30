@@ -2,11 +2,11 @@
 
 use Quant\Client;
 
-if ( class_exists( 'WP_Batch' ) ) {
+if ( class_exists( 'Quant_WP_Batch' ) ) {
 	/**
 	 * Class QuantThemeAssetsBatch
 	 */
-	class QuantThemeAssetsBatch extends WP_Batch {
+	class QuantThemeAssetsBatch extends Quant_WP_Batch {
 
 		/**
 		 * Unique identifier of each batch
@@ -21,7 +21,7 @@ if ( class_exists( 'WP_Batch' ) ) {
 		public $title = 'All theme assets (css/js/images)';
 
 		/**
-		 * To setup the batch data use the push() method to add WP_Batch_Item instances to the queue.
+		 * To setup the batch data use the push() method to add Quant_WP_Batch_Item instances to the queue.
 		 *
 		 * Note: If the operation of obtaining data is expensive, cache it to avoid slowdowns.
 		 *
@@ -39,7 +39,7 @@ if ( class_exists( 'WP_Batch' ) ) {
 			$i = 1;
 			foreach ($regex as $name => $r) {
 				$route = str_replace(ABSPATH, '/', $name);
-				$this->push( new WP_Batch_Item( $i, array( 'route' => $route, 'file' => $name ) ) );
+				$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route, 'file' => $name ) ) );
 				$i++;
 			}
 
@@ -53,7 +53,7 @@ if ( class_exists( 'WP_Batch' ) ) {
 		 * - TRUE - If the item was processed successfully.
 		 * - WP_Error instance - If there was an error. Add message to display it in the admin area.
 		 *
-		 * @param WP_Batch_Item $item
+		 * @param Quant_WP_Batch_Item $item
 		 *
 		 * @return bool|\WP_Error
 		 */

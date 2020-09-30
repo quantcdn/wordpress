@@ -3,6 +3,6 @@
 ?>
 <div class="wrap">
     <div class="batch-single">
-    	<?php WP_BP_Helper::render('batch-manage', array('id' => $id)); ?>
+    	<?php Quant_WP_BP_Helper::render('batch-manage', array('id' => $id)); ?>
     </div>
 </div>

@@ -23,13 +23,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class WP_Batch_Processor_Admin
+ * Class Quant_WP_Batch_Processor_Admin
  */
-class WP_Batch_Processor_Admin {
+class Quant_WP_Batch_Processor_Admin {
 
-	use WP_BP_Singleton;
+	use Quant_WP_BP_Singleton;
 
-	const NONCE = 'wp-batch-processing';
+	const NONCE = 'quant-wp-batch-processing';
 
 	/**
 	 * Kick-in the class
@@ -45,7 +45,7 @@ class WP_Batch_Processor_Admin {
 	 */
 	public function setup() {
 		if ( $this->is_batch_runner_screen() || $this->is_batch_runner_ajax() ) {
-			do_action( 'wp_batch_processing_init' );
+			do_action( 'quant_wp_batch_processing_init' );
 		}
 	}
 
@@ -61,20 +61,20 @@ class WP_Batch_Processor_Admin {
 		}
 
 		wp_enqueue_script(
-			'wp-batch-processing',
+			'quant-wp-batch-processing',
 			QUANT_WP_BP_URL . 'assets/processor.js',
 			array( 'jquery' ),
 			filemtime( QUANT_WP_BP_PATH . 'assets/processor.js' ),
 			true
 		);
-		wp_localize_script( 'wp-batch-processing', 'DgBatchRunner', array(
+		wp_localize_script( 'quant-wp-batch-processing', 'DgBatchRunner', array(
 			'ajax_url' => admin_url( 'admin-ajax.php' ),
-			'nonce'    => wp_create_nonce( 'wp-batch-processing' ),
+			'nonce'    => wp_create_nonce( 'quant-wp-batch-processing' ),
 			'batch_id' => isset( $_GET['id'] ) ? sanitize_key($_GET['id']) : 0,
-			'delay'    => apply_filters( 'wp_batch_processing_delay', 0 ), // Set delay in seconds before processing the next item. Default 0. No delay.
+			'delay'    => apply_filters( 'quant_wp_batch_processing_delay', 0 ), // Set delay in seconds before processing the next item. Default 0. No delay.
 			'text'     => array(
-				'processing' => __( 'Processing...', 'wp-batch-processing' ),
-				'start'      => __( 'Start', 'wp-batch-processing' ),
+				'processing' => __( 'Processing...', 'quant-wp-batch-processing' ),
+				'start'      => __( 'Start', 'quant-wp-batch-processing' ),
 			)
 		) );
 	}
@@ -87,8 +87,8 @@ class WP_Batch_Processor_Admin {
 	public function admin_menu() {
 
 		add_menu_page(
-			__( 'Manage Batches', 'wp-batch-processing' ),
-			__( 'Batches ', 'wp-batch-processing' ),
+			__( 'Manage Batches', 'quant-wp-batch-processing' ),
+			__( 'Batches ', 'quant-wp-batch-processing' ),
 			'manage_options', 'dg-batches',
 			array( $this, 'plugin_page' ),
 			'dashicons-grid-view', null
@@ -96,8 +96,8 @@ class WP_Batch_Processor_Admin {
 
 		add_submenu_page(
 			'dg-batches',
-			__( 'Batches', 'wp-batch-processing' ),
-			__( 'Batches', 'wp-batch-processing' ),
+			__( 'Batches', 'quant-wp-batch-processing' ),
+			__( 'Batches', 'quant-wp-batch-processing' ),
 			'manage_options',
 			'dg-batches',
 			array( $this, 'plugin_page' )
@@ -120,7 +120,7 @@ class WP_Batch_Processor_Admin {
 				$view = 'batch-list';
 				break;
 		}
-		WP_BP_Helper::render( $view, array( 'id' => $id ) );
+		Quant_WP_BP_Helper::render( $view, array( 'id' => $id ) );
 	}
 
 	/**
@@ -145,4 +145,4 @@ class WP_Batch_Processor_Admin {
 	}
 }
 
-WP_Batch_Processor_Admin::get_instance();
+Quant_WP_Batch_Processor_Admin::get_instance();

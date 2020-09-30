@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	die( 'Direct access is not allowed.' );
 }
 
-trait WP_BP_Singleton {
+trait Quant_WP_BP_Singleton {
 	/**
 	 * The current instance
 	 */
@@ -38,7 +38,7 @@ trait WP_BP_Singleton {
 	}
 
 	/**
-	 * WP_BP_Singleton constructor.
+	 * Quant_WP_BP_Singleton constructor.
 	 */
 	final private function __construct() {
 		$this->init();

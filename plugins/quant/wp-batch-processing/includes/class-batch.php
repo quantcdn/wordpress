@@ -23,16 +23,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class WP_Batch
+ * Class Quant_WP_Batch
  *
  * Extend this class to create your own batch
  *
- * Note: You must register the instance in the wp_batch_processing_init hook
+ * Note: You must register the instance in the quant_processing_init hook
  * in order to show in the admin area.
  *
- * eg. WP_Batch_Processor::get_instance()->register( $batch );
+ * eg. Quant_WP_Batch_Processor::get_instance()->register( $batch );
  */
-abstract class WP_Batch {
+abstract class Quant_WP_Batch {
 
 	/**
 	 * Unique identifier of each batch
@@ -48,7 +48,7 @@ abstract class WP_Batch {
 
 	/**
 	 * Data store of batch items
-	 * @var WP_Batch_Item[]
+	 * @var Quant_WP_Batch_Item[]
 	 */
 	protected $items = array();
 
@@ -60,7 +60,7 @@ abstract class WP_Batch {
 	}
 
 	/**
-	 * To setup the batch data use the push() method to add WP_Batch_Item instances to the queue.
+	 * To setup the batch data use the push() method to add Quant_WP_Batch_Item instances to the queue.
 	 *
 	 * Note: If the operation of obtaining data is expensive, cache it to avoid slowdowns.
 	 *
@@ -76,7 +76,7 @@ abstract class WP_Batch {
 	 * - TRUE - If the item was processed successfully.
 	 * - WP_Error instance - If there was an error. Add message to display it in the admin area.
 	 *
-	 * @param WP_Batch_Item $item
+	 * @param Quant_WP_Batch_Item $item
 	 *
 	 * @return bool|\WP_Error
 	 */
@@ -92,7 +92,7 @@ abstract class WP_Batch {
 	/**
 	 * Queues the item for processing.
 	 *
-	 * @param WP_Batch_Item $item
+	 * @param Quant_WP_Batch_Item $item
 	 */
 	protected function push( $item ) {
 		if ( ! is_array( $this->items ) ) {
@@ -103,11 +103,11 @@ abstract class WP_Batch {
 
 
 	/**
-	 * Returns false if no items left for processing or WP_Batch_Item object for processing.
+	 * Returns false if no items left for processing or Quant_WP_Batch_Item object for processing.
 	 *
-	 * @param WP_Batch_Item $item
+	 * @param Quant_WP_Batch_Item $item
 	 *
-	 * @return bool|WP_Batch_Item
+	 * @return bool|Quant_WP_Batch_Item
 	 */
 	public function get_next_item() {
 		$processed = $this->get_processed_items();
@@ -139,7 +139,7 @@ abstract class WP_Batch {
 	/**
 	 * Check if batch item was processed.
 	 *
-	 * @param WP_Batch_Item $item
+	 * @param Quant_WP_Batch_Item $item
 	 *
 	 * @return bool
 	 */

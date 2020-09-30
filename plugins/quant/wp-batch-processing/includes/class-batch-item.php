@@ -23,9 +23,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class WP_Batch_Item
+ * Class Quant_WP_Batch_Item
  */
-class WP_Batch_Item {
+class Quant_WP_Batch_Item {
 
 	/**
 	 * Unique identifier of the batch item
@@ -40,7 +40,7 @@ class WP_Batch_Item {
 	public $data;
 
 	/**
-	 * WP_Batch_Item constructor
+	 * Quant_WP_Batch_Item constructor
 	 *
 	 * @param $id
 	 * @param $data

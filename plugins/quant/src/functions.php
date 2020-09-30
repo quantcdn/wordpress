@@ -237,23 +237,3 @@ if (!function_exists('quant_cron_run')) {
     }
     add_action ('quant_cronjob', 'quant_cron_run');
 }
-
-
-
-if (!function_exists('quant_cron_testing')) {
-    /**
-     * Development function to test cron every 10 seconds.
-     *
-     * @return void
-     */
-    function quant_cron_testing()
-    {
-        $schedules['every60s'] = array(
-            'interval' => 60,
-            'display' => __( 'Once per minute' )
-        );
-        return $schedules;
-    }
-    add_filter( 'cron_schedules', 'quant_cron_testing' );
-
-}

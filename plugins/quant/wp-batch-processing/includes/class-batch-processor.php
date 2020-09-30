@@ -24,15 +24,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 
 /**
- * Class WP_Batch_Processor
+ * Class Quant_WP_Batch_Processor
  */
-class WP_Batch_Processor {
+class Quant_WP_Batch_Processor {
 
-	use WP_BP_Singleton;
+	use Quant_WP_BP_Singleton;
 
 	/**
 	 * List of batches
-	 * @var WP_Batch[]
+	 * @var Quant_WP_Batch[]
 	 */
 	protected $batches;
 
@@ -47,7 +47,7 @@ class WP_Batch_Processor {
 	/**
 	 * Register batch
 	 *
-	 * @param WP_Batch $batch
+	 * @param Quant_WP_Batch $batch
 	 */
 	public function register( $batch ) {
 		$this->batches[] = $batch;
@@ -55,7 +55,7 @@ class WP_Batch_Processor {
 
 	/**
 	 * Returns array of registered batches
-	 * @return WP_Batch[]
+	 * @return Quant_WP_Batch[]
 	 */
 	public function get_batches() {
 		return $this->batches;
@@ -66,7 +66,7 @@ class WP_Batch_Processor {
 	 *
 	 * @param $id
 	 *
-	 * @return null|WP_Batch
+	 * @return null|Quant_WP_Batch
 	 */
 	public function get_batch( $id ) {
 		foreach ( $this->batches as $batch ) {
@@ -80,4 +80,4 @@ class WP_Batch_Processor {
 
 }
 
-WP_Batch_Processor::get_instance();
+Quant_WP_Batch_Processor::get_instance();

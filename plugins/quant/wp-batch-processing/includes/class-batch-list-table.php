@@ -27,9 +27,9 @@ if ( ! class_exists( 'WP_List_Table' ) ) {
 }
 
 /**
- * Class WP_BP_List_Table
+ * Class Quant_WP_BP_List_Table
  */
-class WP_BP_List_Table extends \WP_List_Table {
+class Quant_WP_BP_List_Table extends \WP_List_Table {
 
 	function __construct() {
 		parent::__construct( array(
@@ -49,7 +49,7 @@ class WP_BP_List_Table extends \WP_List_Table {
 	 * @return void
 	 */
 	function no_items() {
-		_e( 'No batches found. Read the documentation on the plugin github page to see how to register ones.', 'wp-batch-processing' );
+		_e( 'No batches found. Read the documentation on the plugin github page to see how to register ones.', 'quant-wp-batch-processing' );
 	}
 
 	/**
@@ -84,9 +84,9 @@ class WP_BP_List_Table extends \WP_List_Table {
 	 */
 	function get_columns() {
 		$columns = array(
-			'title'           => __( 'Title', 'wp-batch-processing' ),
-			'total_processed' => __( 'Total Processed', 'wp-batch-processing' ),
-			'total_items'     => __( 'Total Items', 'wp-batch-processing' ),
+			'title'           => __( 'Title', 'quant-wp-batch-processing' ),
+			'total_processed' => __( 'Total Processed', 'quant-wp-batch-processing' ),
+			'total_items'     => __( 'Total Items', 'quant-wp-batch-processing' ),
 		);
 
 		return $columns;
@@ -102,7 +102,7 @@ class WP_BP_List_Table extends \WP_List_Table {
 	function column_title( $item ) {
 
 		$actions         = array();
-		$actions['edit'] = sprintf( '<a href="%s" data-id="%d" title="%s">%s</a>', admin_url( 'admin.php?page=dg-batches&action=view&id=' . $item->id ), $item->id, __( 'Manage Batch', 'wp-batch-processing' ), __( 'Manage', 'wp-batch-processing' ) );
+		$actions['edit'] = sprintf( '<a href="%s" data-id="%d" title="%s">%s</a>', admin_url( 'admin.php?page=dg-batches&action=view&id=' . $item->id ), $item->id, __( 'Manage Batch', 'quant-wp-batch-processing' ), __( 'Manage', 'quant-wp-batch-processing' ) );
 
 		return sprintf( '<a href="%1$s"><strong>%2$s</strong></a> %3$s', admin_url( 'admin.php?page=dg-batches&action=view&id=' . $item->id ), $item->title, $this->row_actions( $actions ) );
 	}
@@ -153,6 +153,6 @@ class WP_BP_List_Table extends \WP_List_Table {
 		$this->_column_headers = array( $columns, $hidden, $sortable );
 		$this->page_status     = isset( $_GET['status'] ) ? sanitize_text_field( $_GET['status'] ) : '2';
 
-		$this->items = WP_Batch_Processor::get_instance()->get_batches();
+		$this->items = Quant_WP_Batch_Processor::get_instance()->get_batches();
 	}
 }

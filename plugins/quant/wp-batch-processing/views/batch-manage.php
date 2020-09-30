@@ -1,6 +1,6 @@
 <?php
 /* @var mixed $id - The batch id */
-$batch = WP_Batch_Processor::get_instance()->get_batch($id);
+$batch = Quant_WP_Batch_Processor::get_instance()->get_batch($id);
 if(is_null($batch)) {
 	echo 'Batch not found.';
 	return;

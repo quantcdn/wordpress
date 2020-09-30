@@ -23,9 +23,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class WP_BP_Helper
+ * Class Quant_WP_BP_Helper
  */
-class WP_BP_Helper {
+class Quant_WP_BP_Helper {
 
 	/**
 	 * Renders a view
