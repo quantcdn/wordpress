@@ -84,16 +84,17 @@ function quant_attach_file($handle) {
     $info = curl_getinfo($handle);
     $url = parse_url($info['url']);
     $settings = get_option(QUANT_SETTINGS_KEY);
+    $api_endpoint = $settings['api_endpoint'] . '/v1';
 
     // We're only concerned about intercepting Quant calls.
-    if (strpos($info['url'], $settings['api_endpoint']) === -1) {
+    if (strpos($info['url'], $api_endpoint) === -1) {
         return;
     }
 
     // This is not a real API route, this is something specific
     // to catch in this hook so that we can create the file
     // stream with cURL.
-    if ($url['path'] != '/file-upload') {
+    if ($url['path'] != '/v1/file-upload') {
         return;
     }
 
@@ -104,7 +105,7 @@ function quant_attach_file($handle) {
     }
 
     // Build the CURL options to stream the files.
-    curl_setopt($handle, CURLOPT_URL, $settings['api_endpoint']);
+    curl_setopt($handle, CURLOPT_URL, $api_endpoint);
 
     $data['data'] = curl_file_create(
         $query['path'],

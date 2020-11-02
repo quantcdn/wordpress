@@ -17,7 +17,7 @@ class Client
         $this->settings = get_option(QUANT_SETTINGS_KEY);
         $this->webserver = $this->settings['webserver_url'];
         $this->host = $this->settings['webserver_host'];
-        $this->endpoint = $this->settings['api_endpoint'];
+        $this->endpoint = $this->settings['api_endpoint'] . '/v1';
         $this->headers['Content-type'] = 'application/json';
         $this->headers['quant-project'] = $this->settings['api_project'];
         $this->headers['quant-customer'] = $this->settings['api_account'];
@@ -250,16 +250,30 @@ class Client
             return;
         }
 
+        // Retrieve author info.
+        $post = get_post($id);
+        $author_id = $post->post_author;
+
         $payload = [
             'url' => $permalink,
             'content' => $markup,
             'published' =>  get_post_status($id) === 'publish',
             'content_timestamp' => get_post_modified_time('U', false, $id),
             'info' => [
-                'author' => '@todo',
-                'log' => '@todo'
+                'author_name' => get_the_author_meta( 'display_name' , $author_id ),
             ],
+            'search_record' => [
+                'categories' => [
+                    'content_type' => get_post_type($id),
+                    'tags' => [],
+                    'categories' => wp_get_post_categories($id, ['fields' => 'names']),
+                ]
+            ]
         ];
+
+        foreach (wp_get_post_tags($id) as $tag) {
+            $payload['search_record']['categories']['tags'][] = $tag->name;
+        }
 
         // @todo: Create plain permalink (?p=123 to slug)
         //$this->redirect($permalink, $slug, 301);

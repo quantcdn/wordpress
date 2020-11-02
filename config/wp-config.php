@@ -96,5 +96,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', __DIR__ . '/' );
 }
 
+/** Enables revisions for Quant testing/development. */
+define( 'WP_POST_REVISIONS', TRUE);
+
 /** Sets up WordPress vars and included files. */
 require_once ABSPATH . 'wp-settings.php';

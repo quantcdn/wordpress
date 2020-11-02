@@ -64,6 +64,7 @@ class Settings
         add_settings_field('quant_api_endpoint', 'API Endpoint', ['Quant\Field', 'url'], $key, 'api', [
             'name' => "{$key}[api_endpoint]",
             'placeholder' => 'https://api.quantcdn.io',
+            'description' => 'e.g https://api.quantcdn.io',
             'value' => $options['api_endpoint'] ?? 'https://api.quantcdn.io',
         ]);
 
