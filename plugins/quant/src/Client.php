@@ -122,6 +122,7 @@ class Client
      * @param $media Array
      */
     public function sendAttachments($media) {
+        $attachments = [];
 
         foreach ($media as $item) {
             $url = urldecode($item['path']);
@@ -142,10 +143,51 @@ class Client
             }
 
             if (file_exists(ABSPATH . $file)) {
-                $this->file($file, ABSPATH . $file);
+                $attachments[] = $file;
             }
         }
+
+        $this->multipleFiles($attachments);
     }
+
+
+    /**
+     * Send multiple files in parallel to Quant API.
+     *
+     * @param array $files
+     *      Array of files to send in parallel.
+     */
+    public function multipleFiles($files) {
+
+        $headers = $this->headers;
+        $headers['Content-type']  = 'application/binary';
+
+        $requests = [];
+
+        foreach ($files as $file) {
+            $headers['Quant-File-Url'] = $file;
+            $path = ABSPATH . $file;
+
+            $requests[] = [
+                'url' => $this->endpoint . '/file-upload?path=' . $path,
+                'type' => 'POST',
+                'headers' => $headers,
+            ];
+        }
+
+        // Register hook to alter curl opts on each handle.
+        $hooks = new \Requests_Hooks();
+        $hooks->register('curl.before_multi_add', function(&$data) {
+            quant_attach_file($data);
+        });
+
+        $options = [
+          'hooks' => $hooks,
+        ];
+
+        $requests = \Requests::request_multiple($requests, $options);
+    }
+
 
     /**
      * Send category markup to Quant.
