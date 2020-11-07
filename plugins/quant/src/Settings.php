@@ -104,7 +104,7 @@ class Settings
 
         add_settings_field('seed_custom_routes', 'Custom routes', ['Quant\Field', 'textarea'], $seedKey, 'seed', [
             'name' => "{$seedKey}[custom_routes]",
-            'description' => 'Enter custom routes (e.g /path/to/route)',
+            'description' => 'Enter custom content or file routes (e.g /path/to/content or /path/to/file.css)',
             'value' => $seedOptions['custom_routes'] ?? '/robots.txt',
         ]);
 

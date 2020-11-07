@@ -53,9 +53,13 @@ function quant_wp_batch_processing_init() {
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantPostBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
+    $batch = new QuantCustomPostTypesBatch();
+    Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantCategoryBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantTagBatch();
+    Quant_WP_Batch_Processor::get_instance()->register( $batch );
+    $batch = new QuantCustomTaxonomiesBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantHomeBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
@@ -72,7 +76,7 @@ function quant_wp_batch_processing_init() {
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
 
 }
-add_action( 'quant_wp_batch_processing_init', 'quant_wp_batch_processing_init', 15, 1 );
+add_action( 'quant_wp_batch_processing_init', 'quant_wp_batch_processing_init', 99, 1 );
 
 /**
  * Roundabout way of adding a post field.

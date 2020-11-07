@@ -202,7 +202,8 @@ class Client
             $permalink .= "page/$page/";
         }
 
-        $markup = $this->markupFromRoute($permalink);
+        $data = $this->markupFromRoute($permalink);
+        $markup = $data['content'];
 
         // Markup is blank on 404.
         if (empty($markup)) {
@@ -232,7 +233,9 @@ class Client
      */
     public function sendRoute($route) {
 
-        $markup = $this->markupFromRoute($route);
+        $data = $this->markupFromRoute($route);
+        $markup = $data['content'];
+        $content_type = $data['content_type'];
 
         // Markup is blank on 404.
         if (empty($markup)) {
@@ -244,6 +247,9 @@ class Client
             'url' => $route,
             'content' => $markup,
             'published' =>  true,
+            'headers' => [
+                'content-type' => $content_type,
+            ]
         ];
 
         $res = json_decode($this->content($payload), TRUE);
@@ -261,7 +267,8 @@ class Client
      */
     public function send404Route($route) {
 
-        $markup = $this->markupFromRoute($route, true);
+        $data = $this->markupFromRoute($route, true);
+        $markup = $data['content'];
 
         $payload = [
             'url' => "/_quant404",
@@ -284,7 +291,8 @@ class Client
      */
     public function sendPost($id) {
         $permalink = wp_make_link_relative(get_permalink($id));
-        $markup = $this->markupFromRoute($permalink);
+        $data = $this->markupFromRoute($permalink);
+        $markup = $data['content'];
 
         // Markup is blank on 404.
         if (empty($markup)) {
@@ -349,6 +357,7 @@ class Client
 
         $response = wp_remote_get($endpoint, $args);
         $status = wp_remote_retrieve_response_code($response);
+        $headers = wp_remote_retrieve_headers($response);
 
         if ($status == 404 && !$allow404) {
             return FALSE;
@@ -356,8 +365,12 @@ class Client
 
         $body = wp_remote_retrieve_body($response);
         $body = $this->absoluteToRelative($body);
+        $content_type = $headers['content-type'];
 
-        return $body;
+        return [
+            'content' => $body,
+            'content_type' => $content_type,
+        ];
     }
 
     /**

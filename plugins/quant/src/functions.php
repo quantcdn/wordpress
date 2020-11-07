@@ -12,6 +12,30 @@ if (!empty($_SERVER['HTTP_QUANT_TOKEN'])) {
 
 }
 
+function quant_get_all_taxonomies() {
+    $all = [];
+
+    $taxonomies = get_taxonomies();
+    foreach ($taxonomies as $taxonomy) {
+        $all[] = $taxonomy;
+    }
+
+    return $all;
+}
+
+function quant_get_all_types() {
+
+    $all = [];
+
+    $types = get_post_types();
+    foreach ($types as $type) {
+        $all[] = $type;
+    }
+
+    return $all;
+
+}
+
 if (!function_exists('quant_get_options')) {
     /**
      * Return the plugin settings/options
@@ -47,15 +71,24 @@ if (!function_exists('quant_save_post')) {
      */
     function quant_save_post($id)
     {
-        // @todo: Support draft posts
-        if (get_post_status($id) !== 'publish' || !quant_is_enabled()) {
+        if (!quant_is_enabled()) {
+            return;
+        }
+
+        // @todo: Support draft/scheduled posts
+        if (get_post_status($id) !== 'publish') {
+            quant_unpublish_post($id);
             return;
         }
 
         $client = new Client();
         $client->sendPost($id);
     }
-    add_action('save_post', 'quant_save_post');
+
+    $types = quant_get_all_types();
+    foreach ($types as $type) {
+        add_action("save_${type}", 'quant_save_post');
+    }
 }
 
 if (!function_exists('quant_unpublish_post')) {
@@ -82,6 +115,10 @@ if (!function_exists('quant_unpublish_post')) {
 }
 
 
+/**
+ * Generate save/update/delete hooks for all taxonomies.
+ */
+
 if (!function_exists('quant_save_category')) {
     /**
      * Save updated category content to quant.
@@ -94,8 +131,14 @@ if (!function_exists('quant_save_category')) {
         $client = new Client();
         $client->sendCategory($id);
     }
-    add_action('edit_category', 'quant_save_category');
-    add_action('create_category', 'quant_save_category');
+
+    // Get all available taxonomies.
+    $taxonomies = quant_get_all_taxonomies();
+
+    foreach ($taxonomies as $taxonomy) {
+        add_action("edit_${taxonomy}", 'quant_save_category');
+        add_action("create_${taxonomy}", 'quant_save_category');
+    }
 }
 
 if (!function_exists('quant_delete_category')) {

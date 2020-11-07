@@ -45,7 +45,7 @@ class Quant_WP_Batch_Processor_Admin {
 	 */
 	public function setup() {
 		if ( $this->is_batch_runner_screen() || $this->is_batch_runner_ajax() ) {
-			do_action( 'quant_wp_batch_processing_init' );
+			add_action ( 'init', 'quant_wp_batch_processing_init' );
 		}
 	}
 
