@@ -3,9 +3,9 @@ Contributors: stooit
 Donate link: https://www.quantcdn.io/
 Tags: static, jamstack, cdn, quant
 Requires at least: 4.6
-Tested up to: 5.5.1
+Tested up to: 5.5.3
 Requires PHP: 7.2
-Stable tag: 1.0.2
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -46,6 +46,11 @@ Visit the "Projects" section in the QuantCDN dashboard to view project tokens.
 == Screenshots ==
 
 == Changelog ==
+
+= 1.1.0 =
+* New feature: Support for custom post types and taxonomies.
+* New feature: Support custom binary routes.
+* Bugfix: Ensure content is unpublished in Quant when state changes.
 
 = 1.0.2 =
 * Performance improvement with added concurrency.
