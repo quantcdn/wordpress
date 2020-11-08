@@ -35,6 +35,15 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 			$routes = explode("\n", $seedOptions['custom_routes']);
 
 			foreach ($routes as $i => $route) {
+
+				// Check for file on disk, disallow paths outside root.
+				$file = ABSPATH . strtok($route, '?');
+				if (file_exists($file) && is_file($file) && strpos($file, '..') === false) {
+					$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route, 'is_file' => true ) ) );
+					continue;
+				}
+
+				// Assume content route.
 				$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route ) ) );
 			}
 
@@ -60,6 +69,13 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		public function process( $item ) {
 			$route = $item->get_value( 'route' );
 			$is_404 = $item->get_value( 'is_404' );
+			$is_file = $item->get_value( 'is_file' );
+
+			if ($is_file) {
+				$file = ABSPATH . strtok($route, '?');
+				$this->client->file($route, $file);
+				return true;
+			}
 
 			if ($is_404) {
 				$this->client->send404Route($route);
