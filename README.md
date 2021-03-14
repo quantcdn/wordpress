@@ -4,7 +4,7 @@ This module provides integration with the [QuantCDN static edge](https://www.qua
 
 It allows one-time compilation and push of an entire Wordpress site, as well as tracking and pushes of ongoing content change.
 
-Development, issues and feature roadmap occurs in the [Github repository](https://github.com/quantcdn/drupal).
+Development, issues and feature roadmap occurs in the [Github repository](https://github.com/quantcdn/wordpress).
 
 ## Installation and usage
 
