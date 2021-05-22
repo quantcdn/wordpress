@@ -1,20 +1,19 @@
 === QuantCDN ===
 Contributors: stooit
 Donate link: https://www.quantcdn.io/
-Tags: static, jamstack, cdn, quant
+Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
-Tested up to: 5.5.3
+Tested up to: 5.7.2
 Requires PHP: 7.2
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-QuantCDN static edge integration. Push a static export of your Wordpress site.
+QuantCDN static site generator and edge integration. Push a static export of your Wordpress site with ease.
 
 == Description ==
 
-QuantCDN is a CDN engineered specifically for the static web. With the QuantCDN plugin you can push a static copy of your entire Wordpress site with a single
-click. Any ongoing content change is automatically pushed, ensuring your static edge is always kept in sync.
+QuantCDN is a CDN engineered specifically for the static web. This plugin acts as a static site generator, letting you easily push a static copy of your entire Wordpress site with a single click. Any ongoing content change is automatically pushed, ensuring your static site in the QuantCDN edge is always kept in sync.
 
 Full support for:
 * Pages and Posts
@@ -24,6 +23,9 @@ Full support for:
 * Custom routes
 * Tags and Categories (including pagination)
 * Attached images & media, CSS, Javascript
+* Custom post and page types
+
+The QuantCDN platform has integrated support for both [forms](https://docs.quantcdn.io/docs/dashboard/forms) and [search](https://docs.quantcdn.io/docs/dashboard/search).
 
 Requires a [QuantCDN account](https://www.quantcdn.io)
 
@@ -41,11 +43,23 @@ Visit the [QuantCDN dashboard](https://dashboard.quantcdn.io/register) to regist
 
 = Where do I retrieve the project key from? =
 
-Visit the "Projects" section in the QuantCDN dashboard to view project tokens.
+Visit the "Integrations" section in the QuantCDN dashboard to retrieve token and other required details.
+
+= How do I use Forms? =
+
+Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) to configure forms via the Quant Dashboard. Form submission data can be received via email or Slack, as well as directly via the Quant Dashboard.
+
+**Note**: Contact Form 7 requires a small [configuration change](https://docs.quantcdn.io/docs/dashboard/forms#contact-form-7-support-wordpress).
 
 == Screenshots ==
 
 == Changelog ==
+
+= 1.2.0 =
+* New feature: Improved support for Elementor.
+* New feature: Support seeding entire media library.
+* New feature: Added improved validation to settings screen.
+* Bugfix: Resolved issue where content was not republished when restoring from trash.
 
 = 1.1.0 =
 * New feature: Support for custom post types and taxonomies.

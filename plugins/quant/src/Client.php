@@ -65,6 +65,7 @@ class Client
         $args = [
             'headers' => $this->headers,
             'body' => json_encode($data),
+            'timeout' => 30,
         ];
 
         $response = wp_remote_post($this->endpoint . '/redirect', $args);
@@ -85,6 +86,7 @@ class Client
         $args = [
             'headers' => $this->headers,
             'body' => json_encode($data),
+            'timeout' => 30,
         ];
 
         $response = wp_remote_post($this->endpoint, $args);
@@ -108,6 +110,7 @@ class Client
         $endpoint = $this->endpoint . '/file-upload?path=' . $path;
         $args = [
             'headers' => $headers,
+            'timeout' => 30,
         ];
 
         $response = wp_remote_post($endpoint, $args);
@@ -363,8 +366,12 @@ class Client
             return FALSE;
         }
 
+        if ($status != 200 && $status != 404) {
+            return FALSE;
+        }
+
         $body = wp_remote_retrieve_body($response);
-        $body = $this->absoluteToRelative($body);
+        $body = $this->absoluteToRelative($body, $this->host);
         $content_type = $headers['content-type'];
 
         return [
@@ -375,9 +382,14 @@ class Client
 
     /**
      * Attempt to replace absolute paths with relative ones.
-     * @todo; A more wordpressy way of doing this?
+     * @todo; A more wordpressy way of generating relative markup?
      */
-    public function absoluteToRelative($markup) {
+    public function absoluteToRelative($markup, $host) {
+
+        $port = $_SERVER['SERVER_PORT'];
+        $markup = preg_replace("/http(s?)\:\/\/{$host}\:{$port}/i", '', $markup);
+        $markup = preg_replace("/http(s?)\:\/\/{$host}/i", '', $markup);
+
         return str_replace(get_site_url(), '', $markup);
     }
 

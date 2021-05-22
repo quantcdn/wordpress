@@ -46,7 +46,6 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 				]);
 
 				foreach ( $posts as $post ) {
-					//echo $post->post_title . PHP_EOL;
 					$this->push( new Quant_WP_Batch_Item( $post->ID, array( 'post_id' => $post->ID ) ) );
 				}
 

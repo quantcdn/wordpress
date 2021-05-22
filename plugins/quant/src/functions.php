@@ -71,6 +71,7 @@ if (!function_exists('quant_save_post')) {
      */
     function quant_save_post($id)
     {
+
         if (!quant_is_enabled()) {
             return;
         }
@@ -111,7 +112,7 @@ if (!function_exists('quant_unpublish_post')) {
         $client->unpublish($permalink);
 
     }
-    add_action('trashed_post', 'quant_unpublish_post');
+    add_action('wp_trash_post', 'quant_unpublish_post');
 }
 
 

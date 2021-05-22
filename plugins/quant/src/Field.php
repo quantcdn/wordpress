@@ -32,6 +32,21 @@ class Field
         </div><?php
     }
 
+
+    /**
+     * Render a password input field
+     *
+     * @param array $args
+     * @return void
+     */
+    public static function password($args = [])
+    {
+        ?><div>
+            <input type="password" class="regular-text" name="<?= esc_attr($args['name']); ?>" placeholder="<?= esc_attr($args['placeholder']) ?>" value="<?= esc_attr($args['value']) ?>" >
+            <?= !empty($args['description']) ? "<p class=\"description\">{$args['description']}</p>" : ''; ?>
+        </div><?php
+    }
+
     /**
      * Render a textarea input field
      *

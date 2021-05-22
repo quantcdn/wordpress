@@ -30,6 +30,7 @@ $percentage = $batch->get_percentage();
 		<?php if(!$batch->is_finished()): ?>
 			<button class="button-primary" id="batch-process-start">Start</button>
 			<button class="button" id="batch-process-stop">Stop</button>
+			<button class="button" id="batch-process-restart">Restart</button>
 		<?php else: ?>
 			<button class="button-primary" id="batch-process-restart">Restart</button>
 		<?php endif; ?>

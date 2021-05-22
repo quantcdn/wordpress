@@ -78,7 +78,7 @@ class Settings
             'value' => $options['api_project'] ?? '',
         ]);
 
-        add_settings_field('quant_api_password', 'API Token', ['Quant\Field', 'text'], $key, 'api', [
+        add_settings_field('quant_api_password', 'API Token', ['Quant\Field', 'password'], $key, 'api', [
             'name' => "{$key}[api_token]",
             'value' => $options['api_token'] ?? '',
         ]);

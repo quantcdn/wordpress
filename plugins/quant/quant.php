@@ -74,6 +74,8 @@ function quant_wp_batch_processing_init() {
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantArchivesBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
+    $batch = new QuantMediaAssetsBatch();
+    Quant_WP_Batch_Processor::get_instance()->register( $batch );
 
 }
 add_action( 'quant_wp_batch_processing_init', 'quant_wp_batch_processing_init', 99, 1 );
@@ -120,3 +122,17 @@ function quant_attach_file($handle) {
     curl_setopt($handle, CURLOPT_POSTFIELDS, $data);
 }
 add_action('http_api_curl', 'quant_attach_file');
+
+
+add_filter( 'template_include', 'quant_include_validation_template', 99 );
+function quant_include_validation_template( $template ) {
+
+    global $wp;
+
+    if ( strpos( $wp->request, "__quant-validate" ) !== false ) {
+        $page_template = QUANT_TEMPLATE_DIR . '/quant-validate.php';
+        return $page_template;
+    }
+
+	return $template;
+}

@@ -47,9 +47,11 @@ final class App
      */
     protected function constants()
     {
-        define('QUANT_SETTINGS_KEY', 'wp_quant_settings');
-        define('QUANT_CRON_SETTINGS_KEY', 'wp_quant_cron_settings');
-        define('QUANT_SEED_KEY', 'wp_quant_seed');
+        define( 'QUANT_SETTINGS_KEY', 'wp_quant_settings' );
+        define( 'QUANT_CRON_SETTINGS_KEY', 'wp_quant_cron_settings' );
+        define( 'QUANT_SEED_KEY', 'wp_quant_seed' );
+        define( 'QUANT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
+        define( 'QUANT_TEMPLATE_DIR', QUANT_PLUGIN_DIR . '/../templates/' );
     }
 
     /**
