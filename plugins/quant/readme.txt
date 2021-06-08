@@ -5,7 +5,7 @@ Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
 Tested up to: 5.7.2
 Requires PHP: 7.2
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,10 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 == Screenshots ==
 
 == Changelog ==
+
+= 1.2.1 =
+* New feature: Additional support for relative asset rewriting.
+* Simplified settings screen.
 
 = 1.2.0 =
 * New feature: Improved support for Elementor.

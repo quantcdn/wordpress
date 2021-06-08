@@ -5,7 +5,7 @@
  * Description: QuantCDN static edge integration
  * Author: Stuart Rowlands
  * Plugin URI: https://www.quantcdn.io
- * Version: 1.1.0
+ * Version: 1.2.1
  * License: GPL-2.0+
  * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
  */
@@ -63,13 +63,8 @@ function quant_wp_batch_processing_init() {
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantHomeBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
-
-    $seedOptions = get_option(QUANT_SEED_KEY);
-    if ($seedOptions['theme_assets']) {
-        $batch = new QuantThemeAssetsBatch();
-        Quant_WP_Batch_Processor::get_instance()->register( $batch );
-    }
-
+    $batch = new QuantThemeAssetsBatch();
+    Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantCustomRoutesBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantArchivesBatch();

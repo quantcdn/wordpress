@@ -8,6 +8,7 @@ class Client
 {
 
     private $settings;
+    private $seedOptions;
     private $headers = [];
     private $endpoint;
     private $webserver;
@@ -15,6 +16,7 @@ class Client
 
     public function __construct() {
         $this->settings = get_option(QUANT_SETTINGS_KEY);
+        $this->seedOptions = get_option(QUANT_SEED_KEY);
         $this->webserver = $this->settings['webserver_url'];
         $this->host = $this->settings['webserver_host'];
         $this->endpoint = $this->settings['api_endpoint'] . '/v1';
@@ -389,6 +391,14 @@ class Client
         $port = $_SERVER['SERVER_PORT'];
         $markup = preg_replace("/http(s?)\:\/\/{$host}\:{$port}/i", '', $markup);
         $markup = preg_replace("/http(s?)\:\/\/{$host}/i", '', $markup);
+
+        // Allow additional domain rewrites for relative paths.
+        $stripDomains = explode("\n", $this->seedOptions['domains_strip']);
+        foreach ($stripDomains as $domain) {
+            $d = trim($domain);
+            $markup = preg_replace("/http(s?)\:\/\/{$d}\:{$port}/i", '', $markup);
+            $markup = preg_replace("/http(s?)\:\/\/{$d}/i", '', $markup);
+        }
 
         return str_replace(get_site_url(), '', $markup);
     }
