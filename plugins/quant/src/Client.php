@@ -396,9 +396,16 @@ class Client
         $stripDomains = explode("\n", $this->seedOptions['domains_strip']);
         foreach ($stripDomains as $domain) {
             $d = trim($domain);
-            $markup = preg_replace("/http(s?)\:\/\/{$d}\:{$port}/i", '', $markup);
-            $markup = preg_replace("/http(s?)\:\/\/{$d}/i", '', $markup);
+
+            if (!empty($d)) {
+                $markup = preg_replace("/http(s?)\:\/\/{$d}\:{$port}/i", '', $markup);
+                $markup = preg_replace("/http(s?)\:\/\/{$d}/i", '', $markup);
+            }
         }
+
+        // Quant enforces SSL.
+        // The above catches expected local assets, this ensures external references are updated.
+        $markup = preg_replace("/http\:\/\//i", 'https://', $markup);
 
         return str_replace(get_site_url(), '', $markup);
     }

@@ -58,6 +58,14 @@ class SettingsScreen
                 </div><?php
             }
 
+            $structure = get_option( 'permalink_structure' );
+            if (empty($structure)) {
+                ?><div class="notice notice-warning">
+                    <p>Quant currently requires permalinks set to something other than "Plain".</p>
+                </div><?php
+                return;
+            }
+
             $validateMarkup = $client->markupFromRoute('/__quant-validate');
             if (strpos('qsuccess', $validateMarkup['content']) === false) {
                 ?><div class="notice notice-warning">

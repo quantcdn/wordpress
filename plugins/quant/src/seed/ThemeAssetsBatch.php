@@ -1,5 +1,7 @@
 <?php
 
+include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
+
 use Quant\Client;
 
 if ( class_exists( 'Quant_WP_Batch' ) ) {
@@ -18,7 +20,40 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'All theme assets (css/js/images)';
+		public $title = 'All theme assets (css/js/images/fonts)';
+
+		/**
+		 * The regex for asset matching.
+		 */
+		public $assetRegex = '/^.+(.jpe?g|.png|.svg|.ttf|.woff|.woff2|.otf|.ico|.css|.js)$/i';
+
+		/**
+		 * The iteration count.
+		 */
+		private $count = 1;
+
+		/**
+		 * Process a folder.
+		 *
+		 * @param $path
+		 *   Absolute path on disk to a folder to iterate
+		 */
+		private function processDirectory($path) {
+			$directoryIterator = new \RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::SKIP_DOTS);
+			$iterator = new \RecursiveIteratorIterator($directoryIterator);
+			$regex = new \RegexIterator($iterator, $this->assetRegex, \RecursiveRegexIterator::GET_MATCH);
+
+			foreach ($regex as $name => $r) {
+				// Skip node_modules.
+				if (preg_match('/node_modules/i', $name)) {
+					continue;
+				}
+
+				$route = str_replace(ABSPATH, '/', $name);
+				$this->push( new Quant_WP_Batch_Item( $this->count, array( 'route' => $route, 'file' => $name ) ) );
+				$this->count++;
+			}
+		}
 
 		/**
 		 * To setup the batch data use the push() method to add Quant_WP_Batch_Item instances to the queue.
@@ -32,15 +67,13 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 			$this->client = new Client();
 
 			$path = get_stylesheet_directory();
-			$directoryIterator = new \RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::SKIP_DOTS);
-			$iterator = new \RecursiveIteratorIterator($directoryIterator);
-			$regex = new \RegexIterator($iterator, '/^.+(.jpe?g|.png|.svg|.ttf|.woff|.woff2|.otf|.ico|.css|.js)$/i', \RecursiveRegexIterator::GET_MATCH);
+			$this->processDirectory($path);
 
-			$i = 1;
-			foreach ($regex as $name => $r) {
-				$route = str_replace(ABSPATH, '/', $name);
-				$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route, 'file' => $name ) ) );
-				$i++;
+			// Include static elementor assets if present.
+			$elementor = WP_PLUGIN_DIR . '/elementor';
+
+			if ( is_dir( $elementor ) && is_plugin_active('elementor/elementor.php') ) {
+				$this->processDirectory($elementor);
 			}
 
 		}
