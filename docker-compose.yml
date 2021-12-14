@@ -2,7 +2,7 @@ version: '3.3'
 
 services:
   db:
-    image: mysql:5.7
+    image: mysql/mysql-server:latest
     volumes:
       - db_data:/var/lib/mysql
     restart: always
@@ -23,7 +23,13 @@ services:
       - ./plugins/quant:/var/www/html/wp-content/plugins/quant
       - ./uploads:/var/www/html/wp-content/uploads
       - ./config/wp-config.php:/var/www/html/wp-config.php
+    networks:
+      - quant-network
+      - default
 
 volumes:
   db_data: {}
 
+networks:
+  quant-network:
+    external: true
