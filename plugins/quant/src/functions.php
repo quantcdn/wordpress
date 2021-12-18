@@ -2,6 +2,10 @@
 
 use Quant\Client;
 
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    require_once(__DIR__.'/../quant-cli.php');
+}
+
 if (!empty($_SERVER['HTTP_QUANT_TOKEN'])) {
 
     $token = get_option('quant_internal_token');

@@ -25,7 +25,7 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		/**
 		 * The regex for asset matching.
 		 */
-		public $assetRegex = '/^.+(.jpe?g|.png|.svg|.ttf|.woff|.woff2|.otf|.ico|.css|.js)$/i';
+		public $assetRegex = '/^.+(\.jpe?g|\.png|\.svg|\.ttf|\.woff|\.woff2|\.otf|\.ico|\.css|\.js)$/i';
 
 		/**
 		 * The iteration count.

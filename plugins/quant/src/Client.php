@@ -85,6 +85,11 @@ class Client
      */
     public function content($data) {
 
+        // Strip trailing slashes from content routes (except home).
+        if ( strlen( $data['url'] ) > 1 ) {
+            $data['url'] = rtrim($data['url'], '/');
+        }
+
         $args = [
             'headers' => $this->headers,
             'body' => json_encode($data),
@@ -108,6 +113,8 @@ class Client
         $headers = $this->headers;
         $headers['Content-type']  = 'application/binary';
         $headers['Quant-File-Url'] = $route;
+
+        error_log($route);
 
         $endpoint = $this->endpoint . '/file-upload?path=' . $path;
         $args = [
