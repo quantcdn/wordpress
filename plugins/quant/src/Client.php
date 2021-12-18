@@ -114,8 +114,6 @@ class Client
         $headers['Content-type']  = 'application/binary';
         $headers['Quant-File-Url'] = $route;
 
-        error_log($route);
-
         $endpoint = $this->endpoint . '/file-upload?path=' . $path;
         $args = [
             'headers' => $headers,
