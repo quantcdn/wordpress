@@ -5,7 +5,7 @@ Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
 Tested up to: 5.8.2
 Requires PHP: 7.2
-Stable tag: 1.2.3
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,12 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 == Screenshots ==
 
 == Changelog ==
+
+= 1.3.0 =
+Adds wp-cli support for vastly improved seeding of sites (with controllable concurrency).
+* Use `wp quant info` to view queue status
+* Use `wp quant reset_queue <queue_name>` to reset a queue
+* Use `wp quant process_queue <queue_name|all> --threads=10` to process one queue (or all) with concurrent threads
 
 = 1.2.3 =
 * Improved theme asset regex.

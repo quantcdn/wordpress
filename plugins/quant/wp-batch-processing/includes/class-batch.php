@@ -112,7 +112,9 @@ abstract class Quant_WP_Batch {
 	public function get_next_item() {
 		$processed = $this->get_processed_items();
 		foreach ( $this->items as $item ) {
-			if ( ! in_array( $item->id, $processed ) ) {
+			$claimed = $this->is_claimed( $item->id );
+
+			if ( ! in_array( $item->id, $processed ) && !$claimed ) {
 				return $item;
 			}
 		}
@@ -144,7 +146,19 @@ abstract class Quant_WP_Batch {
 	 * @return bool
 	 */
 	public function is_processed( $item ) {
-		return in_array( $item->id, $this->get_processed_items() );
+		return get_option( $this->get_db_identifier( $item->id ), FALSE );
+	}
+
+
+	/**
+	 * Returns TRUE if item is already claimed
+	 *
+	 * $param $id
+	 *
+	 * @return bool
+	 */
+	public function is_claimed( $id ) {
+		return get_option( $this->get_claimed_db_identifier($id), FALSE );
 	}
 
 	/**
@@ -152,10 +166,18 @@ abstract class Quant_WP_Batch {
 	 * @return array
 	 */
 	public function get_processed_items() {
-		$processed = get_option( $this->get_db_identifier(), array() );
 
-		return $processed;
+		$items = [];
+
+		foreach ($this->items as $item) {
+			if ($this->is_processed ( $item ) ) {
+				$items[] = $item->id;
+			}
+		}
+
+		return $items;
 	}
+
 
 	/**
 	 * Returns the count of the processed items
@@ -174,7 +196,16 @@ abstract class Quant_WP_Batch {
 		$processed = $this->get_processed_items();
 		array_push( $processed, $id );
 		$processed = array_unique( $processed );
-		update_option( $this->get_db_identifier(), $processed );
+		update_option( $this->get_db_identifier( $id ), $processed );
+	}
+
+	/**
+	 * Mark specific id as claimed.
+	 *
+	 * @param int $id
+	 */
+	public function mark_as_claimed( $id ) {
+		update_option( $this->get_claimed_db_identifier( $id ), TRUE );
 	}
 
 	/**
@@ -201,15 +232,36 @@ abstract class Quant_WP_Batch {
 	 * Returns the batch wp_options option_name identifier.
 	 * @return string
 	 */
-	public function get_db_identifier() {
-		return 'batch_' . $this->id . '_processed';
+	public function get_db_identifier( $id ) {
+		return 'batch_' . $this->id . '_' . $id . '_processed';
+	}
+
+	/**
+	 * Returns the batch wp_options option_name identifier.
+	 * @return string
+	 */
+	public function get_claimed_db_identifier( $item_id ) {
+		return 'batch_' . $this->id . '_' . $item_id . '_claimed';
+	}
+
+	/**
+	 * Resets claims but leaves processed state
+	 */
+	public function restart_claims() {
+		foreach ($this->items as $item) {
+			delete_option( $this->get_claimed_db_identifier( $item->id ) );
+		}
 	}
 
 	/**
 	 * Restarts the processed items store
 	 */
 	public function restart() {
-		delete_option( $this->get_db_identifier() );
+		// Remove all claims and processed items.
+		foreach ($this->items as $item) {
+			delete_option( $this->get_db_identifier( $item->id ) );
+			delete_option( $this->get_claimed_db_identifier( $item->id ) );
+		}
 	}
 
 }
