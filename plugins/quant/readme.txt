@@ -56,7 +56,7 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 == Changelog ==
 
 = 1.3.0 =
-Adds wp-cli support for vastly improved seeding of sites (with controllable concurrency).
+* Adds wp-cli support for vastly improved seeding of sites (with controllable concurrency).
 * Use `wp quant info` to view queue status
 * Use `wp quant reset_queue <queue_name>` to reset a queue
 * Use `wp quant process_queue <queue_name|all> --threads=10` to process one queue (or all) with concurrent threads
