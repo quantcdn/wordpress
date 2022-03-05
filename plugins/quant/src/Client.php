@@ -13,6 +13,7 @@ class Client
     private $endpoint;
     private $webserver;
     private $host;
+    private $disableTlsVerify = FALSE;
 
     public function __construct() {
         $this->settings = get_option(QUANT_SETTINGS_KEY);
@@ -24,6 +25,7 @@ class Client
         $this->headers['quant-project'] = $this->settings['api_project'];
         $this->headers['quant-customer'] = $this->settings['api_account'];
         $this->headers['quant-token'] = $this->settings['api_token'];
+        $this->disableTlsVerify = $this->settings['disable_tls_verify'];
     }
 
     public function ping() {
@@ -32,6 +34,11 @@ class Client
         $args = [
             'headers' => $this->headers,
         ];
+
+        if ($this->disableTlsVerify) {
+          $args['sslverify'] = FALSE;
+        }
+
         $response = wp_remote_get($endpoint, $args);
 
         if (!is_array($response) || $response['response']['code'] != 200) {
@@ -51,6 +58,10 @@ class Client
             'method' => 'PATCH'
         ];
 
+        if ($this->disableTlsVerify) {
+          $args['sslverify'] = FALSE;
+        }
+
         $response = wp_remote_request($endpoint, $args);
         $body = wp_remote_retrieve_body($response);
     }
@@ -69,6 +80,10 @@ class Client
             'body' => json_encode($data),
             'timeout' => 30,
         ];
+
+        if ($this->disableTlsVerify) {
+          $args['sslverify'] = FALSE;
+        }
 
         $response = wp_remote_post($this->endpoint . '/redirect', $args);
         $body = wp_remote_retrieve_body($response);
@@ -96,6 +111,10 @@ class Client
             'timeout' => 30,
         ];
 
+        if ($this->disableTlsVerify) {
+          $args['sslverify'] = FALSE;
+        }
+
         $response = wp_remote_post($this->endpoint, $args);
         $body = wp_remote_retrieve_body($response);
 
@@ -119,6 +138,10 @@ class Client
             'headers' => $headers,
             'timeout' => 30,
         ];
+
+        if ($this->disableTlsVerify) {
+          $args['sslverify'] = FALSE;
+        }
 
         $response = wp_remote_post($endpoint, $args);
         $body = wp_remote_retrieve_body($response);
@@ -182,6 +205,7 @@ class Client
                 'url' => $this->endpoint . '/file-upload?path=' . $path,
                 'type' => 'POST',
                 'headers' => $headers,
+                'sslverify' => $this->disableTlsVerify ? FALSE : TRUE,
             ];
         }
 
@@ -362,8 +386,12 @@ class Client
             'headers' => [
                 'Host' => $this->host,
                 'Quant-Token' => $token,
-            ]
+            ],
         ];
+
+        if ($this->disableTlsVerify) {
+          $args['sslverify'] = FALSE;
+        }
 
         $response = wp_remote_get($endpoint, $args);
         $status = wp_remote_retrieve_response_code($response);

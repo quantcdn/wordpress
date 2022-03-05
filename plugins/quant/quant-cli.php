@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Implements example command.
+ * Manage and seed content via QuantCDN.
  */
 class Quant_CLI {
 

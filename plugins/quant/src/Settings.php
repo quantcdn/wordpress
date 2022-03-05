@@ -44,6 +44,12 @@ class Settings
             'value' => $options['enabled'] ?? 0,
         ]);
 
+        add_settings_field('quant_disable_tls_verify', 'Disable SSL verify', ['Quant\Field', 'checkbox'], $key, 'general', [
+            'name' => "{$key}[disable_tls_verify]",
+            'description' => 'Optionally disable TLS verification.',
+            'value' => $options['disable_tls_verify'] ?? 0,
+        ]);
+
         add_settings_field('quant_webserver_url', 'Webserver URL', ['Quant\Field', 'url'], $key, 'general', [
             'name' => "{$key}[webserver_url]",
             'placeholder' => 'http://localhost',
