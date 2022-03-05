@@ -55,6 +55,10 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 
 == Changelog ==
 
+= 1.3.1=
+* Adds option to disable SSL verification if required.
+* Tested up to Wordpress 5.9.1
+
 = 1.3.0 =
 * Adds wp-cli support for vastly improved seeding of sites (with controllable concurrency).
 * Use `wp quant info` to view queue status
