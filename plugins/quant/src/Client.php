@@ -14,6 +14,7 @@ class Client
     private $webserver;
     private $host;
     private $disableTlsVerify = FALSE;
+    private $httpRequestTimeout = 15;
 
     public function __construct() {
         $this->settings = get_option(QUANT_SETTINGS_KEY);
@@ -26,6 +27,7 @@ class Client
         $this->headers['quant-customer'] = $this->settings['api_account'];
         $this->headers['quant-token'] = $this->settings['api_token'];
         $this->disableTlsVerify = $this->settings['disable_tls_verify'];
+        $this->httpRequestTimeout = intval($this->settings['http_request_timeout']) ?? 15;
     }
 
     public function ping() {
@@ -33,6 +35,7 @@ class Client
         $endpoint = $this->endpoint . '/ping';
         $args = [
             'headers' => $this->headers,
+            'timeout' => $this->httpRequestTimeout,
         ];
 
         if ($this->disableTlsVerify) {
@@ -55,7 +58,8 @@ class Client
 
         $args = [
             'headers' => $headers,
-            'method' => 'PATCH'
+            'method' => 'PATCH',
+            'timeout' => $this->httpRequestTimeout,
         ];
 
         if ($this->disableTlsVerify) {
@@ -78,7 +82,7 @@ class Client
         $args = [
             'headers' => $this->headers,
             'body' => json_encode($data),
-            'timeout' => 30,
+            'timeout' => $this->httpRequestTimeout,
         ];
 
         if ($this->disableTlsVerify) {
@@ -108,7 +112,7 @@ class Client
         $args = [
             'headers' => $this->headers,
             'body' => json_encode($data),
-            'timeout' => 30,
+            'timeout' => $this->httpRequestTimeout,
         ];
 
         if ($this->disableTlsVerify) {
@@ -136,7 +140,7 @@ class Client
         $endpoint = $this->endpoint . '/file-upload?path=' . $path;
         $args = [
             'headers' => $headers,
-            'timeout' => 30,
+            'timeout' => $this->httpRequestTimeout,
         ];
 
         if ($this->disableTlsVerify) {
@@ -155,6 +159,12 @@ class Client
      * @param $media Array
      */
     public function sendAttachments($media) {
+
+        // Determine current site (multisite installs).
+        if (is_multisite()) {
+            $site = get_site();
+        }
+
         $attachments = [];
 
         foreach ($media as $item) {
@@ -166,7 +176,12 @@ class Client
             }
 
             // Strip query params.
-            $file = strtok($url, '?');
+            $file = $url = strtok($url, '?');
+
+            // Strip the site path from the front of the URL.
+            if (isset($site->path)) {
+              $file = preg_replace("#^{$site->path}#", '/', $file);
+            }
 
             if (isset($item['existing_md5'])) {
                 // Skip file: MD5 matches.
@@ -176,7 +191,10 @@ class Client
             }
 
             if (file_exists(ABSPATH . $file)) {
-                $attachments[] = $file;
+                $attachments[] = [
+                  'file' => $file,
+                  'url' => $url,
+                ];
             }
         }
 
@@ -198,14 +216,15 @@ class Client
         $requests = [];
 
         foreach ($files as $file) {
-            $headers['Quant-File-Url'] = $file;
-            $path = ABSPATH . $file;
+            $headers['Quant-File-Url'] = $file['url'];
+            $path = ABSPATH . $file['file'];
 
             $requests[] = [
                 'url' => $this->endpoint . '/file-upload?path=' . $path,
                 'type' => 'POST',
                 'headers' => $headers,
                 'sslverify' => $this->disableTlsVerify ? FALSE : TRUE,
+                'timeout' => $this->httpRequestTimeout,
             ];
         }
 
@@ -283,7 +302,7 @@ class Client
             'published' =>  true,
             'headers' => [
                 'content-type' => $content_type,
-            ]
+            ],
         ];
 
         $res = json_decode($this->content($payload), TRUE);
@@ -351,6 +370,7 @@ class Client
                     'content_type' => get_post_type($id),
                     'tags' => [],
                     'categories' => wp_get_post_categories($id, ['fields' => 'names']),
+                    'site_id' => get_current_blog_id(),
                 ]
             ]
         ];
@@ -387,6 +407,7 @@ class Client
                 'Host' => $this->host,
                 'Quant-Token' => $token,
             ],
+            'timeout' => $this->httpRequestTimeout,
         ];
 
         if ($this->disableTlsVerify) {

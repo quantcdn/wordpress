@@ -5,7 +5,7 @@ Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
 Tested up to: 5.9.1
 Requires PHP: 7.1
-Stable tag: 1.3.1
+Stable tag: 1.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -55,7 +55,12 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 
 == Changelog ==
 
-= 1.3.1=
+= 1.3.2 =
+* Improved multisite support: Quant Search (filter content by site)
+* Multisite bugfix: Resolved some media assets not seeding correctly
+* Added configurable HTTP timeout value
+
+= 1.3.1 =
 * Adds option to disable SSL verification if required.
 * Tested up to Wordpress 5.9.1
 

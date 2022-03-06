@@ -50,6 +50,12 @@ class Settings
             'value' => $options['disable_tls_verify'] ?? 0,
         ]);
 
+        add_settings_field('quant_http_request_timeout', 'HTTP request timeout', ['Quant\Field', 'text'], $key, 'general', [
+            'name' => "{$key}[http_request_timeout]",
+            'description' => 'Optionally increase the HTTP request timeout on slower servers.',
+            'value' => $options['http_request_timeout'] ?? 15,
+        ]);
+
         add_settings_field('quant_webserver_url', 'Webserver URL', ['Quant\Field', 'url'], $key, 'general', [
             'name' => "{$key}[webserver_url]",
             'placeholder' => 'http://localhost',
