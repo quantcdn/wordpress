@@ -54,6 +54,12 @@ class Client
     public function unpublish($route) {
         $endpoint = $this->endpoint . '/unpublish';
         $headers = $this->headers;
+
+        // Strip trailing slashes from content routes (except home).
+        if ( strlen( $route ) > 1 ) {
+            $route  = rtrim($route, '/');
+        }
+
         $headers['quant-url'] = $route;
 
         $args = [
@@ -251,6 +257,10 @@ class Client
 
         $permalink = wp_make_link_relative(get_term_link($id));
 
+        // Workaround wp-cli when using localhost.
+        // @todo: Look into why permalinks generated with http: at front.
+        $permalink = preg_replace('/^http:/', '', $permalink);
+
         if (!empty($page)) {
             $permalink .= "page/$page/";
         }
@@ -344,6 +354,11 @@ class Client
      */
     public function sendPost($id) {
         $permalink = wp_make_link_relative(get_permalink($id));
+
+        // Workaround wp-cli when using localhost.
+        // @todo: Look into why permalinks generated with http: at front.
+        $permalink = preg_replace('/^http:/', '', $permalink);
+
         $data = $this->markupFromRoute($permalink);
         $markup = $data['content'];
 

@@ -1,8 +1,15 @@
 <?php
 
-include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
-
 use Quant\Client;
+
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-bp-singleton.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-item.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-processor.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-ajax-handler.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-list-table.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-processor-admin.php');
+require_once( ABSPATH . 'wp-admin/includes/plugin.php' );
 
 if ( class_exists( 'Quant_WP_Batch' ) ) {
 	/**

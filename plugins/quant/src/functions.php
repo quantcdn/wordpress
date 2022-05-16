@@ -215,7 +215,7 @@ if (!function_exists('quant_cron_run')) {
 
 
         if (!empty($cronOptions['cron_custom_routes'])) {
-            require_once(__DIR__.'/Seed/CustomCronRoutesBatch.php');
+            require_once(__DIR__.'/seed/CustomCronRoutesBatch.php');
             $batch = new QuantCustomCronRoutesBatch();
             $batch->restart();
             while ($next_item = $batch->get_next_item()) {
@@ -226,7 +226,7 @@ if (!function_exists('quant_cron_run')) {
         }
 
         if ($cronOptions['cron_home']) {
-            require_once(__DIR__.'/Seed/HomeBatch.php');
+            require_once(__DIR__.'/seed/HomeBatch.php');
             $batch = new QuantHomeBatch();
             $batch->restart();
             while ($next_item = $batch->get_next_item()) {
@@ -237,7 +237,7 @@ if (!function_exists('quant_cron_run')) {
         }
 
         if ($cronOptions['cron_posts']) {
-            require_once(__DIR__.'/Seed/PostBatch.php');
+            require_once(__DIR__.'/seed/PostBatch.php');
             $batch = new QuantPostBatch();
             $batch->restart();
             while ($next_item = $batch->get_next_item()) {
@@ -248,7 +248,7 @@ if (!function_exists('quant_cron_run')) {
         }
 
         if ($cronOptions['cron_pages']) {
-            require_once(__DIR__.'/Seed/PageBatch.php');
+            require_once(__DIR__.'/seed/PageBatch.php');
             $batch = new QuantPageBatch();
             $batch->restart();
             while ($next_item = $batch->get_next_item()) {
@@ -259,7 +259,7 @@ if (!function_exists('quant_cron_run')) {
         }
 
         if ($cronOptions['cron_categories']) {
-            require_once(__DIR__.'/Seed/CategoryBatch.php');
+            require_once(__DIR__.'/seed/CategoryBatch.php');
             $batch = new QuantCategoryBatch();
             $batch->restart();
             while ($next_item = $batch->get_next_item()) {
@@ -270,7 +270,7 @@ if (!function_exists('quant_cron_run')) {
         }
 
         if ($cronOptions['cron_tags']) {
-            require_once(__DIR__.'/Seed/TagBatch.php');
+            require_once(__DIR__.'/seed/TagBatch.php');
             $batch = new QuantTagBatch();
             $batch->restart();
             while ($next_item = $batch->get_next_item()) {

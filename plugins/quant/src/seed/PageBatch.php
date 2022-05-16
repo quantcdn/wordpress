@@ -2,6 +2,14 @@
 
 use Quant\Client;
 
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-bp-singleton.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-item.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-processor.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-ajax-handler.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-list-table.php');
+require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-processor-admin.php');
+
 if ( class_exists( 'Quant_WP_Batch' ) ) {
 	/**
 	 * Class QuantPageBatch
@@ -33,10 +41,9 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 
 			foreach ( $posts as $post ) {
 				$this->push( new Quant_WP_Batch_Item( $post->ID, array( 'post_id' => $post->ID ) ) );
-            }
+			}
 
-            $this->client = new Client();
-
+			$this->client = new Client();
 
 		}
 

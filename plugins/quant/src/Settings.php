@@ -80,7 +80,7 @@ class Settings
             'value' => $options['api_endpoint'] ?? 'https://api.quantcdn.io',
         ]);
 
-        add_settings_field('quant_api_account', 'API Account', ['Quant\Field', 'text'], $key, 'api', [
+        add_settings_field('quant_api_account', 'API Customer', ['Quant\Field', 'text'], $key, 'api', [
             'name' => "{$key}[api_account]",
             'value' => $options['api_account'] ?? '',
         ]);

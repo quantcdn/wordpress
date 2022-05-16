@@ -9,60 +9,49 @@ class Quant_CLI {
     private $batchTypes = [
         'pages' => [
             'class' => 'QuantPageBatch',
-            'includePath' => __DIR__.'/src/Seed/PageBatch.php',
+            'includePath' => __DIR__.'/src/seed/PageBatch.php',
         ],
         'posts' => [
             'class' => 'QuantPostBatch',
-            'includePath' => __DIR__.'/src/Seed/PostBatch.php',
+            'includePath' => __DIR__.'/src/seed/PostBatch.php',
         ],
         'custom_posts' => [
             'class' => 'QuantCustomPostTypesBatch',
-            'includePath' => __DIR__.'/src/Seed/CustomPostTypes.php',
+            'includePath' => __DIR__.'/src/seed/CustomPostTypes.php',
         ],
         'categories' => [
             'class' => 'QuantCategoryBatch',
-            'includePath' => __DIR__.'/src/Seed/CategoryBatch.php',
+            'includePath' => __DIR__.'/src/seed/CategoryBatch.php',
         ],
         'tags' => [
             'class' => 'QuantTagBatch',
-            'includePath' => __DIR__.'/src/Seed/TagBatch.php',
+            'includePath' => __DIR__.'/src/seed/TagBatch.php',
         ],
         'custom_taxonomies' => [
             'class' => 'QuantCustomTaxonomiesBatch',
-            'includePath' => __DIR__.'/src/Seed/CustomTaxonomies.php',
+            'includePath' => __DIR__.'/src/seed/CustomTaxonomies.php',
         ],
         'home' => [
             'class' => 'QuantHomeBatch',
-            'includePath' => __DIR__.'/src/Seed/HomeBatch.php',
+            'includePath' => __DIR__.'/src/seed/HomeBatch.php',
         ],
         'theme_assets' => [
             'class' => 'QuantThemeAssetsBatch',
-            'includePath' => __DIR__.'/src/Seed/ThemeAssetsBatch.php',
+            'includePath' => __DIR__.'/src/seed/ThemeAssetsBatch.php',
         ],
         'custom_routes' => [
             'class' => 'QuantCustomRoutesBatch',
-            'includePath' => __DIR__.'/src/Seed/CustomRoutesBatch.php',
+            'includePath' => __DIR__.'/src/seed/CustomRoutesBatch.php',
         ],
         'archives' => [
             'class' => 'QuantArchivesBatch',
-            'includePath' => __DIR__.'/src/Seed/ArchivesBatch.php',
+            'includePath' => __DIR__.'/src/seed/ArchivesBatch.php',
         ],
         'media_assets' => [
             'class' => 'QuantMediaAssetsBatch',
-            'includePath' => __DIR__.'/src/Seed/MediaAssetsBatch.php',
+            'includePath' => __DIR__.'/src/seed/MediaAssetsBatch.php',
         ],
     ];
-
-    function __construct() {
-        require_once(__DIR__.'/wp-batch-processing/includes/class-bp-helper.php');
-        require_once(__DIR__.'/wp-batch-processing/includes/class-bp-singleton.php');
-        require_once(__DIR__.'/wp-batch-processing/includes/class-batch-item.php');
-        require_once(__DIR__.'/wp-batch-processing/includes/class-batch.php');
-        require_once(__DIR__.'/wp-batch-processing/includes/class-batch-processor.php');
-        require_once(__DIR__.'/wp-batch-processing/includes/class-batch-ajax-handler.php');
-        require_once(__DIR__.'/wp-batch-processing/includes/class-batch-list-table.php');
-        require_once(__DIR__.'/wp-batch-processing/includes/class-batch-processor-admin.php');
-    }
 
     /**
      * Shows Quant queue status.
@@ -159,6 +148,12 @@ class Quant_CLI {
             $batch->mark_as_processed( $next_item->id );
             WP_CLI::success( "Successfully processed item: " . $next_item->id );
             $processCount++;
+
+            // Ensure loop break if required.
+            if ($processCount > $batch->get_items_count()) {
+                break;
+            }
+
         }
         $batch->finish();
 
