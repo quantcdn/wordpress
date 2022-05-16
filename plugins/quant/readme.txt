@@ -3,9 +3,9 @@ Contributors: stooit
 Donate link: https://www.quantcdn.io/
 Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
-Tested up to: 5.9.1
+Tested up to: 5.9.3
 Requires PHP: 7.1
-Stable tag: 1.3.2
+Stable tag: 1.3.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,10 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 == Screenshots ==
 
 == Changelog ==
+
+= 1.3.3 =
+* Bugfix: wp-cli fixes on some platforms.
+* Bugfix: Issues with case sensitive filesystems.
 
 = 1.3.2 =
 * Improved multisite support: Quant Search (filter content by site)
