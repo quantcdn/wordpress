@@ -92,7 +92,7 @@ if (!function_exists('quant_save_post')) {
 
     $types = quant_get_all_types();
     foreach ($types as $type) {
-        add_action("save_${type}", 'quant_save_post');
+        add_action("save_${type}", 'quant_save_post', 1000);
     }
 }
 
@@ -116,7 +116,7 @@ if (!function_exists('quant_unpublish_post')) {
         $client->unpublish($permalink);
 
     }
-    add_action('wp_trash_post', 'quant_unpublish_post');
+    add_action('wp_trash_post', 'quant_unpublish_post', 1000);
 }
 
 
@@ -141,8 +141,8 @@ if (!function_exists('quant_save_category')) {
     $taxonomies = quant_get_all_taxonomies();
 
     foreach ($taxonomies as $taxonomy) {
-        add_action("edit_${taxonomy}", 'quant_save_category');
-        add_action("create_${taxonomy}", 'quant_save_category');
+        add_action("edit_${taxonomy}", 'quant_save_category', 1000);
+        add_action("create_${taxonomy}", 'quant_save_category', 1000);
     }
 }
 
@@ -158,7 +158,7 @@ if (!function_exists('quant_delete_category')) {
         // @todo: After category is deleted we cannot retrieve permalink.
         // Need a "before_delete_category" hook.
     }
-    add_action('delete_category', 'quant_delete_category');
+    add_action('delete_category', 'quant_delete_category', 1000);
 }
 
 if (!function_exists('quant_cron_setup')) {
