@@ -255,11 +255,7 @@ class Client
      */
     public function sendCategory($id, $page=null) {
 
-        $permalink = wp_make_link_relative(get_term_link($id));
-
-        // Workaround wp-cli when using localhost.
-        // @todo: Look into why permalinks generated with http: at front.
-        $permalink = preg_replace('/^http:/', '', $permalink);
+        $permalink = $this->permalinkToRelative(get_term_link($id));
 
         if (!empty($page)) {
             $permalink .= "page/$page/";
@@ -353,11 +349,8 @@ class Client
      * @param $id integer
      */
     public function sendPost($id) {
-        $permalink = wp_make_link_relative(get_permalink($id));
 
-        // Workaround wp-cli when using localhost.
-        // @todo: Look into why permalinks generated with http: at front.
-        $permalink = preg_replace('/^http:/', '', $permalink);
+        $permalink = $this->permalinkToRelative(get_permalink($id));
 
         $data = $this->markupFromRoute($permalink);
         $markup = $data['content'];
@@ -477,6 +470,18 @@ class Client
         $markup = preg_replace("/http\:\/\//i", 'https://', $markup);
 
         return str_replace(get_site_url(), '', $markup);
+    }
+
+    /**
+     * Ensure the permalink generated is a relative path.
+     */
+    private function permalinkToRelative($permalink) {
+        // Resolve rare error where protocol is repeated.
+        $permalink = preg_replace('/(http(s?)\:\/\/){2,3}/', 'http://', $permalink);
+
+        // wp_make_link_relative() does not work when using a non-standard port.
+        $permalink_parts = parse_url($permalink);
+        return $permalink_parts['path'];
     }
 
 }
