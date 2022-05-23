@@ -5,7 +5,7 @@ Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
 Tested up to: 5.9.3
 Requires PHP: 7.1
-Stable tag: 1.3.3
+Stable tag: 1.3.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,10 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 == Screenshots ==
 
 == Changelog ==
+
+= 1.3.4 =
+* Improved support when using third party plugins (e.g Muffin Builder)
+* Bugfix: Resolve relative path lookup when running on a non-standard port.
 
 = 1.3.3 =
 * Bugfix: wp-cli fixes on some platforms.
