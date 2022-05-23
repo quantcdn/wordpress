@@ -54,6 +54,7 @@ class Client
     public function unpublish($route) {
         $endpoint = $this->endpoint . '/unpublish';
         $headers = $this->headers;
+        $originalUrl = $route;
 
         // Strip trailing slashes from content routes (except home).
         if ( strlen( $route ) > 1 ) {
@@ -71,6 +72,9 @@ class Client
         if ($this->disableTlsVerify) {
           $args['sslverify'] = FALSE;
         }
+
+        // Ensure the URL is unpublished with trailing slash too.
+        $this->purge($originalUrl);
 
         $response = wp_remote_request($endpoint, $args);
         $body = wp_remote_retrieve_body($response);
@@ -110,6 +114,8 @@ class Client
      */
     public function content($data) {
 
+        $originalUrl = $data['url'];
+
         // Strip trailing slashes from content routes (except home).
         if ( strlen( $data['url'] ) > 1 ) {
             $data['url'] = rtrim($data['url'], '/');
@@ -126,6 +132,33 @@ class Client
         }
 
         $response = wp_remote_post($this->endpoint, $args);
+        $body = wp_remote_retrieve_body($response);
+
+        // Ensure the URL is unpublished with trailing slash too.
+        $this->purge($originalUrl);
+
+        return $body;
+    }
+
+    /**
+     * Purge the cache for a route in Quant.
+     *
+     * @param string $route
+     */
+    public function purge($route) {
+
+        $args = [
+            'headers' => $this->headers,
+            'timeout' => $this->httpRequestTimeout,
+        ];
+
+        $args['headers']['Quant-Url'] = $route;
+
+        if ($this->disableTlsVerify) {
+          $args['sslverify'] = FALSE;
+        }
+
+        $response = wp_remote_post($this->endpoint . '/purge', $args);
         $body = wp_remote_retrieve_body($response);
 
         return $body;
