@@ -105,6 +105,10 @@ function quant_attach_file($handle) {
         return;
     }
 
+    if (!file_exists($query['path'])) {
+        return;
+    }
+
     // Build the CURL options to stream the files.
     curl_setopt($handle, CURLOPT_URL, $api_endpoint);
 
