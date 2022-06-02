@@ -41,8 +41,10 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 
 			// Homepage may either be as simple as pushing the "/" route.
 			// *or* pagination list when using "latest posts"
+			$current_blog_id = get_current_blog_id();
+			$relative_home = get_home_url($current_blog_id, '', 'relative');
 
-			$this->push( new Quant_WP_Batch_Item( 0, array( 'route' => "/" ) ) );
+			$this->push( new Quant_WP_Batch_Item( 0, array( 'route' => $relative_home ) ) );
 
 			if ( get_option( 'show_on_front' ) == "page" ) {
 				return;
@@ -56,9 +58,13 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 			$pages = ceil(count($posts) / $ppp);
 
 			// Push paginated results within category.
+			if ( substr( $relative_home , -1 ) != '/' ) {
+				$relative_home .= '/';
+			}
+
 			for ($i = 1; $i <= $pages; $i++) {
 				$this->push( new Quant_WP_Batch_Item( $i, array(
-						'route' => "/page/$i/",
+						'route' => $relative_home . "page/$i/",
 					)
 				));
 			}
