@@ -3,9 +3,9 @@ Contributors: stooit
 Donate link: https://www.quantcdn.io/
 Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
-Tested up to: 5.9.3
+Tested up to: 6.0
 Requires PHP: 7.1
-Stable tag: 1.3.4
+Stable tag: 1.3.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,6 +35,16 @@ Requires a [QuantCDN account](https://www.quantcdn.io)
 2. Activate the plugin through the 'Plugins' screen
 3. Configure on the Settings > QuantCDN screen, as per https://docs.quantcdn.io/docs/integrations/wordpress
 
+== WP-CLI support ==
+
+WP-CLI is a command line tool to interface with Wordpress. It is the recommended way of initially seeding your Wordpress site in Quant, and provides vast performance improvements over using the UI.
+
+This is largely due to the ability to run the seed process with concurrency, which can immediately give a 10x performance boost (or greater) when compared to using the UI.
+
+* Use `wp quant info` to view queue status
+* Use `wp quant reset_queue <queue_name>` to reset a queue
+* Use `wp quant process_queue <queue_name|all> --threads=10` to push content to Quant
+
 == Frequently Asked Questions ==
 
 = Where do I register for an account? =
@@ -55,8 +65,13 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 
 == Changelog ==
 
+= 1.3.5 =
+* Tested on WordPress 6.0.
+* Bugfix: Resolve homepage lookup with multi-site blogs.
+* Bugfix: Resolve archives URLs in some setups.
+
 = 1.3.4 =
-* Improved support when using third party plugins (e.g Muffin Builder)
+* Improved support when using third party plugins (e.g Muffin Builder).
 * Bugfix: Resolve relative path lookup when running on a non-standard port.
 
 = 1.3.3 =

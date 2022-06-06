@@ -66,7 +66,7 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 					$url = wp_make_link_relative($year_vars[1]);
 
 					if (!empty($year_vars)) {
-						$this->push( new Quant_WP_Batch_Item( 0, array(
+						$this->push( new Quant_WP_Batch_Item( $year_index, array(
 								'route' => "{$url}",
 							)
 						));
