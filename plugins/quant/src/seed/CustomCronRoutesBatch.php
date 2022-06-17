@@ -43,7 +43,7 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 			$routes = explode("\n", $seedOptions['cron_custom_routes']);
 
 			foreach ($routes as $i => $route) {
-				$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route ) ) );
+				$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => trim($route) ) ) );
 			}
 
 		}

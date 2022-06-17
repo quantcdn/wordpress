@@ -48,12 +48,12 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 				$file = ABSPATH . strtok(trim($route), '?');
 
 				if (file_exists($file) && is_file($file) && strpos($file, '..') === false) {
-					$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route, 'is_file' => true ) ) );
+					$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => trim($route), 'is_file' => true ) ) );
 					continue;
 				}
 
 				// Assume content route.
-				$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route ) ) );
+				$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => trim($route) ) ) );
 			}
 
 			// Special case for 404 page.

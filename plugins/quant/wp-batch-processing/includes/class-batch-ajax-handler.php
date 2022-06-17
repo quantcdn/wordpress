@@ -60,20 +60,58 @@ class Quant_WP_Batch_Processing_Ajax_Handler {
 			exit();
 		}
 
-		// Get the batch object
-		$batch = Quant_WP_Batch_Processor::get_instance()->get_batch( $batch_id );
 
-		// Process the next item.
-		$next_item = $batch->get_next_item();
+		// When batch is 'all' find the first batch with an item to process.
+		if ($batch_id == 'all') {
 
-		// No next item for processing. The batch processing is finished, probably.
-		$is_finished = ( false === $next_item );
+			$total_items      = 0;
+			$total_processed  = 0;
+			$percentage       = 0;
+
+			$batches = Quant_WP_Batch_Processor::get_instance()->get_batches();
+
+			foreach ($batches as $i => $batch_count ) {
+				$total_items      += $batch_count->get_items_count();
+				$total_processed  += $batch_count->get_processed_count();
+			}
+
+			foreach ($batches as $i => $batch ) {
+
+				// Process the next item.
+				$next_item = $batch->get_next_item();
+
+				// All batches are finished.
+				$is_finished = ( false === $next_item && ($i == count($batches) - 1) );
+
+				// Break the loop and process the item.
+				if (!$is_finished && !empty($next_item)) {
+					break;
+				}
+			}
+
+			$percentage  = round(($total_processed / $total_items) * 100, 2);
+		}
+		else {
+
+			// Get the batch object
+			$batch = Quant_WP_Batch_Processor::get_instance()->get_batch( $batch_id );
+
+			$total_items      = $batch->get_items_count();
+			$total_processed  = $batch->get_processed_count();
+			$percentage       = $batch->get_percentage();
+
+			// Process the next item.
+			$next_item = $batch->get_next_item();
+
+			// No next item for processing. The batch processing is finished, probably.
+			$is_finished = ( false === $next_item );
+
+			if ($is_finished) {
+				$batch->finish();
+			}
+		}
 
 		if ( $is_finished ) {
-			$total_processed = $batch->get_processed_count();
-			$total_items     = $batch->get_items_count();
-			$percentage      = $batch->get_percentage();
-			$batch->finish();
 			wp_send_json_success( array(
 				'message'         => apply_filters( 'dg_batch_item_error_message', __( 'Processing finished.', 'quant-wp-batch-processing' ) ),
 				'is_finished'     => 1,
@@ -85,9 +123,6 @@ class Quant_WP_Batch_Processing_Ajax_Handler {
 			@set_time_limit( 0 );
 			$response = $batch->process( $next_item );
 			$batch->mark_as_processed( $next_item->id );
-			$total_processed = $batch->get_processed_count();
-			$total_items     = $batch->get_items_count();
-			$percentage      = $batch->get_percentage();
 			if ( is_wp_error( $response ) ) {
 				$error_message = apply_filters( 'dg_batch_item_error_message', 'Error processing item with id ' . $next_item->id . ': ' . $response->get_error_message(), $next_item );
 				wp_send_json_error( array(
@@ -107,9 +142,8 @@ class Quant_WP_Batch_Processing_Ajax_Handler {
 					'percentage'      => $percentage,
 				) );
 			}
-			exit;
-
 		}
+		exit;
 	}
 
 	/**
@@ -132,10 +166,22 @@ class Quant_WP_Batch_Processing_Ajax_Handler {
 			) );
 			exit;
 		}
-		// Get the batch object
-		$batch = Quant_WP_Batch_Processor::get_instance()->get_batch( $batch_id );
-		// Restart the batch.
-		$batch->restart();
+
+		// All batches.
+		if ($batch_id == 'all') {
+			$batches = Quant_WP_Batch_Processor::get_instance()->get_batches();
+			foreach ($batches as $batch ) {
+				// Restart the batch.
+				$batch->restart();
+			}
+		}
+		else {
+			// Get the batch object
+			$batch = Quant_WP_Batch_Processor::get_instance()->get_batch( $batch_id );
+			// Restart the batch.
+			$batch->restart();
+		}
+
 		// Send json
 		wp_send_json_success();
 	}

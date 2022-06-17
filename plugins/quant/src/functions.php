@@ -75,7 +75,6 @@ if (!function_exists('quant_save_post')) {
      */
     function quant_save_post($id)
     {
-
         if (!quant_is_enabled()) {
             return;
         }
@@ -88,11 +87,6 @@ if (!function_exists('quant_save_post')) {
 
         $client = new Client();
         $client->sendPost($id);
-    }
-
-    $types = quant_get_all_types();
-    foreach ($types as $type) {
-        add_action("save_${type}", 'quant_save_post', 1000);
     }
 }
 
@@ -114,9 +108,7 @@ if (!function_exists('quant_unpublish_post')) {
         // Remove __trashed from permalinks if present.
         $permalink = preg_replace('/__trashed.*$/', '', $permalink);
         $client->unpublish($permalink);
-
     }
-    add_action('wp_trash_post', 'quant_unpublish_post', 1000);
 }
 
 
@@ -136,14 +128,6 @@ if (!function_exists('quant_save_category')) {
         $client = new Client();
         $client->sendCategory($id);
     }
-
-    // Get all available taxonomies.
-    $taxonomies = quant_get_all_taxonomies();
-
-    foreach ($taxonomies as $taxonomy) {
-        add_action("edit_${taxonomy}", 'quant_save_category', 1000);
-        add_action("create_${taxonomy}", 'quant_save_category', 1000);
-    }
 }
 
 if (!function_exists('quant_delete_category')) {
@@ -158,7 +142,6 @@ if (!function_exists('quant_delete_category')) {
         // @todo: After category is deleted we cannot retrieve permalink.
         // Need a "before_delete_category" hook.
     }
-    add_action('delete_category', 'quant_delete_category', 1000);
 }
 
 if (!function_exists('quant_cron_setup')) {
@@ -284,4 +267,41 @@ if (!function_exists('quant_cron_run')) {
         wp_schedule_event( time(), $options['cron_schedule'], 'quant_cronjob' );
     }
     add_action ('quant_cronjob', 'quant_cron_run');
+}
+
+if (!function_exists('quant_init_hooks')) {
+    /**
+     * Run all the init hooks (ensure this happens last).
+     *
+     * @return void
+     */
+
+    function quant_init_hooks()
+    {
+        if (!quant_is_enabled()) {
+            return;
+        }
+
+        // Initialise taxonomy create/edit hooks.
+        $taxonomies = quant_get_all_taxonomies();
+        foreach ($taxonomies as $taxonomy) {
+            add_action("edit_${taxonomy}", 'quant_save_category', 1000);
+            add_action("create_${taxonomy}", 'quant_save_category', 1000);
+        }
+
+        // Initialise save hook for all post types.
+        $types = quant_get_all_types();
+        foreach ($types as $type) {
+            add_action("save_${type}", 'quant_save_post', 1000);
+        }
+
+        // Initialise unpublish/trash post hook.
+        add_action('wp_trash_post', 'quant_unpublish_post', 1000);
+
+        // Initialise unpublish/trash category hook.
+        add_action('delete_category', 'quant_delete_category', 1000);
+
+    }
+
+    add_action("admin_init", 'quant_init_hooks', 1000);
 }
