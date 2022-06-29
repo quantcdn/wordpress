@@ -68,8 +68,11 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 = 1.4.0 =
 * Feature: Add ability to push all content at once via the UI.
 * Feature: Improved support for Divi Builder.
+* Feature: Added support for redirection plugin.
 * Bugfix: Better support for additional custom post types via later action weight.
 * Bugfix: Strip whitespace from custom routes.
+* Bugfix: Resolve cron schedule being added multiple times.
+* Bugfix: Resolve issues with some routes when run via cli.
 
 = 1.3.5 =
 * Tested on WordPress 6.0.

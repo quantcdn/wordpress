@@ -71,6 +71,11 @@ function quant_wp_batch_processing_init() {
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
     $batch = new QuantMediaAssetsBatch();
     Quant_WP_Batch_Processor::get_instance()->register( $batch );
+    // Initialise redirection support.
+    if ( is_plugin_active('redirection/redirection.php') ) {
+        $batch = new QuantRedirectionBatch();
+        Quant_WP_Batch_Processor::get_instance()->register( $batch );
+    }
 
 }
 add_action( 'quant_wp_batch_processing_init', 'quant_wp_batch_processing_init', 99, 1 );

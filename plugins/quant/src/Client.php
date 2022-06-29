@@ -329,6 +329,9 @@ class Client
      */
     public function sendRoute($route) {
 
+        // Odd behaviour when run via CLI.
+        // Some routes begin with http: inexplicibly.
+        $route = preg_replace('/^http:(\/)*/', '/', $route);
         $data = $this->markupFromRoute($route);
         $markup = $data['content'];
         $content_type = $data['content_type'];

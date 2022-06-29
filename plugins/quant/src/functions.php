@@ -262,9 +262,6 @@ if (!function_exists('quant_cron_run')) {
             }
             $batch->finish();
         }
-
-
-        wp_schedule_event( time(), $options['cron_schedule'], 'quant_cronjob' );
     }
     add_action ('quant_cronjob', 'quant_cron_run');
 }
@@ -300,7 +297,6 @@ if (!function_exists('quant_init_hooks')) {
 
         // Initialise unpublish/trash category hook.
         add_action('delete_category', 'quant_delete_category', 1000);
-
     }
 
     add_action("admin_init", 'quant_init_hooks', 1000);
