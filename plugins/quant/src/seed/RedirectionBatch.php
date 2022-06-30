@@ -12,21 +12,21 @@ require_once(__DIR__.'/../../wp-batch-processing/includes/class-batch-processor-
 
 if ( class_exists( 'Quant_WP_Batch' ) ) {
 	/**
-	 * Class QuantPostBatch
+	 * Class QuantCategoryBatch
 	 */
-	class QuantPostBatch extends Quant_WP_Batch {
+	class QuantRedirectionBatch extends Quant_WP_Batch {
 
 		/**
 		 * Unique identifier of each batch
 		 * @var string
 		 */
-		public $id = 'quant_posts';
+		public $id = 'quant_redirection';
 
 		/**
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'Posts';
+		public $title = 'Redirects';
 
 		/**
 		 * To setup the batch data use the push() method to add Quant_WP_Batch_Item instances to the queue.
@@ -37,14 +37,51 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		 */
 		public function setup() {
 
-			$posts = get_posts(['nopaging' => true]);
-
-			foreach ( $posts as $post ) {
-				$this->push( new Quant_WP_Batch_Item( $post->ID, array( 'post_id' => $post->ID ) ) );
+			// Quit the scene if redirection plugin is not active.
+			if ( !is_plugin_active('redirection/redirection.php') ) {
+				return;
 			}
 
-			$this->client = new Client();
+			// This provides basic support only.
+			// URL match only, 301/302 responses, and no regex support.
+			// Query parameters will always be respected.
+			$redirects = Red_Item::get_all();
 
+			foreach ($redirects as $r) {
+				if ($r->is_regex()) {
+					continue;
+				}
+
+				// We only support URL matches.
+				if ($r->get_match_type() != 'url') {
+					continue;
+				}
+
+				// We only support URL redirects.
+				if ($r->get_action_type() != 'url') {
+					continue;
+				}
+
+				// We only support enabled URL redirects.
+				if (!$r->is_enabled()) {
+					continue;
+				}
+
+				// If the action is not a string we cannot process.
+				if (!is_string($r->get_action_data())) {
+					continue;
+				}
+
+				$code = $r->get_action_code() == '301' ? 301 : 302;
+
+				$this->push( new Quant_WP_Batch_Item( $r->get_id(), array(
+					'source' => $r->get_url(),
+					'dest' => $r->get_action_data(),
+					'code' => $code
+				) ) );
+
+			}
+			$this->client = new Client();
 		}
 
 		/**
@@ -60,10 +97,10 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		 * @return bool|\WP_Error
 		 */
 		public function process( $item ) {
-
-			$post_id = $item->get_value( 'post_id' );
-
-			$this->client->sendPost($post_id);
+			$source = $item->get_value( 'source' );
+			$dest = $item->get_value( 'dest' );
+			$code = $item->get_value( 'code' );
+			$this->client->redirect($source, $dest, $code);
 			return true;
 		}
 

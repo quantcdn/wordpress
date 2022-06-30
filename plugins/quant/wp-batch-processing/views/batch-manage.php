@@ -1,20 +1,47 @@
 <?php
 /* @var mixed $id - The batch id */
-$batch = Quant_WP_Batch_Processor::get_instance()->get_batch($id);
-if(is_null($batch)) {
-	echo 'Batch not found.';
-	return;
+if ($id == 'all') {
+	$count = 0;
+	$processed = 0;
+	$percentage = 0;
+	$finished = true;
+	$title = "All items";
+	$batches = Quant_WP_Batch_Processor::get_instance()->get_batches();
+
+	foreach ( $batches as $batch ) {
+		$count += $batch->get_items_count();
+		$processed += $batch->get_processed_count();
+
+		if (!$batch->is_finished()) {
+			$finished = false;
+		}
+	}
+
+	$percentage  = round(($processed / $count) * 100, 2);
 }
-$percentage = $batch->get_percentage();
+else {
+	$batch = Quant_WP_Batch_Processor::get_instance()->get_batch($id);
+	if(is_null($batch)) {
+		echo 'Batch not found.';
+		return;
+	}
+
+	$count = $batch->get_items_count();
+	$processed = $batch->get_processed_count();
+	$percentage = $batch->get_percentage();
+	$finished = $batch->is_finished();
+	$title = $batch->title;
+}
+
 ?>
 
-<h1><?php echo $batch->title; ?></a></h1>
+<h1><?php echo $title; ?></a></h1>
 
 <div class="batch-process">
 	<div class="batch-process-main">
 		<ul class="batch-process-stats">
-			<li><strong>Total:</strong> <span id="batch-process-total"><?php echo $batch->get_items_count(); ?></span></li>
-			<li><strong>Processed:</strong> <span id="batch-process-processed"><?php echo $batch->get_processed_count(); ?></span> <span id="batch-process-percentage">(<?php echo $percentage; ?>%)</span></li>
+			<li><strong>Total:</strong> <span id="batch-process-total"><?php echo $count; ?></span></li>
+			<li><strong>Processed:</strong> <span id="batch-process-processed"><?php echo $processed; ?></span> <span id="batch-process-percentage">(<?php echo $percentage; ?>%)</span></li>
 		</ul>
 		<div class="batch-process-progress-bar">
 			<?php
@@ -27,7 +54,7 @@ $percentage = $batch->get_percentage();
 		</div>
 	</div>
 	<div class="batch-process-actions">
-		<?php if(!$batch->is_finished()): ?>
+		<?php if(!$finished): ?>
 			<button class="button-primary" id="batch-process-start">Start</button>
 			<button class="button" id="batch-process-stop">Stop</button>
 			<button class="button" id="batch-process-restart">Restart</button>

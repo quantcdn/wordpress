@@ -44,8 +44,13 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 
 			foreach ($routes as $i => $route) {
 
+				$route = trim($route);
+				if (empty($route)) {
+					continue;
+				}
+
 				// Check for file on disk, disallow paths outside root.
-				$file = ABSPATH . strtok(trim($route), '?');
+				$file = ABSPATH . strtok($route, '?');
 
 				if (file_exists($file) && is_file($file) && strpos($file, '..') === false) {
 					$this->push( new Quant_WP_Batch_Item( $i, array( 'route' => $route, 'is_file' => true ) ) );

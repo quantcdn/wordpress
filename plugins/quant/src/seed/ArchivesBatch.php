@@ -31,7 +31,7 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		/**
 		 * Retrieves the archives and determines URLs and pagination.
 		 *
-		 * @todo: Replace with more programattic approach (e.g replicate wp_get_archives)
+		 * @todo: Replace with more programmatic approach (e.g replicate wp_get_archives)
 		 * wp_get_archives returns a string that needs parsing and splitting into chunks.
 		 *
 		 * @return void

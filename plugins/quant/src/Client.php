@@ -297,9 +297,13 @@ class Client
         $data = $this->markupFromRoute($permalink);
         $markup = $data['content'];
 
-        // Markup is blank on 404.
-        if (empty($markup)) {
+        // Unpublish content on 404 or 403 response.
+        if ($data['status'] == 403 || $data['status'] == 404) {
             $this->unpublish($permalink);
+        }
+
+        // Return if content is blank.
+        if (empty($markup)) {
             return;
         }
 
@@ -325,13 +329,23 @@ class Client
      */
     public function sendRoute($route) {
 
+        // Ensure route is relative.
+        $route = $this->absoluteToRelative($route, $this->host);
+
+        // Odd behaviour when run via CLI.
+        // Some routes begin with http: inexplicibly.
+        $route = preg_replace('/^http:(\/)*/', '/', $route);
         $data = $this->markupFromRoute($route);
         $markup = $data['content'];
         $content_type = $data['content_type'];
 
-        // Markup is blank on 404.
-        if (empty($markup)) {
+        // Unpublish content on 404 or 403 response.
+        if ($data['status'] == 403 || $data['status'] == 404) {
             $this->unpublish($route);
+        }
+
+        // Return if content is blank.
+        if (empty($markup)) {
             return;
         }
 
@@ -388,9 +402,13 @@ class Client
         $data = $this->markupFromRoute($permalink);
         $markup = $data['content'];
 
-        // Markup is blank on 404.
-        if (empty($markup)) {
+        // Unpublish content on 404 or 403 response.
+        if ($data['status'] == 403 || $data['status'] == 404) {
             $this->unpublish($permalink);
+        }
+
+        // Return if content is blank.
+        if (empty($markup)) {
             return;
         }
 
@@ -460,11 +478,19 @@ class Client
         $headers = wp_remote_retrieve_headers($response);
 
         if ($status == 404 && !$allow404) {
-            return FALSE;
+            return [
+                'content' => NULL,
+                'content_type' => NULL,
+                'status' => $status,
+            ];
         }
 
         if ($status != 200 && $status != 404) {
-            return FALSE;
+            return [
+                'content' => NULL,
+                'content_type' => NULL,
+                'status' => $status,
+            ];
         }
 
         $body = wp_remote_retrieve_body($response);
@@ -474,6 +500,7 @@ class Client
         return [
             'content' => $body,
             'content_type' => $content_type,
+            'status' => $status,
         ];
     }
 

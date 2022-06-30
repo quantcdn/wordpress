@@ -26,7 +26,7 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'All tags';
+		public $title = 'Tags';
 
 		/**
 		 * To setup the batch data use the push() method to add Quant_WP_Batch_Item instances to the queue.

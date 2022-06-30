@@ -27,7 +27,7 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		 * Describe the batch
 		 * @var string
 		 */
-		public $title = 'All theme assets (css/js/images/fonts)';
+		public $title = 'Theme assets (css/js/images/fonts)';
 
 		/**
 		 * The regex for asset matching.
