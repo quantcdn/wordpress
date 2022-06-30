@@ -163,7 +163,6 @@ if (!function_exists('quant_cron_setup')) {
             wp_schedule_event( time(), $options['cron_schedule'], 'quant_cronjob' );
         }
     }
-    add_action('wp', 'quant_cron_setup');
 
     function quant_cron_deactivate() {
         $timestamp = wp_next_scheduled ('quant_cronjob');
@@ -299,5 +298,10 @@ if (!function_exists('quant_init_hooks')) {
         add_action('delete_category', 'quant_delete_category', 1000);
     }
 
-    add_action("admin_init", 'quant_init_hooks', 1000);
+    // Init cron.
+    add_action( 'init', 'quant_cron_setup' );
+
+    // Init other quant init hooks.
+    add_action( 'admin_init', 'quant_init_hooks', 1000 );
+
 }

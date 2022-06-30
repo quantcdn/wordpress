@@ -51,6 +51,10 @@ class Quant_CLI {
             'class' => 'QuantMediaAssetsBatch',
             'includePath' => __DIR__.'/src/seed/MediaAssetsBatch.php',
         ],
+        'redirects' => [
+            'class' => 'QuantRedirectionBatch',
+            'includePath' => __DIR__.'/src/seed/RedirectionBatch.php',
+        ],
     ];
 
     /**
@@ -212,7 +216,17 @@ class Quant_CLI {
         $batch->restart_claims();
 
         for ($i = 0; $i < $threads; $i++) {
-            $cmd = "wp quant process_queue_single $queue --allow-root --path=" . ABSPATH;
+
+            $cmd = "wp quant process_queue_single $queue --path=" . ABSPATH;
+
+            if (WP_CLI::has_config( 'url' )) {
+                $cmd .= " --url=" . WP_CLI::get_config( 'url' );
+            }
+
+            if (WP_CLI::has_config( 'allow-root' )) {
+                $cmd .= ' --allow-root';
+            }
+
             $this->runningProcs[] = proc_open($cmd, [], $pipes, NULL, NULL, ['bypass_shell' => TRUE]);
         }
 

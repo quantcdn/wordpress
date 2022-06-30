@@ -329,6 +329,9 @@ class Client
      */
     public function sendRoute($route) {
 
+        // Ensure route is relative.
+        $route = $this->absoluteToRelative($route, $this->host);
+
         // Odd behaviour when run via CLI.
         // Some routes begin with http: inexplicibly.
         $route = preg_replace('/^http:(\/)*/', '/', $route);
