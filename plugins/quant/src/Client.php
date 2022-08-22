@@ -430,6 +430,8 @@ class Client
                     'tags' => [],
                     'categories' => wp_get_post_categories($id, ['fields' => 'names']),
                     'site_id' => get_current_blog_id(),
+                    'timestamp_modified' => get_post_modified_time('U', false, $id),
+                    'timestamp_published' => get_post_time('U', false, $id),
                 ]
             ]
         ];

@@ -301,7 +301,7 @@ if (!function_exists('quant_init_hooks')) {
     // Init cron.
     add_action( 'init', 'quant_cron_setup' );
 
-    // Init other quant init hooks.
-    add_action( 'admin_init', 'quant_init_hooks', 1000 );
+    // Init other quant init hooks (with weight).
+    add_action( 'init', 'quant_init_hooks', 1000 );
 
 }
