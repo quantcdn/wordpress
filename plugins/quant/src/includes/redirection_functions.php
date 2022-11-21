@@ -86,9 +86,6 @@ if (!function_exists('quant_redirection_redirect_updated')) {
 
 }
 
-
-
-
 if (!function_exists('quant_redirection_redirect_deleted')) {
   /**
    * Remove redirect from Quant when redirect is deleted.
