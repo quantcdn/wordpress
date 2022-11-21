@@ -538,6 +538,12 @@ class Client
      * Ensure the permalink generated is a relative path.
      */
     private function permalinkToRelative($permalink) {
+        if (!is_string($permalink)) {
+            // get_term_link applies filters which can operate unexpectedly on the terms
+            // provided and this isn't always guaranteed to produce a string output.
+            return false;
+        }
+        
         // Resolve rare error where protocol is repeated.
         $permalink = preg_replace('/(http(s?)\:\/\/){2,3}/', 'http://', $permalink);
 
