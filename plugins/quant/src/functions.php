@@ -6,6 +6,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
     require_once(__DIR__.'/../quant-cli.php');
 }
 
+if (!function_exists('is_plugin_active')) {
+  include_once(ABSPATH . 'wp-admin/includes/plugin.php');
+}
+
 if ( is_plugin_active('redirection/redirection.php') ) {
     require_once(__DIR__.'/includes/redirection_functions.php');
 }
