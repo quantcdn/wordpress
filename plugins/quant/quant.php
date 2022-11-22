@@ -5,7 +5,7 @@
  * Description: QuantCDN static edge integration
  * Author: Stuart Rowlands
  * Plugin URI: https://www.quantcdn.io
- * Version: 1.4.1
+ * Version: 1.4.2
  * License: GPL-2.0+
  * License URI: http://www.gnu.org/licenses/gpl-2.0.txt
  */
@@ -16,6 +16,10 @@ if (!defined('ABSPATH')) {
 
 require_once(__DIR__.'/src/App.php');
 require_once(__DIR__.'/wp-batch-processing/wp-batch-processing.php');
+
+if (!function_exists('is_plugin_active')) {
+  include_once(ABSPATH . 'wp-admin/includes/plugin.php');
+}
 
 /**
  * Register batch handlers

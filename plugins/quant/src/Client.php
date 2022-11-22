@@ -51,6 +51,11 @@ class Client
         return TRUE;
     }
 
+    /**
+     * Unpublishes a route.
+     *
+     * @param string $route
+     */
     public function unpublish($route) {
         $endpoint = $this->endpoint . '/unpublish';
         $headers = $this->headers;
@@ -81,6 +86,21 @@ class Client
     }
 
     public function redirect($from, $to, $code) {
+
+        // Strip trailing slashes from redirects.
+        // This ensures consistency with how content routes are managed.
+        if ( strlen( $from ) > 1 ) {
+            $from = rtrim($from, '/');
+        }
+
+        if ( strlen( $to ) > 1 ) {
+            $to = rtrim($to, '/');
+        }
+
+        // Bail if either from or to is empty.
+        if (empty($from) || empty($to)) {
+          return;
+        }
 
         $data = [
             'url' => $from,
@@ -119,6 +139,11 @@ class Client
         // Strip trailing slashes from content routes (except home).
         if ( strlen( $data['url'] ) > 1 ) {
             $data['url'] = rtrim($data['url'], '/');
+        }
+
+        // Bail if the URL is empty.
+        if (empty($data['url'])) {
+          return;
         }
 
         $args = [

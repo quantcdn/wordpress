@@ -6,6 +6,14 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
     require_once(__DIR__.'/../quant-cli.php');
 }
 
+if (!function_exists('is_plugin_active')) {
+  include_once(ABSPATH . 'wp-admin/includes/plugin.php');
+}
+
+if ( is_plugin_active('redirection/redirection.php') ) {
+    require_once(__DIR__.'/includes/redirection_functions.php');
+}
+
 if (!empty($_SERVER['HTTP_QUANT_TOKEN'])) {
 
     $token = get_option('quant_internal_token');
@@ -296,6 +304,12 @@ if (!function_exists('quant_init_hooks')) {
 
         // Initialise unpublish/trash category hook.
         add_action('delete_category', 'quant_delete_category', 1000);
+
+        // Initialise redirection hooks (if plugin is active).
+        if ( is_plugin_active('redirection/redirection.php') ) {
+          add_action('redirection_redirect_updated', 'quant_redirection_redirect_updated', 1000);
+          add_action('redirection_redirect_deleted', 'quant_redirection_redirect_deleted', 1000);
+        }
     }
 
     // Init cron.
