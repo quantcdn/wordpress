@@ -118,7 +118,7 @@ function quant_wp_batch_processing_init() {
     }
 
 }
-add_action( 'quant_wp_batch_processing_init', 'Quant\quant_wp_batch_processing_init', 99, 1 );
+add_action( 'quant_wp_batch_processing_init', 'quant_wp_batch_processing_init', 99, 1 );
 
 /**
  * Roundabout way of adding a post field.
