@@ -60,9 +60,7 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 		 * @return bool|\WP_Error
 		 */
 		public function process( $item ) {
-
 			$post_id = $item->get_value( 'post_id' );
-
 			$this->client->sendPost($post_id);
 			return true;
 		}

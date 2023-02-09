@@ -33,7 +33,7 @@ final class App
      *
      * @return void
      */
-    private function __construct()
+    public function __construct()
     {
         $this->constants();
         $this->includes(__DIR__, ['App.php']);
@@ -84,4 +84,19 @@ final class App
         SettingsScreen::init();
         Settings::init();
     }
+
+
+    protected function activate() {}
+
+    protected function deactivate() {}
+
 }
+
+
+function register_quant_app()
+{
+    $app = new App();
+    register_activation_hook(__FILE__, [$app, 'activate']);
+    register_deactivation_hook(__FILE__, [$app, 'deactivate']);
+}
+register_quant_app();

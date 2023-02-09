@@ -106,18 +106,21 @@ class Settings
             'name' => "{$seedKey}[404_route]",
             'description' => 'Route to use for 404 error pages',
             'value' => $seedOptions['404_route'] ?? '/404',
+            'placeholder' => '',
         ]);
 
         add_settings_field('seed_custom_routes', 'Custom routes', ['Quant\Field', 'textarea'], $seedKey, 'seed', [
             'name' => "{$seedKey}[custom_routes]",
             'description' => 'Enter custom content or file routes (e.g /path/to/content or /path/to/file.css)',
             'value' => $seedOptions['custom_routes'] ?? '/robots.txt',
+            'placeholder' => '',
         ]);
 
         add_settings_field('seed_domains_strip', 'Relative rewrite', ['Quant\Field', 'textarea'], $seedKey, 'seed', [
             'name' => "{$seedKey}[domains_strip]",
             'description' => 'Optional domains (e.g www.example.com) to rewrite as relative',
             'value' => $seedOptions['domains_strip'] ?? '',
+            'placeholder' => '',
         ]);
 
 
@@ -188,5 +191,4 @@ class Settings
         // @todo: Sanitization
         return $input;
     }
-
 }
