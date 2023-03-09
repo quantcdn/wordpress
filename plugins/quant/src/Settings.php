@@ -54,6 +54,7 @@ class Settings
             'name' => "{$key}[http_request_timeout]",
             'description' => 'Optionally increase the HTTP request timeout on slower servers.',
             'value' => $options['http_request_timeout'] ?? 15,
+            'placeholder' => '30'
         ]);
 
         add_settings_field('quant_webserver_url', 'Webserver URL', ['Quant\Field', 'url'], $key, 'general', [
@@ -83,16 +84,19 @@ class Settings
         add_settings_field('quant_api_account', 'API Customer', ['Quant\Field', 'text'], $key, 'api', [
             'name' => "{$key}[api_account]",
             'value' => $options['api_account'] ?? '',
+            'placeholder' => 'Retrieve your customer identifier from the Quant Dashboard (integrations page)'
         ]);
 
         add_settings_field('quant_api_project', 'API Project', ['Quant\Field', 'text'], $key, 'api', [
             'name' => "{$key}[api_project]",
             'value' => $options['api_project'] ?? '',
+            'placeholder' => 'Retrieve your project name from the Quant Dashboard (integrations page)'
         ]);
 
         add_settings_field('quant_api_password', 'API Token', ['Quant\Field', 'password'], $key, 'api', [
             'name' => "{$key}[api_token]",
             'value' => $options['api_token'] ?? '',
+            'placeholder' => 'Retrieve your token from the Quant Dashboard (integrations page)'
         ]);
 
         /**
@@ -141,6 +145,7 @@ class Settings
             'name' => "{$cronKey}[cron_schedule]",
             'description' => 'Enter a cron schedule (e.g daily, hourly or twicedaily)',
             'value' => $cronOptions['cron_schedule'] ?? 'daily',
+            'placeholder' => 'daily'
         ]);
 
         add_settings_field('cron_home', 'Homepage', ['Quant\Field', 'checkbox'], $cronKey, 'cron', [
@@ -177,6 +182,7 @@ class Settings
             'name' => "{$cronKey}[cron_custom_routes]",
             'description' => 'Enter custom routes (e.g /path/to/route)',
             'value' => $cronOptions['cron_custom_routes'] ?? '/robots.txt',
+            'placeholder' => ''
         ]);
     }
 

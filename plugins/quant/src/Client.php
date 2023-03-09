@@ -546,7 +546,7 @@ class Client
         $markup = preg_replace("/http(s?)\:\/\/{$host}/i", '', $markup);
 
         // Allow additional domain rewrites for relative paths.
-        $stripDomains = explode("\n", $this->seedOptions['domains_strip']);
+        $stripDomains = explode("\n", $this->seedOptions['domains_strip'] ?? '');
         foreach ($stripDomains as $domain) {
             $d = trim($domain);
 
