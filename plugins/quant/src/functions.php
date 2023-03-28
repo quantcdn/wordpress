@@ -69,9 +69,10 @@ if (!function_exists('quant_is_enabled')) {
     function quant_is_enabled()
     {
         $options = quant_get_options();
-        return boolval($options['enabled']);
+        $enabled = $options['enabled'] ?? false;
+        return boolval($enabled);
+        // return boolval($options['enabled']);
     }
-    quant_is_enabled();
 }
 
 if (!function_exists('quant_save_post')) {

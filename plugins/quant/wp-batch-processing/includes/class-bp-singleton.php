@@ -40,7 +40,7 @@ trait Quant_WP_BP_Singleton {
 	/**
 	 * Quant_WP_BP_Singleton constructor.
 	 */
-	final private function __construct() {
+	private function __construct() {
 		$this->init();
 	}
 
@@ -48,9 +48,9 @@ trait Quant_WP_BP_Singleton {
 	protected function init() {
 	}
 
-	final private function __wakeup() {
+	final public function __wakeup() {
 	}
 
-	final private function __clone() {
+	private function __clone() {
 	}
 }

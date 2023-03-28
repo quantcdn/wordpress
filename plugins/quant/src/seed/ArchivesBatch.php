@@ -61,6 +61,10 @@ if ( class_exists( 'Quant_WP_Batch' ) ) {
 					$year_row = trim($year_item);
 					preg_match('/href=["\']?([^"\'>]+)["\']>(.+)<\/a>(.+)/', $year_row, $year_vars);
 
+					if (empty($years_match[3])) {
+						continue;
+					}
+
 					$count = (int) filter_var($year_vars[3], FILTER_SANITIZE_NUMBER_INT);
 					$pages = ceil($count / $ppp);
 					$url = wp_make_link_relative($year_vars[1]);

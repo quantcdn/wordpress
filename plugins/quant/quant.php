@@ -34,8 +34,30 @@ function Quant()
 /**
  * Activate the Quant plugin
  */
-function QuantActivate()
+function quant_activate()
 {
+    add_option(QUANT_SETTINGS_KEY, [
+        'enabled' => 0,
+        'api_endpoint' => 'https://api.quantcdn.io',
+        'webserver_url' => '',
+        'webserver_host' => '',
+        'api_project' => '',
+        'api_account' => '',
+        'api_token' => '',
+        'disable_tls_verify' => true,
+        'http_request_timeout' => 15,
+    ]);
+
+    add_option(QUANT_CRON_SETTINGS_KEY, [
+        'cron_enabled' => false,
+        'cron_schedule' => '',
+    ]);
+
+    add_option(QUANT_SEED_KEY, [
+        'custom_routes' => '',
+        '404_route' => '',
+    ]);
+
     // Generate a random string for internal token.
     $token = get_option("quant_internal_token");
 
@@ -44,9 +66,23 @@ function QuantActivate()
     }
 }
 
-register_activation_hook(__FILE__, [QuantActivate(), Quant()]);
-register_deactivation_hook(__FILE__, [Quant(), 'deactivation']);
+register_activation_hook(__FILE__, 'quant_activate');
 
+function quant_deactivate() {
+    delete_option("quant_internal_token");
+    delete_option(QUANT_SETTINGS_KEY);
+    delete_option(QUANT_CRON_SETTINGS_KEY);
+    delete_option(QUANT_SEED_KEY);
+}
+
+register_deactivation_hook(__FILE__, 'quant_deactivate');
+
+
+function quant_load() {
+    include_once('src/Client.php');
+}
+
+add_action('plugins_loaded', 'quant_load');
 
 
 /**

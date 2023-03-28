@@ -16,18 +16,22 @@ class Client
     private $disableTlsVerify = FALSE;
     private $httpRequestTimeout = 15;
 
+    function activate() {}
+    function deactivate() {}
+
     public function __construct() {
-        $this->settings = get_option(QUANT_SETTINGS_KEY);
+        $settings = get_option(QUANT_SETTINGS_KEY);
         $this->seedOptions = get_option(QUANT_SEED_KEY);
-        $this->webserver = $this->settings['webserver_url'];
-        $this->host = $this->settings['webserver_host'];
-        $this->endpoint = $this->settings['api_endpoint'] . '/v1';
+        $this->settings = $settings;
+        $this->webserver = $settings['webserver_url'];
+        $this->host = $settings['webserver_host'];
+        $this->endpoint = $settings['api_endpoint'] . '/v1';
         $this->headers['Content-type'] = 'application/json';
-        $this->headers['quant-project'] = $this->settings['api_project'];
-        $this->headers['quant-customer'] = $this->settings['api_account'];
-        $this->headers['quant-token'] = $this->settings['api_token'];
-        $this->disableTlsVerify = $this->settings['disable_tls_verify'];
-        $this->httpRequestTimeout = intval($this->settings['http_request_timeout']) ?? 15;
+        $this->headers['quant-project'] = $settings['api_project'];
+        $this->headers['quant-customer'] = $settings['api_account'];
+        $this->headers['quant-token'] = $settings['api_token'];
+        $this->disableTlsVerify = $settings['disable_tls_verify'];
+        $this->httpRequestTimeout = intval($settings['http_request_timeout']) ?? 15;
     }
 
     public function ping() {
@@ -542,7 +546,7 @@ class Client
         $markup = preg_replace("/http(s?)\:\/\/{$host}/i", '', $markup);
 
         // Allow additional domain rewrites for relative paths.
-        $stripDomains = explode("\n", $this->seedOptions['domains_strip']);
+        $stripDomains = explode("\n", $this->seedOptions['domains_strip'] ?? '');
         foreach ($stripDomains as $domain) {
             $d = trim($domain);
 
@@ -568,7 +572,7 @@ class Client
             // provided and this isn't always guaranteed to produce a string output.
             return false;
         }
-        
+
         // Resolve rare error where protocol is repeated.
         $permalink = preg_replace('/(http(s?)\:\/\/){2,3}/', 'http://', $permalink);
 
@@ -578,3 +582,10 @@ class Client
     }
 
 }
+
+function register_quant_client() {
+    $client = new Client();
+    register_activation_hook(__FILE__, [$client, 'activate']);
+    register_deactivation_hook(__FILE__, [$client, 'deactivate']);
+}
+register_quant_client();
