@@ -43,8 +43,10 @@ define( 'DB_COLLATE', '');
 
 /** Settings that make Quant work properly. */
 $protocol = stripos($_SERVER['SERVER_PROTOCOL'],'https') === 0 ? 'https://' : 'http://';
-define('WP_SITEURL', $protocol . $_SERVER['HTTP_HOST']);
-define('WP_HOME', $protocol . $_SERVER['HTTP_HOST']);
+if ( isset( $_SERVER['HTTP_HOST'] ) ) {
+	define('WP_SITEURL', $protocol . $_SERVER['HTTP_HOST']);
+	define('WP_HOME', $protocol . $_SERVER['HTTP_HOST']);
+}
 define ('WPCF7_LOAD_JS', false);
 
 /**#@+

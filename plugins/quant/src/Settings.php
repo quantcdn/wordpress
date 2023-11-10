@@ -68,7 +68,7 @@ class Settings
             'name' => "{$key}[webserver_host]",
             'placeholder' => 'www.example.com',
             'description' => 'The hostname your webserver expects',
-            'value' => $options['webserver_host'] ?? 'www.example.com',
+            'value' => !empty($options['webserver_host']) ? $options['webserver_host'] : 'localhost',
         ]);
 
         /**

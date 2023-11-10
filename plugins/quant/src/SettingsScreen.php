@@ -67,7 +67,7 @@ class SettingsScreen
             }
 
             $validateMarkup = $client->markupFromRoute('/__quant-validate');
-            if (strpos('qsuccess', $validateMarkup['content']) === false) {
+            if (empty($validateMarkup['content']) || $validateMarkup['content'] != 'qsuccess') {
                 ?><div class="notice notice-warning">
                     <p>Unable to connect to local webserver. Please check the configuration values for webserver and host and try again.</p>
                 </div><?php

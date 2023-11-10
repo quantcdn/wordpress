@@ -31,6 +31,8 @@ if ( ! class_exists( 'WP_List_Table' ) ) {
  */
 class Quant_WP_BP_List_Table extends \WP_List_Table {
 
+	private $page_status;
+
 	function __construct() {
 		parent::__construct( array(
 			'singular' => 'batch',
