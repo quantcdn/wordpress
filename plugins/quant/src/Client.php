@@ -246,11 +246,6 @@ class Client
             // Strip query params.
             $file = $url = strtok($url, '?');
 
-            // Strip the site path from the front of the URL.
-            if (isset($site->path)) {
-              $file = preg_replace("#^{$site->path}#", '/', $file);
-            }
-
             if (isset($item['existing_md5'])) {
                 // Skip file: MD5 matches.
                 if (file_exists(ABSPATH . $file) && md5_file(ABSPATH . $file) == $item['existing_md5']) {
@@ -258,9 +253,17 @@ class Client
                 }
             }
 
-            if (file_exists(ABSPATH . $file)) {
+            $uploadDir = wp_get_upload_dir();
+
+            // Strip the site path from the front of the URL.
+            if (isset($uploadDir['baseurl'])) {
+              $basePath = parse_url($uploadDir['baseurl'], PHP_URL_PATH);
+              $file = preg_replace("#^{$basePath}#", '/', $file);
+            }
+
+            if (file_exists($uploadDir['basedir'] . $file)) {
                 $attachments[] = [
-                  'file' => $file,
+                  'file' => $uploadDir['basedir'] . $file,
                   'url' => $url,
                 ];
             }
@@ -285,7 +288,7 @@ class Client
 
         foreach ($files as $file) {
             $headers['Quant-File-Url'] = $file['url'];
-            $path = ABSPATH . $file['file'];
+            $path = $file['file'];
 
             $requests[] = [
                 'url' => $this->endpoint . '/file-upload?path=' . $path,
