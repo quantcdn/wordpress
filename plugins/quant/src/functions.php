@@ -103,12 +103,7 @@ if (!function_exists('quant_save_post')) {
         if (!empty($options['purge_on_save'])) {
             $client = new Client();
             $permalink = wp_make_link_relative(get_permalink($id));
-            
-            // Strip trailing slashes
-            if (strlen($permalink) > 1) {
-                $permalink = rtrim($permalink, '/');
-            }
-            
+            // Client::purge() automatically handles both with/without trailing slash
             $client->purge($permalink);
         }
     }
@@ -161,12 +156,7 @@ if (!function_exists('quant_save_category')) {
         // If automatic push is disabled but cache purge is enabled, just purge
         if (!empty($options['purge_on_save'])) {
             $permalink = wp_make_link_relative(get_term_link($id));
-            
-            // Strip trailing slashes
-            if (strlen($permalink) > 1) {
-                $permalink = rtrim($permalink, '/');
-            }
-            
+            // Client::purge() automatically handles both with/without trailing slash
             $client->purge($permalink);
         }
     }
@@ -316,7 +306,10 @@ if (!function_exists('quant_init_hooks')) {
 
     function quant_init_hooks()
     {
-        if (!quant_is_enabled()) {
+        $options = quant_get_options();
+        
+        // Only register hooks if either automatic push or cache purge is enabled
+        if (!quant_is_enabled() && empty($options['purge_on_save'])) {
             return;
         }
 

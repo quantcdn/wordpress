@@ -171,59 +171,79 @@ class Client
 
     /**
      * Purge the cache for a route in Quant.
+     * Automatically purges both with and without trailing slash (except homepage).
      *
      * @param string $route
      * @return array Array with 'success' (bool), 'message' (string), and optional 'body' (string)
      */
     public function purge($route) {
 
-        $args = [
-            'headers' => $this->headers,
-            'timeout' => $this->httpRequestTimeout,
-        ];
-
-        $args['headers']['Quant-Url'] = $route;
-
-        if ($this->disableTlsVerify) {
-          $args['sslverify'] = FALSE;
-        }
-
-        $response = wp_remote_post($this->endpoint . '/purge', $args);
+        $routes_to_purge = [$route];
         
-        // Check for WordPress HTTP errors
-        if (is_wp_error($response)) {
-            $error_message = $response->get_error_message();
-            return [
-                'success' => false,
-                'message' => "HTTP Error: {$error_message}",
-            ];
-        }
-
-        $status_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-
-        // Check for non-200 status codes
-        if ($status_code < 200 || $status_code >= 300) {
-            $error_msg = "API returned status {$status_code}";
-            if (!empty($body)) {
-                $decoded = json_decode($body, true);
-                if (isset($decoded['error'])) {
-                    $error_msg .= ": " . $decoded['error'];
-                } else if (isset($decoded['message'])) {
-                    $error_msg .= ": " . $decoded['message'];
-                }
+        // For non-homepage routes, also purge the alternate trailing slash variant
+        if (strlen($route) > 1) {
+            if (substr($route, -1) === '/') {
+                // Has trailing slash, also purge without
+                $routes_to_purge[] = rtrim($route, '/');
+            } else {
+                // No trailing slash, also purge with
+                $routes_to_purge[] = $route . '/';
             }
-            return [
-                'success' => false,
-                'message' => $error_msg,
+        }
+
+        $last_result = null;
+        
+        foreach ($routes_to_purge as $purge_route) {
+            $args = [
+                'headers' => $this->headers,
+                'timeout' => $this->httpRequestTimeout,
+            ];
+
+            $args['headers']['Quant-Url'] = $purge_route;
+
+            if ($this->disableTlsVerify) {
+              $args['sslverify'] = FALSE;
+            }
+
+            $response = wp_remote_post($this->endpoint . '/purge', $args);
+            
+            // Check for WordPress HTTP errors
+            if (is_wp_error($response)) {
+                $error_message = $response->get_error_message();
+                return [
+                    'success' => false,
+                    'message' => "HTTP Error: {$error_message}",
+                ];
+            }
+
+            $status_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+
+            // Check for non-200 status codes
+            if ($status_code < 200 || $status_code >= 300) {
+                $error_msg = "API returned status {$status_code}";
+                if (!empty($body)) {
+                    $decoded = json_decode($body, true);
+                    if (isset($decoded['error'])) {
+                        $error_msg .= ": " . $decoded['error'];
+                    } else if (isset($decoded['message'])) {
+                        $error_msg .= ": " . $decoded['message'];
+                    }
+                }
+                return [
+                    'success' => false,
+                    'message' => $error_msg,
+                ];
+            }
+
+            $last_result = [
+                'success' => true,
+                'message' => 'Cache purged successfully',
+                'body' => $body,
             ];
         }
 
-        return [
-            'success' => true,
-            'message' => 'Cache purged successfully',
-            'body' => $body,
-        ];
+        return $last_result;
     }
 
     /**
