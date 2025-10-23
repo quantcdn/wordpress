@@ -38,10 +38,16 @@ class Settings
         /**
          * General settings form fields.
          */
-        add_settings_field('quant_enabled', 'Quant Enabled', ['Quant\Field', 'checkbox'], $key, 'general', [
+        add_settings_field('quant_enabled', 'Automatic static push', ['Quant\Field', 'checkbox'], $key, 'general', [
             'name' => "{$key}[enabled]",
-            'description' => 'Enable QuantCDN integration',
+            'description' => 'Automatically push static content to Quant when content changes',
             'value' => $options['enabled'] ?? 0,
+        ]);
+
+        add_settings_field('quant_purge_on_save', 'Cache purge on save', ['Quant\Field', 'checkbox'], $key, 'general', [
+            'name' => "{$key}[purge_on_save]",
+            'description' => 'Automatically purge CDN cache when content changes<br><small><em>Note: This is automatically enabled when "Automatic static push" is checked.</em></small>',
+            'value' => $options['purge_on_save'] ?? 1,
         ]);
 
         add_settings_field('quant_disable_tls_verify', 'Disable SSL verify', ['Quant\Field', 'checkbox'], $key, 'general', [
@@ -194,7 +200,12 @@ class Settings
      */
     public static function sanitize($input)
     {
-        // @todo: Sanitization
+        // If automatic static push is enabled, ensure cache purge is also enabled
+        // since pushing content inherently purges the cache
+        if (!empty($input['enabled'])) {
+            $input['purge_on_save'] = 1;
+        }
+        
         return $input;
     }
 }

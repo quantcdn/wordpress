@@ -38,6 +38,7 @@ function quant_activate()
 {
     add_option(QUANT_SETTINGS_KEY, [
         'enabled' => 0,
+        'purge_on_save' => 1,
         'api_endpoint' => 'https://api.quantcdn.io',
         'webserver_url' => '',
         'webserver_host' => '',

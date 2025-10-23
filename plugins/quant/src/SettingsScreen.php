@@ -94,8 +94,13 @@ class SettingsScreen
                 <a href="?page=quant&tab=seed" class="nav-tab <?php echo $active_tab == 'seed' ? 'nav-tab-active' : ''; ?>">Seed Settings</a>
                 <a href="?page=quant&tab=settings" class="nav-tab <?php echo $active_tab == 'settings' ? 'nav-tab-active' : ''; ?>">Settings</a>
                 <a href="?page=quant&tab=cron" class="nav-tab <?php echo $active_tab == 'cron' ? 'nav-tab-active' : ''; ?>">Cron</a>
+                <a href="?page=quant&tab=cache" class="nav-tab <?php echo $active_tab == 'cache' ? 'nav-tab-active' : ''; ?>">Cache</a>
             </h2>
 
+            <?php if( $active_tab == 'cache' ) { ?>
+                <!-- Cache tab doesn't use a form, it has custom actions -->
+                <?php self::renderCacheTab(); ?>
+            <?php } else { ?>
             <form method="post" action="<?php echo esc_url( add_query_arg('tab', $active_tab, admin_url( 'options.php' )) ); ?>">
 
                 <?php
@@ -118,7 +123,160 @@ class SettingsScreen
 
                 ?>
             </form>
+            <?php } ?>
 
         </div><?php
+    }
+
+    /**
+     * Render the Cache management tab
+     *
+     * @return void
+     */
+    public static function renderCacheTab()
+    {
+        ?>
+        <div class="quant-cache-management">
+            <style>
+                .quant-cache-card {
+                    background: #fff;
+                    border: 1px solid #ccd0d4;
+                    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+                    margin: 20px 0;
+                    padding: 20px;
+                    max-width: 800px;
+                }
+                .quant-cache-card h3 {
+                    margin-top: 0;
+                }
+                .quant-cache-card p {
+                    color: #646970;
+                }
+                .quant-purge-paths {
+                    width: 100%;
+                    min-height: 150px;
+                    font-family: monospace;
+                }
+                .quant-cache-response {
+                    margin-top: 15px;
+                    padding: 10px;
+                    display: none;
+                }
+                .quant-cache-response.success {
+                    display: block;
+                    background: #d7f0d7;
+                    border-left: 4px solid #46b450;
+                    color: #000;
+                }
+                .quant-cache-response.error {
+                    display: block;
+                    background: #f8d7da;
+                    border-left: 4px solid #dc3545;
+                    color: #721c24;
+                }
+                .quant-button-large {
+                    height: 40px;
+                    font-size: 14px;
+                }
+            </style>
+
+            <div class="quant-cache-card">
+                <h3>Purge All Cache</h3>
+                <p>This will purge the entire CDN cache for your site by purging "/*".</p>
+                <button type="button" id="quant-purge-all" class="button button-primary button-hero quant-button-large">
+                    Purge All Cache
+                </button>
+                <div id="quant-purge-all-response" class="quant-cache-response"></div>
+            </div>
+
+            <div class="quant-cache-card">
+                <h3>Purge Selective Paths</h3>
+                <p>Enter specific paths to purge from the CDN cache (one per line):</p>
+                <textarea id="quant-purge-paths" class="quant-purge-paths" placeholder="/path/to/page&#10;/another/path&#10;/blog/*"></textarea>
+                <p><em>Examples: /about, /blog/*, /wp-content/themes/mytheme/style.css</em></p>
+                <button type="button" id="quant-purge-selective" class="button button-primary button-large quant-button-large">
+                    Purge Selected Paths
+                </button>
+                <div id="quant-purge-selective-response" class="quant-cache-response"></div>
+            </div>
+
+            <script>
+            jQuery(document).ready(function($) {
+                // Purge all cache
+                $('#quant-purge-all').on('click', function() {
+                    var button = $(this);
+                    var responseDiv = $('#quant-purge-all-response');
+                    
+                    button.prop('disabled', true).text('Purging...');
+                    responseDiv.removeClass('success error').hide();
+                    
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'quant_purge_cache',
+                            nonce: '<?php echo wp_create_nonce('quant_purge_cache'); ?>',
+                            paths: ['/*']
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                responseDiv.addClass('success').text('✓ Successfully purged all cache').show();
+                            } else {
+                                responseDiv.addClass('error').text('✗ Error: ' + (response.data || 'Unknown error')).show();
+                            }
+                            button.prop('disabled', false).text('Purge All Cache');
+                        },
+                        error: function(xhr, status, error) {
+                            responseDiv.addClass('error').text('✗ Request failed: ' + error).show();
+                            button.prop('disabled', false).text('Purge All Cache');
+                        }
+                    });
+                });
+
+                // Purge selective paths
+                $('#quant-purge-selective').on('click', function() {
+                    var button = $(this);
+                    var responseDiv = $('#quant-purge-selective-response');
+                    var pathsTextarea = $('#quant-purge-paths');
+                    var paths = pathsTextarea.val().split('\n').map(function(p) { 
+                        return p.trim(); 
+                    }).filter(function(p) { 
+                        return p.length > 0; 
+                    });
+                    
+                    if (paths.length === 0) {
+                        responseDiv.addClass('error').text('✗ Please enter at least one path').show();
+                        return;
+                    }
+                    
+                    button.prop('disabled', true).text('Purging...');
+                    responseDiv.removeClass('success error').hide();
+                    
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'quant_purge_cache',
+                            nonce: '<?php echo wp_create_nonce('quant_purge_cache'); ?>',
+                            paths: paths
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                responseDiv.addClass('success').text('✓ Successfully purged ' + paths.length + ' path(s)').show();
+                            } else {
+                                responseDiv.addClass('error').text('✗ Error: ' + (response.data || 'Unknown error')).show();
+                            }
+                            button.prop('disabled', false).text('Purge Selected Paths');
+                        },
+                        error: function(xhr, status, error) {
+                            responseDiv.addClass('error').text('✗ Request failed: ' + error).show();
+                            button.prop('disabled', false).text('Purge Selected Paths');
+                        }
+                    });
+                });
+            });
+            </script>
+        </div>
+        <?php
     }
 }
