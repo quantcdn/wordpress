@@ -110,7 +110,6 @@ if (!function_exists('quant_save_post')) {
             }
             
             $client->purge($permalink);
-            error_log("Quant: Purged cache for {$permalink}");
         }
     }
 }
@@ -169,7 +168,6 @@ if (!function_exists('quant_save_category')) {
             }
             
             $client->purge($permalink);
-            error_log("Quant: Purged cache for category {$permalink}");
         }
     }
 }
@@ -399,18 +397,21 @@ if (!function_exists('quant_purge_cache_ajax')) {
                 $path = '/' . $path;
             }
 
-            try {
-                $result = $client->purge($path);
+            $purge_result = $client->purge($path);
+            
+            if (!empty($purge_result['success'])) {
                 $results[] = $path;
-                error_log("Quant: Purged cache for {$path}");
-            } catch (Exception $e) {
-                $errors[] = "Failed to purge {$path}: " . $e->getMessage();
-                error_log("Quant: Failed to purge cache for {$path}: " . $e->getMessage());
+            } else {
+                $error_message = isset($purge_result['message']) ? $purge_result['message'] : 'Unknown error';
+                $errors[] = "{$path}: {$error_message}";
             }
         }
 
         if (!empty($errors)) {
-            wp_send_json_error(implode('; ', $errors));
+            $error_msg = 'Failed to purge some paths: ' . implode('; ', $errors);
+            wp_send_json_error($error_msg);
+        } else if (empty($results)) {
+            wp_send_json_error('No valid paths were processed');
         } else {
             wp_send_json_success([
                 'message' => 'Successfully purged ' . count($results) . ' path(s)',
