@@ -5,7 +5,7 @@ Tags: static, jamstack, cdn, quant, static site generator
 Requires at least: 4.6
 Tested up to: 6.8.2
 Requires PHP: 7.4
-Stable tag: 1.5.2
+Stable tag: 1.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,6 +64,16 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 == Screenshots ==
 
 == Changelog ==
+
+= 1.6.0 =
+* Feature: Added new Cache tab for manual CDN cache purging (purge all or selective paths).
+* Feature: Added "Cache purge on save" option to automatically purge CDN cache when content changes.
+* Feature: Renamed "Quant Enabled" to "Automatic static push" for clarity.
+* Feature: Automatic trailing slash handling - purges both /path and /path/ variants.
+* Improvement: Enhanced error handling and validation for cache purge operations.
+* Improvement: Cache purge now works independently of automatic static push.
+* Tested with WordPress 6.8.2.
+* Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
 = 1.5.2 =
 * Tested with WordPress 6.8.2.
