@@ -84,18 +84,33 @@ if (!function_exists('quant_save_post')) {
      */
     function quant_save_post($id)
     {
-        if (!quant_is_enabled()) {
+        $options = quant_get_options();
+        
+        // If automatic push is enabled, send the full content
+        if (quant_is_enabled()) {
+            // @todo: Support draft/scheduled posts
+            if (get_post_status($id) !== 'publish') {
+                quant_unpublish_post($id);
+                return;
+            }
+
+            $client = new Client();
+            $client->sendPost($id);
             return;
         }
 
-        // @todo: Support draft/scheduled posts
-        if (get_post_status($id) !== 'publish') {
-            quant_unpublish_post($id);
-            return;
+        // If automatic push is disabled but cache purge is enabled, just purge
+        if (!empty($options['purge_on_save'])) {
+            $client = new Client();
+            $permalink = wp_make_link_relative(get_permalink($id));
+            
+            // Strip trailing slashes
+            if (strlen($permalink) > 1) {
+                $permalink = rtrim($permalink, '/');
+            }
+            
+            $client->purge($permalink);
         }
-
-        $client = new Client();
-        $client->sendPost($id);
     }
 }
 
@@ -134,8 +149,26 @@ if (!function_exists('quant_save_category')) {
      */
     function quant_save_category($id)
     {
+        $options = quant_get_options();
         $client = new Client();
-        $client->sendCategory($id);
+        
+        // If automatic push is enabled, send the full content
+        if (quant_is_enabled()) {
+            $client->sendCategory($id);
+            return;
+        }
+
+        // If automatic push is disabled but cache purge is enabled, just purge
+        if (!empty($options['purge_on_save'])) {
+            $permalink = wp_make_link_relative(get_term_link($id));
+            
+            // Strip trailing slashes
+            if (strlen($permalink) > 1) {
+                $permalink = rtrim($permalink, '/');
+            }
+            
+            $client->purge($permalink);
+        }
     }
 }
 
@@ -319,4 +352,74 @@ if (!function_exists('quant_init_hooks')) {
     // Init other quant init hooks (with weight).
     add_action( 'init', 'quant_init_hooks', 1000 );
 
+}
+
+if (!function_exists('quant_purge_cache_ajax')) {
+    /**
+     * AJAX handler for cache purging
+     *
+     * @return void
+     */
+    function quant_purge_cache_ajax()
+    {
+        // Verify nonce
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'quant_purge_cache')) {
+            wp_send_json_error('Invalid security token');
+            return;
+        }
+
+        // Check user permissions
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+
+        // Get paths to purge
+        $paths = isset($_POST['paths']) ? $_POST['paths'] : [];
+        
+        if (empty($paths) || !is_array($paths)) {
+            wp_send_json_error('No paths provided');
+            return;
+        }
+
+        $client = new Client();
+        $results = [];
+        $errors = [];
+
+        foreach ($paths as $path) {
+            $path = trim($path);
+            if (empty($path)) {
+                continue;
+            }
+
+            // Ensure path starts with /
+            if (substr($path, 0, 1) !== '/') {
+                $path = '/' . $path;
+            }
+
+            $purge_result = $client->purge($path);
+            
+            if (!empty($purge_result['success'])) {
+                $results[] = $path;
+            } else {
+                $error_message = isset($purge_result['message']) ? $purge_result['message'] : 'Unknown error';
+                $errors[] = "{$path}: {$error_message}";
+            }
+        }
+
+        if (!empty($errors)) {
+            $error_msg = 'Failed to purge some paths: ' . implode('; ', $errors);
+            wp_send_json_error($error_msg);
+        } else if (empty($results)) {
+            wp_send_json_error('No valid paths were processed');
+        } else {
+            wp_send_json_success([
+                'message' => 'Successfully purged ' . count($results) . ' path(s)',
+                'paths' => $results
+            ]);
+        }
+    }
+
+    // Register AJAX handlers
+    add_action('wp_ajax_quant_purge_cache', 'quant_purge_cache_ajax');
 }

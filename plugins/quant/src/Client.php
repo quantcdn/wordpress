@@ -173,6 +173,7 @@ class Client
      * Purge the cache for a route in Quant.
      *
      * @param string $route
+     * @return array Array with 'success' (bool), 'message' (string), and optional 'body' (string)
      */
     public function purge($route) {
 
@@ -188,9 +189,41 @@ class Client
         }
 
         $response = wp_remote_post($this->endpoint . '/purge', $args);
+        
+        // Check for WordPress HTTP errors
+        if (is_wp_error($response)) {
+            $error_message = $response->get_error_message();
+            return [
+                'success' => false,
+                'message' => "HTTP Error: {$error_message}",
+            ];
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
 
-        return $body;
+        // Check for non-200 status codes
+        if ($status_code < 200 || $status_code >= 300) {
+            $error_msg = "API returned status {$status_code}";
+            if (!empty($body)) {
+                $decoded = json_decode($body, true);
+                if (isset($decoded['error'])) {
+                    $error_msg .= ": " . $decoded['error'];
+                } else if (isset($decoded['message'])) {
+                    $error_msg .= ": " . $decoded['message'];
+                }
+            }
+            return [
+                'success' => false,
+                'message' => $error_msg,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Cache purged successfully',
+            'body' => $body,
+        ];
     }
 
     /**

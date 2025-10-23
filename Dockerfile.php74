@@ -1,6 +1,4 @@
-# Latest WordPress with current PHP version (8.x)
-# For PHP 7.4 testing, use Dockerfile.php74 instead
-FROM wordpress:latest
+FROM wordpress:php7.4-apache
 
 RUN apt update && apt install cron -y
 
@@ -12,3 +10,4 @@ RUN service cron start
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
+
