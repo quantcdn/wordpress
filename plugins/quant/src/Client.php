@@ -25,7 +25,7 @@ class Client
         $this->settings = $settings;
         $this->webserver = $settings['webserver_url'] ?? '';
         $this->host = $settings['webserver_host'] ?? '';
-        $this->endpoint = $settings['api_endpoint'] ?? '' . '/v1' ?? '';
+        $this->endpoint = $settings['api_endpoint'] ?? '' . '/v1';
         $this->headers['Content-type'] = 'application/json';
         $this->headers['quant-project'] = $settings['api_project'] ?? '';
         $this->headers['quant-customer'] = $settings['api_account'] ?? '';
