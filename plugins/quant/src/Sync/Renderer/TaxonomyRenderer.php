@@ -44,11 +44,7 @@ final class TaxonomyRenderer
     {
         $term = get_term($termId);
 
-        if (!$term instanceof WP_Term) {
-            return null;
-        }
-
-        if (is_wp_error($term)) {
+        if (is_wp_error($term) || !$term instanceof WP_Term) {
             return null;
         }
 
