@@ -20,3 +20,57 @@ if (!defined('QUANT_PLUGIN_DIR')) {
 if (!defined('QUANT_PLUGIN_URL')) {
     define('QUANT_PLUGIN_URL', 'http://localhost/wp-content/plugins/quant/');
 }
+
+// WordPress constants used by wpdb
+if (!defined('ARRAY_A')) {
+    define('ARRAY_A', 'ARRAY_A');
+}
+
+if (!defined('OBJECT')) {
+    define('OBJECT', 'OBJECT');
+}
+
+// Stub wpdb class for testing
+if (!class_exists('wpdb')) {
+    // phpcs:ignore
+    class wpdb
+    {
+        public string $prefix = '';
+        public int $rows_affected = 0;
+
+        public function insert(string $table, array $data, ?array $format = null): int|false
+        {
+            return 1;
+        }
+
+        public function update(string $table, array $data, array $where, ?array $format = null, ?array $where_format = null): int|false
+        {
+            return 1;
+        }
+
+        public function delete(string $table, array $where, ?array $where_format = null): int|false
+        {
+            return 1;
+        }
+
+        public function prepare(string $query, mixed ...$args): string|null
+        {
+            return '';
+        }
+
+        public function query(string $query): int|bool
+        {
+            return 1;
+        }
+
+        public function get_results(string $query, string $output = 'OBJECT'): array|object|null
+        {
+            return [];
+        }
+
+        public function get_charset_collate(): string
+        {
+            return 'utf8mb4_unicode_ci';
+        }
+    }
+}

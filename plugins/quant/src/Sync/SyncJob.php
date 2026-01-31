@@ -20,9 +20,28 @@ final class SyncJob implements JsonSerializable
         public readonly string $objectId,
         public readonly SyncAction $action,
         public readonly array $meta = [],
+        ?string $id = null,
+        ?DateTimeImmutable $createdAt = null,
     ) {
-        $this->id = uniqid('', true);
-        $this->createdAt = new DateTimeImmutable();
+        $this->id = $id ?? uniqid('', true);
+        $this->createdAt = $createdAt ?? new DateTimeImmutable();
+    }
+
+    /**
+     * Create a SyncJob from database row data.
+     *
+     * @param array{job_id: string, type: string, object_id: string, action: string, created_at: string} $row
+     */
+    public static function fromDatabaseRow(array $row): self
+    {
+        return new self(
+            type: SyncType::from($row['type']),
+            objectId: $row['object_id'],
+            action: SyncAction::from($row['action']),
+            meta: [],
+            id: $row['job_id'],
+            createdAt: new DateTimeImmutable($row['created_at']),
+        );
     }
 
     /**
