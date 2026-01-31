@@ -98,7 +98,9 @@ final class PostRenderer implements ContentRendererInterface
     {
         $response = wp_remote_get($url, [
             'timeout' => 30,
-            'sslverify' => false,
+            // SSL verification enabled by default. Use 'quant_renderer_ssl_verify' filter
+            // to disable in development environments with self-signed certificates.
+            'sslverify' => apply_filters('quant_renderer_ssl_verify', true),
         ]);
 
         if (is_wp_error($response)) {
