@@ -1,0 +1,39 @@
+// QuantCDN Admin Styles
+
+.quant-status {
+    &--success {
+        color: #00a32a;
+        font-weight: 500;
+    }
+
+    &--error {
+        color: #d63638;
+        font-weight: 500;
+    }
+}
+
+.quant-dashboard__cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.quant-cache,
+.quant-settings {
+    max-width: 800px;
+
+    .components-notice {
+        margin-bottom: 16px;
+    }
+
+    .components-card {
+        margin-bottom: 16px;
+    }
+}
+
+.quant-dashboard {
+    h1 {
+        margin-bottom: 24px;
+    }
+}
