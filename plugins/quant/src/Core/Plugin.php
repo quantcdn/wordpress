@@ -7,6 +7,7 @@ namespace Quant\Core;
 use Quant\Api;
 use Quant\Admin;
 use Quant\Hook;
+use Quant\Migration;
 
 class Plugin
 {
@@ -69,6 +70,38 @@ class Plugin
             fn($c) => new Admin\RestController(
                 $c->get(Api\ContentApiInterface::class),
                 $c->get(Settings::class)
+            )
+        );
+
+        // Migration services
+        $this->container->singleton(
+            Migration\V1Detector::class,
+            function () {
+                global $wpdb;
+                return new Migration\V1Detector($wpdb);
+            }
+        );
+
+        $this->container->singleton(
+            Migration\V1Migrator::class,
+            function ($c) {
+                global $wpdb;
+                return new Migration\V1Migrator(
+                    $c->get(Migration\V1Detector::class),
+                    $c->get(Settings::class),
+                    $wpdb
+                );
+            }
+        );
+
+        // Diagnostics controller
+        $this->container->singleton(
+            Admin\DiagnosticsController::class,
+            fn($c) => new Admin\DiagnosticsController(
+                $c->get(Api\ContentApiInterface::class),
+                $c->get(Settings::class),
+                $c->get(Migration\V1Detector::class),
+                $c->get(Migration\V1Migrator::class)
             )
         );
 
@@ -158,5 +191,6 @@ class Plugin
     public function registerRestRoutes(): void
     {
         $this->container->get(Admin\RestController::class)->register();
+        $this->container->get(Admin\DiagnosticsController::class)->register();
     }
 }

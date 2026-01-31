@@ -28,6 +28,12 @@ export function Layout({ children }) {
                             </NavLink>
                         </li>
                         <li>
+                            <NavLink to="/content">
+                                <span className="dashicons dashicons-media-text"></span>
+                                {__('Content', 'quant')}
+                            </NavLink>
+                        </li>
+                        <li>
                             <NavLink to="/cache">
                                 <span className="dashicons dashicons-trash"></span>
                                 {__('Cache', 'quant')}
@@ -37,6 +43,12 @@ export function Layout({ children }) {
                             <NavLink to="/settings">
                                 <span className="dashicons dashicons-admin-settings"></span>
                                 {__('Settings', 'quant')}
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink to="/diagnostics">
+                                <span className="dashicons dashicons-info-outline"></span>
+                                {__('Diagnostics', 'quant')}
                             </NavLink>
                         </li>
                     </ul>
