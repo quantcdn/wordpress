@@ -29,6 +29,12 @@ final class MediaSyncTest extends TestCase
         parent::setUp();
         Monkey\setUp();
 
+        // Mock WordPress trailingslashit function
+        Functions\when('trailingslashit')
+            ->alias(function (string $value): string {
+                return rtrim($value, '/\\') . '/';
+            });
+
         $this->api = Mockery::mock(ContentApiInterface::class);
         $this->mediaSync = new MediaSync($this->api);
     }

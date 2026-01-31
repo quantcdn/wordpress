@@ -30,6 +30,12 @@ final class ThemeAssetSyncTest extends TestCase
         parent::setUp();
         Monkey\setUp();
 
+        // Mock WordPress trailingslashit function
+        Functions\when('trailingslashit')
+            ->alias(function (string $value): string {
+                return rtrim($value, '/\\') . '/';
+            });
+
         $this->api = Mockery::mock(ContentApiInterface::class);
         $this->themeAssetSync = new ThemeAssetSync($this->api);
 

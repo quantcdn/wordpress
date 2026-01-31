@@ -98,8 +98,13 @@ final class MediaSync
             return 0;
         }
 
-        $baseDir = dirname($mainFilePath);
-        $baseUrl = dirname($this->getAttachmentPath($attachmentId) ?? '');
+        $attachmentPath = $this->getAttachmentPath($attachmentId);
+        if ($attachmentPath === null) {
+            return 0;
+        }
+
+        $baseDir = trailingslashit(dirname($mainFilePath));
+        $baseUrl = dirname($attachmentPath);
         $sizesSynced = 0;
 
         foreach ($metadata['sizes'] as $size => $sizeData) {
@@ -107,7 +112,7 @@ final class MediaSync
                 continue;
             }
 
-            $sizeFilePath = $baseDir . '/' . $sizeData['file'];
+            $sizeFilePath = $baseDir . $sizeData['file'];
             $sizeCdnPath = $baseUrl . '/' . $sizeData['file'];
 
             if (!file_exists($sizeFilePath)) {

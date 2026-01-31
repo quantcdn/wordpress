@@ -115,6 +115,7 @@ final class ThemeAssetSync
 
         $results = [];
         $cdnBasePath = $this->uriToPath($themeUri);
+        $themeDir = trailingslashit($themeDir);
 
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator(
@@ -137,7 +138,7 @@ final class ThemeAssetSync
 
             $localPath = $file->getPathname();
             $relativePath = substr($localPath, strlen($themeDir));
-            $cdnPath = $cdnBasePath . $relativePath;
+            $cdnPath = $cdnBasePath . '/' . $relativePath;
 
             $results[] = $this->syncAsset($localPath, $cdnPath);
         }
@@ -159,6 +160,9 @@ final class ThemeAssetSync
     private function uriToPath(string $uri): string
     {
         $parsed = parse_url($uri);
-        return $parsed['path'] ?? '';
+        if ($parsed === false || !isset($parsed['path'])) {
+            return '';
+        }
+        return $parsed['path'];
     }
 }
