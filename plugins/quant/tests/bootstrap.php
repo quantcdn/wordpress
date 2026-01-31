@@ -30,6 +30,34 @@ if (!defined('OBJECT')) {
     define('OBJECT', 'OBJECT');
 }
 
+// Stub WP_Post class for testing
+if (!class_exists('WP_Post')) {
+    // phpcs:ignore
+    class WP_Post
+    {
+        public int $ID = 0;
+        public string $post_type = 'post';
+        public string $post_status = 'publish';
+        public string $post_title = '';
+        public string $post_content = '';
+        public string $post_excerpt = '';
+        public string $post_date = '';
+        public string $post_date_gmt = '';
+        public string $post_modified = '';
+        public string $post_modified_gmt = '';
+        public int $post_author = 0;
+        public string $post_name = '';
+        public int $post_parent = 0;
+        public string $guid = '';
+        public int $menu_order = 0;
+        public string $post_mime_type = '';
+        public string $comment_status = 'open';
+        public string $ping_status = 'open';
+        public int $comment_count = 0;
+        public string $filter = 'raw';
+    }
+}
+
 // Stub wpdb class for testing
 if (!class_exists('wpdb')) {
     // phpcs:ignore
