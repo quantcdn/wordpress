@@ -874,6 +874,7 @@ class RestController
 
         $processed = 0;
         $failed = 0;
+        $errors = [];
 
         foreach ($jobs as $job) {
             try {
@@ -883,11 +884,15 @@ class RestController
                     $this->getQueue()->markCompleted($job->id);
                     $processed++;
                 } else {
-                    $this->getQueue()->markFailed($job->id, 'Processing failed');
+                    $error = 'Processing failed';
+                    $this->getQueue()->markFailed($job->id, $error);
+                    $errors[] = "{$job->type->value} #{$job->objectId}: {$error}";
                     $failed++;
                 }
             } catch (\Throwable $e) {
-                $this->getQueue()->markFailed($job->id, $e->getMessage());
+                $error = $e->getMessage();
+                $this->getQueue()->markFailed($job->id, $error);
+                $errors[] = "{$job->type->value} #{$job->objectId}: {$error}";
                 $failed++;
             }
         }
@@ -899,6 +904,7 @@ class RestController
             'processed' => $processed,
             'failed' => $failed,
             'remaining' => $status->pending,
+            'errors' => $errors,
         ];
     }
 

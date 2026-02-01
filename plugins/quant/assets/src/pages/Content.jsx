@@ -132,11 +132,37 @@ export function Content() {
                 data: { limit: 10 }
             });
 
-            setNotice({
-                status: 'success',
-                message: __(`Processed ${response.processed} items.`, 'quant')
-            });
-            setShowProgress(true);
+            // Build informative message
+            let message = '';
+            let status = 'info';
+
+            if (response.processed === 0 && response.failed === 0) {
+                message = __('No pending items in queue. Use "Seed All Content" or select items to sync.', 'quant');
+            } else if (response.failed > 0 && response.processed > 0) {
+                message = __(`Processed ${response.processed} items, ${response.failed} failed.`, 'quant');
+                status = 'warning';
+            } else if (response.failed > 0) {
+                message = __(`${response.failed} items failed to process.`, 'quant');
+                status = 'error';
+            } else {
+                message = __(`Processed ${response.processed} items successfully.`, 'quant');
+                status = 'success';
+            }
+
+            if (response.remaining > 0) {
+                message += ` ${response.remaining} remaining.`;
+            }
+
+            // Add error details if any
+            if (response.errors && response.errors.length > 0) {
+                message += '\n\nErrors:\n' + response.errors.join('\n');
+            }
+
+            setNotice({ status, message });
+
+            if (response.processed > 0 || response.remaining > 0) {
+                setShowProgress(true);
+            }
         } catch (error) {
             setNotice({
                 status: 'error',
