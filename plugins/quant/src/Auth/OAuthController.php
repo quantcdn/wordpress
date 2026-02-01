@@ -362,11 +362,11 @@ class OAuthController
     }
 
     /**
-     * Fetch projects for an organization.
+     * Fetch projects for an organization from Cloud API.
      */
-    private function fetchProjectsForOrganization(string $accessToken, string $orgId): array|WP_Error
+    private function fetchProjectsForOrganization(string $accessToken, string $orgMachineName): array|WP_Error
     {
-        $response = wp_remote_get($this->getApiUrl() . '/v1/global/organizations/' . $orgId . '/projects', [
+        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . $orgMachineName . '/projects', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Accept' => 'application/json',
@@ -386,11 +386,40 @@ class OAuthController
             return new WP_Error('fetch_projects_failed', __('Failed to fetch projects.', 'quant'));
         }
 
-        return $data['projects'] ?? $data;
+        return $data['data'] ?? $data;
+    }
+
+    /**
+     * Fetch project details to get the write token for content API.
+     */
+    private function fetchProjectDetails(string $accessToken, string $orgMachineName, string $projectMachineName): array|WP_Error
+    {
+        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . $orgMachineName . '/projects/' . $projectMachineName . '?with_token=1', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Accept' => 'application/json',
+            ],
+            'timeout' => 30,
+        ]);
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $statusCode = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if ($statusCode !== 200 || !is_array($data)) {
+            return new WP_Error('fetch_project_failed', __('Failed to fetch project details.', 'quant'));
+        }
+
+        return $data['data'] ?? $data;
     }
 
     /**
      * Select a project to use.
+     * Fetches project details to get the write token for the content API.
      */
     public function selectProject(\WP_REST_Request $request): array|WP_Error
     {
@@ -403,11 +432,25 @@ class OAuthController
         $organization = sanitize_text_field($request->get_param('organization'));
         $project = sanitize_text_field($request->get_param('project'));
 
-        // Store credentials using the OAuth token as the API token
+        // Fetch project details to get the write token
+        $projectDetails = $this->fetchProjectDetails($token['access_token'], $organization, $project);
+
+        if (is_wp_error($projectDetails)) {
+            return $projectDetails;
+        }
+
+        // Get the write token from project details
+        $writeToken = $projectDetails['write_token'] ?? $projectDetails['token'] ?? null;
+
+        if (empty($writeToken)) {
+            return new WP_Error('no_token', __('Could not retrieve project write token.', 'quant'), ['status' => 400]);
+        }
+
+        // Store credentials with the project's write token for the content API
         $credentials = $this->settings->getCredentials();
         $credentials['organization'] = $organization;
         $credentials['project'] = $project;
-        $credentials['token'] = $token['access_token'];
+        $credentials['token'] = $writeToken;
 
         $this->settings->setCredentials($credentials);
 
@@ -467,11 +510,19 @@ class OAuthController
     }
 
     /**
-     * Get the API URL from settings or default.
+     * Get the Content API URL from settings or default.
      */
     private function getApiUrl(): string
     {
         $credentials = $this->settings->getCredentials();
         return $credentials['endpoint'] ?? 'https://api.quantcdn.io';
+    }
+
+    /**
+     * Get the Cloud API URL (portal API for managing orgs/projects).
+     */
+    private function getCloudApiUrl(): string
+    {
+        return apply_filters('quant_cloud_api_url', self::PORTAL_URL . '/api/v2');
     }
 }
