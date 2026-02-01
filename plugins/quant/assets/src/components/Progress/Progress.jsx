@@ -20,9 +20,17 @@ export function Progress({ onComplete, pollInterval = 2000 }) {
     const pollRef = useRef(null);
     const initialTotalRef = useRef(null);
 
-    // Fetch queue status
+    // Process pending items and fetch status
     const fetchStatus = useCallback(async () => {
         try {
+            // First, process a batch of pending items
+            const processResponse = await apiFetch({
+                path: '/quant/v1/queue/process',
+                method: 'POST',
+                data: { limit: 5 }
+            });
+
+            // Then fetch the current status
             const response = await apiFetch({
                 path: '/quant/v1/queue/status'
             });

@@ -72,7 +72,8 @@ class Plugin
             Admin\RestController::class,
             fn($c) => new Admin\RestController(
                 $c->get(Api\ContentApiInterface::class),
-                $c->get(Settings::class)
+                $c->get(Settings::class),
+                $c->get(Sync\Renderer\ContentRendererInterface::class)
             )
         );
 

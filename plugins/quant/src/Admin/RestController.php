@@ -10,6 +10,7 @@ use Quant\Sync\DatabaseQueue;
 use Quant\Sync\SyncJob;
 use Quant\Sync\SyncType;
 use Quant\Sync\SyncAction;
+use Quant\Sync\Renderer\ContentRendererInterface;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
@@ -24,7 +25,8 @@ class RestController
 
     public function __construct(
         private readonly ContentApiInterface $api,
-        private readonly Settings $settings
+        private readonly Settings $settings,
+        private readonly ContentRendererInterface $renderer
     ) {}
 
     private function getQueue(): DatabaseQueue
@@ -163,6 +165,21 @@ class RestController
             'methods' => 'POST',
             'callback' => [$this, 'retryQueue'],
             'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        // Queue process endpoint
+        register_rest_route(self::NAMESPACE, '/queue/process', [
+            'methods' => 'POST',
+            'callback' => [$this, 'processQueue'],
+            'permission_callback' => [$this, 'checkPermission'],
+            'args' => [
+                'limit' => [
+                    'type' => 'integer',
+                    'default' => 10,
+                    'minimum' => 1,
+                    'maximum' => 50,
+                ],
+            ],
         ]);
 
         // Content types endpoint
@@ -706,6 +723,172 @@ class RestController
             'success' => true,
             'queued' => $count,
         ];
+    }
+
+    /**
+     * Process pending queue items.
+     */
+    public function processQueue(WP_REST_Request $request): array
+    {
+        if (!$this->settings->hasValidCredentials()) {
+            return [
+                'success' => false,
+                'error' => 'Credentials not configured',
+                'processed' => 0,
+                'failed' => 0,
+            ];
+        }
+
+        $limit = (int) $request->get_param('limit');
+        $jobs = $this->getQueue()->fetchPending($limit);
+
+        if (empty($jobs)) {
+            return [
+                'success' => true,
+                'processed' => 0,
+                'failed' => 0,
+                'remaining' => 0,
+            ];
+        }
+
+        $processed = 0;
+        $failed = 0;
+
+        foreach ($jobs as $job) {
+            try {
+                $success = $this->processJob($job);
+
+                if ($success) {
+                    $this->getQueue()->markCompleted($job->id);
+                    $processed++;
+                } else {
+                    $this->getQueue()->markFailed($job->id, 'Processing failed');
+                    $failed++;
+                }
+            } catch (\Throwable $e) {
+                $this->getQueue()->markFailed($job->id, $e->getMessage());
+                $failed++;
+            }
+        }
+
+        $status = $this->getQueue()->getStatus();
+
+        return [
+            'success' => true,
+            'processed' => $processed,
+            'failed' => $failed,
+            'remaining' => $status->pending,
+        ];
+    }
+
+    /**
+     * Process a single sync job.
+     */
+    private function processJob(SyncJob $job): bool
+    {
+        switch ($job->action) {
+            case SyncAction::Publish:
+                return $this->processPublishJob($job);
+
+            case SyncAction::Unpublish:
+                return $this->processUnpublishJob($job);
+
+            case SyncAction::Purge:
+                return $this->processPurgeJob($job);
+
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Process a publish job.
+     */
+    private function processPublishJob(SyncJob $job): bool
+    {
+        switch ($job->type) {
+            case SyncType::Post:
+            case SyncType::Page:
+            case SyncType::CustomPostType:
+                $rendered = $this->renderer->render((int) $job->objectId);
+
+                if ($rendered === null) {
+                    return false;
+                }
+
+                $response = $this->api->publish($rendered->url, $rendered->markup, $rendered->meta);
+                return $response->success;
+
+            case SyncType::Media:
+                $attachment = get_post((int) $job->objectId);
+                if ($attachment === null) {
+                    return false;
+                }
+
+                $filePath = get_attached_file((int) $job->objectId);
+                if ($filePath === false || !file_exists($filePath)) {
+                    return false;
+                }
+
+                $url = wp_get_attachment_url((int) $job->objectId);
+                if ($url === false) {
+                    return false;
+                }
+
+                $path = wp_parse_url($url, PHP_URL_PATH);
+                if ($path === null) {
+                    return false;
+                }
+
+                $response = $this->api->uploadFile($path, $filePath);
+                return $response->success;
+
+            case SyncType::Taxonomy:
+                // TODO: Implement taxonomy rendering
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Process an unpublish job.
+     */
+    private function processUnpublishJob(SyncJob $job): bool
+    {
+        $post = get_post((int) $job->objectId);
+
+        if ($post === null) {
+            $url = $job->meta['url'] ?? null;
+            if ($url === null) {
+                return false;
+            }
+        } else {
+            $permalink = get_permalink($post);
+            if ($permalink === false) {
+                return false;
+            }
+            $url = wp_parse_url($permalink, PHP_URL_PATH) ?? '/';
+        }
+
+        $response = $this->api->unpublish($url);
+        return $response->success;
+    }
+
+    /**
+     * Process a purge job.
+     */
+    private function processPurgeJob(SyncJob $job): bool
+    {
+        $path = $job->meta['path'] ?? null;
+
+        if ($path === null) {
+            return false;
+        }
+
+        $response = $this->api->purge($path);
+        return $response->success;
     }
 
     /**
