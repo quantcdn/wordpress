@@ -182,6 +182,13 @@ class RestController
             ],
         ]);
 
+        // Test internal connectivity endpoint
+        register_rest_route(self::NAMESPACE, '/test-internal', [
+            'methods' => 'POST',
+            'callback' => [$this, 'testInternal'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
         // Content types endpoint
         register_rest_route(self::NAMESPACE, '/content-types', [
             'methods' => 'GET',
@@ -843,6 +850,60 @@ class RestController
         return [
             'success' => true,
             'queued' => $count,
+        ];
+    }
+
+    /**
+     * Test internal connectivity by fetching /__quant-validate.
+     */
+    public function testInternal(WP_REST_Request $request): array
+    {
+        $testUrl = home_url('/__quant-validate');
+        $originalUrl = $testUrl;
+
+        // Apply URL adjustment filter (webserver_url, Docker fix, etc.)
+        $testUrl = apply_filters('quant_internal_fetch_url', $testUrl);
+
+        $response = wp_remote_get($testUrl, [
+            'timeout' => 10,
+            'sslverify' => false,
+        ]);
+
+        if (is_wp_error($response)) {
+            return [
+                'success' => false,
+                'message' => $response->get_error_message(),
+                'original_url' => $originalUrl,
+                'adjusted_url' => $testUrl,
+            ];
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+
+        if ($code !== 200) {
+            return [
+                'success' => false,
+                'message' => "HTTP {$code} response",
+                'original_url' => $originalUrl,
+                'adjusted_url' => $testUrl,
+            ];
+        }
+
+        if (trim($body) !== 'quant-ok') {
+            return [
+                'success' => false,
+                'message' => "Unexpected response: " . substr($body, 0, 100),
+                'original_url' => $originalUrl,
+                'adjusted_url' => $testUrl,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Internal connectivity working',
+            'original_url' => $originalUrl,
+            'adjusted_url' => $testUrl,
         ];
     }
 

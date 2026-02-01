@@ -38,6 +38,8 @@ export function Settings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
+    const [testingInternal, setTestingInternal] = useState(false);
+    const [internalTestResult, setInternalTestResult] = useState(null);
     const [notice, setNotice] = useState(null);
 
     // OAuth state
@@ -202,6 +204,26 @@ export function Settings() {
             setNotice({ status: 'error', message: error.message || __('Connection test failed', 'quant') });
         } finally {
             setTesting(false);
+        }
+    };
+
+    const handleTestInternal = async () => {
+        setTestingInternal(true);
+        setInternalTestResult(null);
+
+        try {
+            const response = await apiFetch({
+                path: '/quant/v1/test-internal',
+                method: 'POST'
+            });
+            setInternalTestResult(response);
+        } catch (error) {
+            setInternalTestResult({
+                success: false,
+                message: error.message || __('Test failed', 'quant')
+            });
+        } finally {
+            setTestingInternal(false);
         }
     };
 
@@ -510,6 +532,40 @@ export function Settings() {
                         <h2 style={{ margin: 0 }}>{__('Static Configuration', 'quant')}</h2>
                     </CardHeader>
                     <CardBody>
+                        {/* Internal connectivity test */}
+                        <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+                            <Flex align="center" gap={3}>
+                                <FlexItem>
+                                    <strong>{__('Internal Connectivity', 'quant')}</strong>
+                                </FlexItem>
+                                <FlexItem>
+                                    {internalTestResult === null ? (
+                                        <span style={{ color: '#757575' }}>{__('Not tested', 'quant')}</span>
+                                    ) : internalTestResult.success ? (
+                                        <span style={{ color: '#00a32a' }}>✓ {__('Working', 'quant')}</span>
+                                    ) : (
+                                        <span style={{ color: '#d63638' }}>✗ {internalTestResult.message}</span>
+                                    )}
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button
+                                        variant="secondary"
+                                        size="small"
+                                        onClick={handleTestInternal}
+                                        disabled={testingInternal}
+                                        isBusy={testingInternal}
+                                    >
+                                        {__('Test Connection', 'quant')}
+                                    </Button>
+                                </FlexItem>
+                            </Flex>
+                            {internalTestResult && (
+                                <div style={{ marginTop: '8px', fontSize: '12px', color: '#757575' }}>
+                                    {__('Testing:', 'quant')} {internalTestResult.adjusted_url || internalTestResult.original_url}
+                                </div>
+                            )}
+                        </div>
+
                         <TextControl
                             label={__('Webserver URL', 'quant')}
                             value={settings.webserver_url}

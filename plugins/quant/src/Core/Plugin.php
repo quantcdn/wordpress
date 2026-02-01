@@ -172,8 +172,33 @@ class Plugin
         // Internal URL fetch filter (handles Docker/dev environments)
         add_filter('quant_internal_fetch_url', [$this, 'adjustInternalFetchUrl']);
 
+        // Validation endpoint for internal connectivity test (early hook)
+        add_action('init', [$this, 'handleValidationRequest'], 1);
+
         // WP-CLI commands
         $this->registerCliCommands();
+    }
+
+    /**
+     * Handle the /__quant-validate endpoint for internal connectivity testing.
+     */
+    public function handleValidationRequest(): void
+    {
+        if (!isset($_SERVER['REQUEST_URI'])) {
+            return;
+        }
+
+        $path = wp_parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+        if ($path !== '/__quant-validate') {
+            return;
+        }
+
+        status_header(200);
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Cache-Control: no-cache');
+        echo 'quant-ok';
+        exit;
     }
 
     private function registerCliCommands(): void
