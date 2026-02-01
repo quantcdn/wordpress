@@ -20,6 +20,7 @@ export function Content() {
     const [notice, setNotice] = useState(null);
     const [isSeeding, setIsSeeding] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
     const [showProgress, setShowProgress] = useState(false);
     const [activeTab, setActiveTab] = useState('post');
 
@@ -38,9 +39,9 @@ export function Content() {
             });
     }, []);
 
-    // Handle seed all
+    // Handle seed all - includes all content types
     const handleSeedAll = async () => {
-        if (!confirm(__('This will queue all content for syncing to QuantCDN. Continue?', 'quant'))) {
+        if (!confirm(__('This will queue ALL content for syncing to QuantCDN (posts, pages, CPTs, taxonomies, media, archives, home, theme assets). Continue?', 'quant'))) {
             return;
         }
 
@@ -48,10 +49,21 @@ export function Content() {
         setNotice(null);
 
         try {
+            // Get all CPT names to include them
+            const cptTypes = contentTypes
+                .filter(t => t.type === 'cpt')
+                .map(t => t.subtype);
+
+            const types = [
+                'post', 'page', 'media', 'taxonomy',
+                'home', 'archives', 'theme_assets',
+                ...cptTypes
+            ];
+
             const response = await apiFetch({
                 path: '/quant/v1/seed',
                 method: 'POST',
-                data: { types: ['post', 'page', 'media', 'taxonomy'] }
+                data: { types }
             });
 
             setNotice({
@@ -105,6 +117,33 @@ export function Content() {
             });
         } finally {
             setIsSyncing(false);
+        }
+    };
+
+    // Handle process queue manually
+    const handleProcessQueue = async () => {
+        setIsProcessing(true);
+        setNotice(null);
+
+        try {
+            const response = await apiFetch({
+                path: '/quant/v1/queue/process',
+                method: 'POST',
+                data: { limit: 10 }
+            });
+
+            setNotice({
+                status: 'success',
+                message: __(`Processed ${response.processed} items.`, 'quant')
+            });
+            setShowProgress(true);
+        } catch (error) {
+            setNotice({
+                status: 'error',
+                message: error.message || __('Failed to process queue', 'quant')
+            });
+        } finally {
+            setIsProcessing(false);
         }
     };
 
@@ -245,6 +284,14 @@ export function Content() {
                             >
                                 {__('Sync Selected', 'quant')}
                                 {selectedItems.length > 0 && ` (${selectedItems.length})`}
+                            </Button>
+                            <Button
+                                variant="tertiary"
+                                onClick={handleProcessQueue}
+                                disabled={isProcessing || showProgress}
+                                isBusy={isProcessing}
+                            >
+                                {__('Process Queue', 'quant')}
                             </Button>
                         </div>
                     </div>

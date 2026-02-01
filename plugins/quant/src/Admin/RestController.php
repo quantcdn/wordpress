@@ -568,16 +568,31 @@ class RestController
         foreach ($types as $type) {
             switch ($type) {
                 case 'post':
-                    $totalQueued += $this->seedPostType('post');
+                    $totalQueued += $this->seedPostType('post', SyncType::Post);
                     break;
                 case 'page':
-                    $totalQueued += $this->seedPostType('page');
+                    $totalQueued += $this->seedPostType('page', SyncType::Page);
                     break;
                 case 'media':
                     $totalQueued += $this->seedMedia();
                     break;
                 case 'taxonomy':
                     $totalQueued += $this->seedTaxonomies();
+                    break;
+                case 'theme_assets':
+                    $totalQueued += $this->seedThemeAssets();
+                    break;
+                case 'home':
+                    $totalQueued += $this->seedHomePage();
+                    break;
+                case 'archives':
+                    $totalQueued += $this->seedArchives();
+                    break;
+                default:
+                    // Check if it's a custom post type
+                    if (post_type_exists($type)) {
+                        $totalQueued += $this->seedPostType($type, SyncType::CustomPostType);
+                    }
                     break;
             }
         }
@@ -591,7 +606,7 @@ class RestController
     /**
      * Seed a post type.
      */
-    private function seedPostType(string $postType): int
+    private function seedPostType(string $postType, SyncType $syncType): int
     {
         $posts = get_posts([
             'post_type' => $postType,
@@ -604,18 +619,82 @@ class RestController
             return 0;
         }
 
-        $syncType = $postType === 'page' ? SyncType::Page : SyncType::Post;
         $jobs = [];
 
         foreach ($posts as $postId) {
             $jobs[] = new SyncJob(
                 type: $syncType,
                 objectId: (string) $postId,
-                action: SyncAction::Publish
+                action: SyncAction::Publish,
+                meta: $syncType === SyncType::CustomPostType ? ['post_type' => $postType] : []
             );
         }
 
         $this->getQueue()->pushBatch($jobs);
+
+        return count($jobs);
+    }
+
+    /**
+     * Seed theme assets (CSS, JS, images, fonts).
+     */
+    private function seedThemeAssets(): int
+    {
+        $jobs = [];
+        $jobs[] = new SyncJob(
+            type: SyncType::ThemeAssets,
+            objectId: 'theme',
+            action: SyncAction::Publish
+        );
+
+        $this->getQueue()->pushBatch($jobs);
+        return 1;
+    }
+
+    /**
+     * Seed the home page.
+     */
+    private function seedHomePage(): int
+    {
+        $jobs = [];
+        $jobs[] = new SyncJob(
+            type: SyncType::Home,
+            objectId: 'home',
+            action: SyncAction::Publish
+        );
+
+        $this->getQueue()->pushBatch($jobs);
+        return 1;
+    }
+
+    /**
+     * Seed archive pages.
+     */
+    private function seedArchives(): int
+    {
+        $jobs = [];
+
+        // Main blog archive
+        $jobs[] = new SyncJob(
+            type: SyncType::Archive,
+            objectId: 'blog',
+            action: SyncAction::Publish
+        );
+
+        // Post type archives
+        $postTypes = get_post_types(['public' => true, 'has_archive' => true], 'names');
+        foreach ($postTypes as $postType) {
+            $jobs[] = new SyncJob(
+                type: SyncType::Archive,
+                objectId: $postType,
+                action: SyncAction::Publish,
+                meta: ['post_type' => $postType]
+            );
+        }
+
+        if (!empty($jobs)) {
+            $this->getQueue()->pushBatch($jobs);
+        }
 
         return count($jobs);
     }
@@ -844,12 +923,124 @@ class RestController
                 return $response->success;
 
             case SyncType::Taxonomy:
-                // TODO: Implement taxonomy rendering
-                return false;
+                $taxonomy = $job->meta['taxonomy'] ?? 'category';
+                $term = get_term((int) $job->objectId, $taxonomy);
+                if (!$term || is_wp_error($term)) {
+                    return false;
+                }
+
+                $url = get_term_link($term);
+                if (is_wp_error($url)) {
+                    return false;
+                }
+
+                $path = wp_parse_url($url, PHP_URL_PATH);
+                $markup = $this->renderUrl($url);
+                if ($markup === null) {
+                    return false;
+                }
+
+                $response = $this->api->publish($path, $markup, [
+                    'taxonomy' => $taxonomy,
+                    'term_id' => $term->term_id,
+                ]);
+                return $response->success;
+
+            case SyncType::Home:
+                $url = home_url('/');
+                $path = '/';
+                $markup = $this->renderUrl($url);
+                if ($markup === null) {
+                    return false;
+                }
+
+                $response = $this->api->publish($path, $markup, ['type' => 'home']);
+                return $response->success;
+
+            case SyncType::Archive:
+                $postType = $job->meta['post_type'] ?? null;
+                if ($postType) {
+                    $url = get_post_type_archive_link($postType);
+                } else {
+                    // Blog archive
+                    $url = get_permalink(get_option('page_for_posts')) ?: home_url('/blog/');
+                }
+
+                if (!$url) {
+                    return false;
+                }
+
+                $path = wp_parse_url($url, PHP_URL_PATH) ?: '/';
+                $markup = $this->renderUrl($url);
+                if ($markup === null) {
+                    return false;
+                }
+
+                $response = $this->api->publish($path, $markup, [
+                    'type' => 'archive',
+                    'post_type' => $postType,
+                ]);
+                return $response->success;
+
+            case SyncType::ThemeAssets:
+                return $this->syncThemeAssets();
 
             default:
                 return false;
         }
+    }
+
+    /**
+     * Render a URL by fetching it internally.
+     */
+    private function renderUrl(string $url): ?string
+    {
+        $response = wp_remote_get($url, [
+            'timeout' => 30,
+            'sslverify' => false,
+        ]);
+
+        if (is_wp_error($response)) {
+            return null;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            return null;
+        }
+
+        return wp_remote_retrieve_body($response);
+    }
+
+    /**
+     * Sync theme assets (CSS, JS, images, fonts).
+     */
+    private function syncThemeAssets(): bool
+    {
+        $theme = wp_get_theme();
+        $themeDir = $theme->get_stylesheet_directory();
+        $themeUri = $theme->get_stylesheet_directory_uri();
+
+        $extensions = ['css', 'js', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'woff', 'woff2', 'ttf', 'eot'];
+        $pattern = $themeDir . '/**/*.{' . implode(',', $extensions) . '}';
+
+        $files = glob($pattern, GLOB_BRACE) ?: [];
+        $success = true;
+
+        foreach ($files as $file) {
+            $relativePath = str_replace($themeDir, '', $file);
+            $url = $themeUri . $relativePath;
+            $path = wp_parse_url($url, PHP_URL_PATH);
+
+            if ($path && file_exists($file)) {
+                $response = $this->api->uploadFile($path, $file);
+                if (!$response->success) {
+                    $success = false;
+                }
+            }
+        }
+
+        return $success;
     }
 
     /**
@@ -945,6 +1136,28 @@ class RestController
             'type' => 'media',
             'label' => __('Media', 'quant'),
             'count' => $mediaCount,
+        ];
+
+        // Special types for full site sync
+        $types[] = [
+            'type' => 'home',
+            'label' => __('Home Page', 'quant'),
+            'count' => 1,
+            'category' => 'special',
+        ];
+
+        $types[] = [
+            'type' => 'archives',
+            'label' => __('Archives', 'quant'),
+            'count' => count(get_post_types(['public' => true, 'has_archive' => true])) + 1,
+            'category' => 'special',
+        ];
+
+        $types[] = [
+            'type' => 'theme_assets',
+            'label' => __('Theme Assets', 'quant'),
+            'count' => 1,
+            'category' => 'special',
         ];
 
         return $types;

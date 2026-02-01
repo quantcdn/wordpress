@@ -13,6 +13,8 @@ enum SyncType: string
     case Archive = 'archive';
     case Media = 'media';
     case ThemeAsset = 'theme_asset';
+    case ThemeAssets = 'theme_assets';
     case Redirect = 'redirect';
     case CustomRoute = 'custom_route';
+    case Home = 'home';
 }
