@@ -22,11 +22,12 @@ class OAuthController
     ) {}
 
     /**
-     * Register admin hooks. Call from admin_init or plugins_loaded.
+     * Register admin hooks. Call early (plugins_loaded or init).
      */
     public function registerAdmin(): void
     {
-        add_action('admin_menu', [$this, 'registerCallbackPage']);
+        // Use admin_post_ hooks for OAuth callback - works reliably for redirects
+        add_action('admin_post_quant_oauth_callback', [$this, 'handleCallback']);
     }
 
     /**
@@ -38,21 +39,6 @@ class OAuthController
     {
         // Register REST endpoints for OAuth (called directly from Plugin::registerRestRoutes)
         $this->registerRestRoutes();
-    }
-
-    /**
-     * Register the callback page (hidden from menu).
-     */
-    public function registerCallbackPage(): void
-    {
-        add_submenu_page(
-            '', // No parent - hidden page
-            __('Quant OAuth', 'quant'),
-            __('Quant OAuth', 'quant'),
-            'manage_options',
-            'quant-oauth-callback',
-            [$this, 'handleCallback']
-        );
     }
 
     /**
@@ -122,8 +108,8 @@ class OAuthController
             self::STATE_EXPIRY
         );
 
-        // Build callback URL
-        $callbackUrl = admin_url('admin.php?page=quant-oauth-callback');
+        // Build callback URL using admin-post.php for reliable callback handling
+        $callbackUrl = admin_url('admin-post.php?action=quant_oauth_callback');
 
         // Build authorization URL
         $authUrl = $this->getPortalUrl() . '/oauth/authorize?' . http_build_query([
@@ -198,7 +184,7 @@ class OAuthController
      */
     private function exchangeCodeForToken(string $code): array|WP_Error
     {
-        $callbackUrl = admin_url('admin.php?page=quant-oauth-callback');
+        $callbackUrl = admin_url('admin-post.php?action=quant_oauth_callback');
 
         $response = wp_remote_post($this->getPortalUrl() . '/oauth/token', [
             'body' => [

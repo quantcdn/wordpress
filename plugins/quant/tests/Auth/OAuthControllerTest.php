@@ -88,7 +88,7 @@ class OAuthControllerTest extends TestCase
         $result = $this->controller->initiateOAuth();
 
         $this->assertStringContainsString('redirect_uri=', $result['redirect_url']);
-        $this->assertStringContainsString('quant-oauth-callback', $result['redirect_url']);
+        $this->assertStringContainsString('quant_oauth_callback', $result['redirect_url']);
     }
 
     #[Test]
