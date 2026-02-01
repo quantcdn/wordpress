@@ -236,6 +236,7 @@ class RestController
             'auto_purge' => $syncSettings['auto_purge'] ?? true,
             // Static config
             'webserver_url' => $staticConfig['webserver_url'] ?? '',
+            'webserver_host' => $staticConfig['webserver_host'] ?? '',
             'route_404' => $staticConfig['route_404'] ?? '/404',
             'custom_routes' => $staticConfig['custom_routes'] ?? [],
             'domain_rewrites' => $staticConfig['domain_rewrites'] ?? [],
@@ -283,14 +284,16 @@ class RestController
 
         // Static config
         $webserverUrl = $request->get_param('webserver_url');
+        $webserverHost = $request->get_param('webserver_host');
         $route404 = $request->get_param('route_404');
         $customRoutes = $request->get_param('custom_routes');
         $domainRewrites = $request->get_param('domain_rewrites');
 
-        if ($webserverUrl !== null || $route404 !== null || $customRoutes !== null || $domainRewrites !== null) {
+        if ($webserverUrl !== null || $webserverHost !== null || $route404 !== null || $customRoutes !== null || $domainRewrites !== null) {
             $existingStaticConfig = $this->settings->getStaticConfig();
             $staticConfig = [
                 'webserver_url' => $webserverUrl !== null ? esc_url_raw($webserverUrl) : ($existingStaticConfig['webserver_url'] ?? ''),
+                'webserver_host' => $webserverHost !== null ? sanitize_text_field($webserverHost) : ($existingStaticConfig['webserver_host'] ?? ''),
                 'route_404' => $route404 !== null ? sanitize_text_field($route404) : ($existingStaticConfig['route_404'] ?? '/404'),
                 'custom_routes' => $customRoutes !== null ? array_map('sanitize_text_field', (array) $customRoutes) : ($existingStaticConfig['custom_routes'] ?? []),
                 'domain_rewrites' => $domainRewrites !== null ? array_map('sanitize_text_field', (array) $domainRewrites) : ($existingStaticConfig['domain_rewrites'] ?? []),
@@ -864,10 +867,19 @@ class RestController
         // Apply URL adjustment filter (webserver_url, Docker fix, etc.)
         $testUrl = apply_filters('quant_internal_fetch_url', $testUrl);
 
-        $response = wp_remote_get($testUrl, [
+        // Build request args with optional Host header
+        $args = [
             'timeout' => 10,
             'sslverify' => false,
-        ]);
+        ];
+
+        $staticConfig = $this->settings->getStaticConfig();
+        $webserverHost = $staticConfig['webserver_host'] ?? '';
+        if (!empty($webserverHost)) {
+            $args['headers'] = ['Host' => $webserverHost];
+        }
+
+        $response = wp_remote_get($testUrl, $args);
 
         if (is_wp_error($response)) {
             return [
@@ -1117,10 +1129,20 @@ class RestController
         // Allow filtering the URL for internal fetching (e.g., Docker environments)
         $url = apply_filters('quant_internal_fetch_url', $url);
 
-        $response = wp_remote_get($url, [
+        // Build request args with optional Host header
+        $args = [
             'timeout' => 30,
             'sslverify' => false,
-        ]);
+        ];
+
+        // Add Host header if configured
+        $staticConfig = $this->settings->getStaticConfig();
+        $webserverHost = $staticConfig['webserver_host'] ?? '';
+        if (!empty($webserverHost)) {
+            $args['headers'] = ['Host' => $webserverHost];
+        }
+
+        $response = wp_remote_get($url, $args);
 
         if (is_wp_error($response)) {
             throw new \RuntimeException("HTTP request failed for {$url}: " . $response->get_error_message());

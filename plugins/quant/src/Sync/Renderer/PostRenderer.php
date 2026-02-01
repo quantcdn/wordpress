@@ -100,12 +100,15 @@ final class PostRenderer implements ContentRendererInterface
         // Allow filtering the URL for internal fetching (e.g., Docker environments)
         $url = apply_filters('quant_internal_fetch_url', $url);
 
-        $response = wp_remote_get($url, [
+        // Build request args - allow filtering for Host header etc
+        $args = apply_filters('quant_internal_fetch_args', [
             'timeout' => 30,
             // SSL verification disabled by default for internal requests.
             // Use 'quant_renderer_ssl_verify' filter to enable.
             'sslverify' => apply_filters('quant_renderer_ssl_verify', false),
         ]);
+
+        $response = wp_remote_get($url, $args);
 
         if (is_wp_error($response)) {
             throw new \RuntimeException("HTTP request failed for {$url}: " . $response->get_error_message());

@@ -29,6 +29,7 @@ export function Settings() {
         auto_purge: true,
         // Static config
         webserver_url: '',
+        webserver_host: '',
         route_404: '/404',
         custom_routes: [],
         domain_rewrites: []
@@ -572,6 +573,13 @@ export function Settings() {
                             onChange={(v) => updateSetting('webserver_url', v)}
                             placeholder="http://localhost"
                             help={__('Optional: Override the URL used for internal page rendering. Leave empty to use the site URL.', 'quant')}
+                        />
+                        <TextControl
+                            label={__('Webserver Host', 'quant')}
+                            value={settings.webserver_host}
+                            onChange={(v) => updateSetting('webserver_host', v)}
+                            placeholder="www.example.com"
+                            help={__('Optional: Host header to send with internal requests. Use when the webserver expects a specific hostname.', 'quant')}
                         />
                         <TextControl
                             label={__('404 Route', 'quant')}

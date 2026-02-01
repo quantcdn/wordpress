@@ -84,6 +84,7 @@ class Settings
     {
         return get_option(self::OPTION_STATIC_CONFIG, [
             'webserver_url' => '',
+            'webserver_host' => '',
             'custom_routes' => [],
             'route_404' => '/404',
             'domain_rewrites' => [],

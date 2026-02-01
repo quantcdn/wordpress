@@ -172,6 +172,9 @@ class Plugin
         // Internal URL fetch filter (handles Docker/dev environments)
         add_filter('quant_internal_fetch_url', [$this, 'adjustInternalFetchUrl']);
 
+        // Internal fetch args filter (adds Host header if configured)
+        add_filter('quant_internal_fetch_args', [$this, 'adjustInternalFetchArgs']);
+
         // Validation endpoint for internal connectivity test (early hook)
         add_action('init', [$this, 'handleValidationRequest'], 1);
 
@@ -235,6 +238,24 @@ class Plugin
         }
 
         return $url;
+    }
+
+    /**
+     * Adjust request args for internal fetching.
+     * Adds Host header if webserver_host is configured.
+     */
+    public function adjustInternalFetchArgs(array $args): array
+    {
+        $settings = $this->container->get(Settings::class);
+        $staticConfig = $settings->getStaticConfig();
+        $webserverHost = $staticConfig['webserver_host'] ?? '';
+
+        if (!empty($webserverHost)) {
+            $args['headers'] = $args['headers'] ?? [];
+            $args['headers']['Host'] = $webserverHost;
+        }
+
+        return $args;
     }
 
     public function registerAdminMenu(): void

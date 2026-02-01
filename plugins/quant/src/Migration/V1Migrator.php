@@ -76,7 +76,24 @@ final class V1Migrator
             $this->settings->setSyncSettings($syncSettings);
             $migrated['sync_settings'] = $syncSettings;
 
-            // Step 4: Mark migration as complete
+            // Step 4: Migrate static config (webserver, 404, custom routes, domain rewrites)
+            $staticConfig = [
+                'webserver_url' => $v1Settings['webserver_url'],
+                'webserver_host' => $v1Settings['webserver_host'],
+                'route_404' => $v1Settings['route_404'],
+                'custom_routes' => $v1Settings['custom_routes'],
+                'domain_rewrites' => $v1Settings['domain_rewrites'],
+            ];
+            $this->settings->setStaticConfig($staticConfig);
+            $migrated['static_config'] = [
+                'webserver_url' => $staticConfig['webserver_url'] ?: '(not set)',
+                'webserver_host' => $staticConfig['webserver_host'] ?: '(not set)',
+                'route_404' => $staticConfig['route_404'],
+                'custom_routes_count' => count($staticConfig['custom_routes']),
+                'domain_rewrites_count' => count($staticConfig['domain_rewrites']),
+            ];
+
+            // Step 5: Mark migration as complete
             $this->markMigrationComplete();
             $migrated['migration_date'] = gmdate('Y-m-d H:i:s');
 
