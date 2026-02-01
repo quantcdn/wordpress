@@ -96,6 +96,9 @@ final class PostRenderer implements ContentRendererInterface
      */
     private function fetchRenderedHtml(string $url): ?string
     {
+        // Allow filtering the URL for internal fetching (e.g., Docker environments)
+        $url = apply_filters('quant_internal_fetch_url', $url);
+
         $response = wp_remote_get($url, [
             'timeout' => 30,
             // SSL verification enabled by default. Use 'quant_renderer_ssl_verify' filter

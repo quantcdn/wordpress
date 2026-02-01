@@ -995,6 +995,9 @@ class RestController
      */
     private function renderUrl(string $url): ?string
     {
+        // Allow filtering the URL for internal fetching (e.g., Docker environments)
+        $url = apply_filters('quant_internal_fetch_url', $url);
+
         $response = wp_remote_get($url, [
             'timeout' => 30,
             'sslverify' => false,

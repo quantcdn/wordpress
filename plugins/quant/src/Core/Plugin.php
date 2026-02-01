@@ -169,6 +169,9 @@ class Plugin
         // Cache purge hooks (both modes)
         $this->container->get(Hook\CachePurgeSubscriber::class)->register();
 
+        // Internal URL fetch filter (handles Docker/dev environments)
+        add_filter('quant_internal_fetch_url', [$this, 'adjustInternalFetchUrl']);
+
         // WP-CLI commands
         $this->registerCliCommands();
     }
@@ -180,6 +183,31 @@ class Plugin
         }
 
         \WP_CLI::add_command('quant', $this->container->get(CLI\Commands::class));
+    }
+
+    /**
+     * Adjust URLs for internal fetching in Docker/dev environments.
+     * Converts localhost URLs with non-80 ports to use port 80.
+     */
+    public function adjustInternalFetchUrl(string $url): string
+    {
+        $parsed = wp_parse_url($url);
+
+        if (!isset($parsed['host'])) {
+            return $url;
+        }
+
+        // Only adjust localhost URLs with non-standard ports
+        if ($parsed['host'] === 'localhost' && isset($parsed['port']) && $parsed['port'] !== 80) {
+            $adjusted = ($parsed['scheme'] ?? 'http') . '://localhost';
+            $adjusted .= $parsed['path'] ?? '/';
+            if (isset($parsed['query'])) {
+                $adjusted .= '?' . $parsed['query'];
+            }
+            return $adjusted;
+        }
+
+        return $url;
     }
 
     public function registerAdminMenu(): void
