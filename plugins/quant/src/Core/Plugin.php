@@ -186,25 +186,27 @@ class Plugin
     }
 
     /**
-     * Adjust URLs for internal fetching in Docker/dev environments.
-     * Converts localhost URLs with non-80 ports to use port 80.
+     * Adjust URLs for internal fetching.
+     * Uses webserver_url from settings if configured, otherwise adjusts localhost ports.
      */
     public function adjustInternalFetchUrl(string $url): string
     {
-        $parsed = wp_parse_url($url);
+        $settings = $this->container->get(Settings::class);
+        $staticConfig = $settings->getStaticConfig();
+        $webserverUrl = $staticConfig['webserver_url'] ?? '';
 
-        if (!isset($parsed['host'])) {
-            return $url;
+        $parsed = wp_parse_url($url);
+        $path = $parsed['path'] ?? '/';
+        $query = isset($parsed['query']) ? '?' . $parsed['query'] : '';
+
+        // If webserver_url is configured, use it
+        if (!empty($webserverUrl)) {
+            return rtrim($webserverUrl, '/') . $path . $query;
         }
 
-        // Only adjust localhost URLs with non-standard ports
-        if ($parsed['host'] === 'localhost' && isset($parsed['port']) && $parsed['port'] !== 80) {
-            $adjusted = ($parsed['scheme'] ?? 'http') . '://localhost';
-            $adjusted .= $parsed['path'] ?? '/';
-            if (isset($parsed['query'])) {
-                $adjusted .= '?' . $parsed['query'];
-            }
-            return $adjusted;
+        // Otherwise, adjust localhost URLs with non-standard ports (Docker fix)
+        if (isset($parsed['host']) && $parsed['host'] === 'localhost' && isset($parsed['port']) && $parsed['port'] !== 80) {
+            return 'http://localhost' . $path . $query;
         }
 
         return $url;

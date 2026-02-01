@@ -931,73 +931,80 @@ class RestController
             case SyncType::Post:
             case SyncType::Page:
             case SyncType::CustomPostType:
+                // Renderer throws RuntimeException with details on failure
                 $rendered = $this->renderer->render((int) $job->objectId);
 
                 if ($rendered === null) {
-                    return false;
+                    throw new \RuntimeException("Renderer returned null for {$job->type->value} #{$job->objectId}");
                 }
 
                 $response = $this->api->publish($rendered->url, $rendered->markup, $rendered->meta);
-                return $response->success;
+                if (!$response->success) {
+                    throw new \RuntimeException("API error publishing {$rendered->url}: {$response->message}");
+                }
+                return true;
 
             case SyncType::Media:
                 $attachment = get_post((int) $job->objectId);
                 if ($attachment === null) {
-                    return false;
+                    throw new \RuntimeException("Media attachment #{$job->objectId} not found");
                 }
 
                 $filePath = get_attached_file((int) $job->objectId);
                 if ($filePath === false || !file_exists($filePath)) {
-                    return false;
+                    throw new \RuntimeException("Media file not found for #{$job->objectId}");
                 }
 
                 $url = wp_get_attachment_url((int) $job->objectId);
                 if ($url === false) {
-                    return false;
+                    throw new \RuntimeException("Cannot get URL for media #{$job->objectId}");
                 }
 
                 $path = wp_parse_url($url, PHP_URL_PATH);
                 if ($path === null) {
-                    return false;
+                    throw new \RuntimeException("Invalid URL path for media #{$job->objectId}");
                 }
 
                 $response = $this->api->uploadFile($path, $filePath);
-                return $response->success;
+                if (!$response->success) {
+                    throw new \RuntimeException("API error uploading media: {$response->message}");
+                }
+                return true;
 
             case SyncType::Taxonomy:
                 $taxonomy = $job->meta['taxonomy'] ?? 'category';
                 $term = get_term((int) $job->objectId, $taxonomy);
                 if (!$term || is_wp_error($term)) {
-                    return false;
+                    throw new \RuntimeException("Term #{$job->objectId} not found in {$taxonomy}");
                 }
 
                 $url = get_term_link($term);
                 if (is_wp_error($url)) {
-                    return false;
+                    throw new \RuntimeException("Cannot get link for term #{$job->objectId}");
                 }
 
                 $path = wp_parse_url($url, PHP_URL_PATH);
                 $markup = $this->renderUrl($url);
-                if ($markup === null) {
-                    return false;
-                }
 
                 $response = $this->api->publish($path, $markup, [
                     'taxonomy' => $taxonomy,
                     'term_id' => $term->term_id,
                 ]);
-                return $response->success;
+                if (!$response->success) {
+                    throw new \RuntimeException("API error: {$response->message}");
+                }
+                return true;
 
             case SyncType::Home:
                 $url = home_url('/');
                 $path = '/';
                 $markup = $this->renderUrl($url);
-                if ($markup === null) {
-                    return false;
-                }
 
                 $response = $this->api->publish($path, $markup, ['type' => 'home']);
-                return $response->success;
+                if (!$response->success) {
+                    throw new \RuntimeException("API error: {$response->message}");
+                }
+                return true;
 
             case SyncType::Archive:
                 $postType = $job->meta['post_type'] ?? null;
@@ -1009,34 +1016,37 @@ class RestController
                 }
 
                 if (!$url) {
-                    return false;
+                    throw new \RuntimeException("Cannot get archive URL for post type: {$postType}");
                 }
 
                 $path = wp_parse_url($url, PHP_URL_PATH) ?: '/';
                 $markup = $this->renderUrl($url);
-                if ($markup === null) {
-                    return false;
-                }
 
                 $response = $this->api->publish($path, $markup, [
                     'type' => 'archive',
                     'post_type' => $postType,
                 ]);
-                return $response->success;
+                if (!$response->success) {
+                    throw new \RuntimeException("API error: {$response->message}");
+                }
+                return true;
 
             case SyncType::ThemeAssets:
                 return $this->syncThemeAssets();
 
             default:
-                return false;
+                throw new \RuntimeException("Unknown sync type: {$job->type->value}");
         }
     }
 
     /**
      * Render a URL by fetching it internally.
+     *
+     * @throws \RuntimeException If the URL cannot be fetched
      */
-    private function renderUrl(string $url): ?string
+    private function renderUrl(string $url): string
     {
+        $originalUrl = $url;
         // Allow filtering the URL for internal fetching (e.g., Docker environments)
         $url = apply_filters('quant_internal_fetch_url', $url);
 
@@ -1046,15 +1056,20 @@ class RestController
         ]);
 
         if (is_wp_error($response)) {
-            return null;
+            throw new \RuntimeException("HTTP request failed for {$url}: " . $response->get_error_message());
         }
 
         $code = wp_remote_retrieve_response_code($response);
         if ($code !== 200) {
-            return null;
+            throw new \RuntimeException("HTTP {$code} response for {$url} (original: {$originalUrl})");
         }
 
-        return wp_remote_retrieve_body($response);
+        $body = wp_remote_retrieve_body($response);
+        if (empty($body)) {
+            throw new \RuntimeException("Empty response body for {$url}");
+        }
+
+        return $body;
     }
 
     /**

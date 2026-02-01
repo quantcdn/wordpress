@@ -43,30 +43,28 @@ final class PostRenderer implements ContentRendererInterface
 
     /**
      * {@inheritdoc}
+     *
+     * @throws \RuntimeException If rendering fails
      */
     public function render(int $postId): ?RenderedContent
     {
         $post = get_post($postId);
 
         if (!$post instanceof WP_Post) {
-            return null;
+            throw new \RuntimeException("Post #{$postId} not found");
         }
 
         if (!$this->supports($post)) {
-            return null;
+            throw new \RuntimeException("Post #{$postId} ({$post->post_type}) is not supported for rendering (status: {$post->post_status})");
         }
 
         $permalink = get_permalink($post);
 
         if ($permalink === false) {
-            return null;
+            throw new \RuntimeException("Cannot get permalink for post #{$postId}");
         }
 
         $markup = $this->fetchRenderedHtml($permalink);
-
-        if ($markup === null) {
-            return null;
-        }
 
         $url = $this->extractPath($permalink);
 
@@ -93,33 +91,36 @@ final class PostRenderer implements ContentRendererInterface
 
     /**
      * Fetch the rendered HTML from the given URL.
+     *
+     * @throws \RuntimeException If the URL cannot be fetched
      */
-    private function fetchRenderedHtml(string $url): ?string
+    private function fetchRenderedHtml(string $url): string
     {
+        $originalUrl = $url;
         // Allow filtering the URL for internal fetching (e.g., Docker environments)
         $url = apply_filters('quant_internal_fetch_url', $url);
 
         $response = wp_remote_get($url, [
             'timeout' => 30,
-            // SSL verification enabled by default. Use 'quant_renderer_ssl_verify' filter
-            // to disable in development environments with self-signed certificates.
-            'sslverify' => apply_filters('quant_renderer_ssl_verify', true),
+            // SSL verification disabled by default for internal requests.
+            // Use 'quant_renderer_ssl_verify' filter to enable.
+            'sslverify' => apply_filters('quant_renderer_ssl_verify', false),
         ]);
 
         if (is_wp_error($response)) {
-            return null;
+            throw new \RuntimeException("HTTP request failed for {$url}: " . $response->get_error_message());
         }
 
         $statusCode = wp_remote_retrieve_response_code($response);
 
         if ($statusCode !== 200) {
-            return null;
+            throw new \RuntimeException("HTTP {$statusCode} response for {$url} (original: {$originalUrl})");
         }
 
         $body = wp_remote_retrieve_body($response);
 
         if (empty($body)) {
-            return null;
+            throw new \RuntimeException("Empty response body for {$url}");
         }
 
         return $body;
