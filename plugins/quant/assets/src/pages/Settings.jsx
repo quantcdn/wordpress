@@ -51,6 +51,7 @@ export function Settings() {
     const [selectedOrg, setSelectedOrg] = useState('');
     const [selectedProject, setSelectedProject] = useState('');
     const [selectingProject, setSelectingProject] = useState(false);
+    const [changingProject, setChangingProject] = useState(false);
     const [showManualCredentials, setShowManualCredentials] = useState(false);
 
     // Check for OAuth success from redirect
@@ -154,6 +155,7 @@ export function Settings() {
 
             setSettings(settingsData);
             setOauthStatus(oauthData);
+            setChangingProject(false);
             setNotice({ status: 'success', message: __('Project selected successfully!', 'quant') });
         } catch (error) {
             setNotice({ status: 'error', message: error.message || __('Failed to select project', 'quant') });
@@ -310,7 +312,7 @@ export function Settings() {
                                 </FlexItem>
                             </Flex>
                         </>
-                    ) : oauthStatus.has_project ? (
+                    ) : oauthStatus.has_project && !changingProject ? (
                         <>
                             <Flex align="center" gap={4}>
                                 <FlexItem>
@@ -343,7 +345,16 @@ export function Settings() {
                                     <strong>{__('Project:', 'quant')}</strong> {oauthStatus.project}
                                 </p>
                             </div>
-                            <div style={{ marginTop: '16px' }}>
+                            <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => {
+                                        setChangingProject(true);
+                                        fetchProjects();
+                                    }}
+                                >
+                                    {__('Change Project', 'quant')}
+                                </Button>
                                 <Button
                                     variant="secondary"
                                     onClick={handleOAuthDisconnect}
@@ -356,7 +367,10 @@ export function Settings() {
                     ) : (
                         <>
                             <p style={{ color: '#666', marginTop: 0 }}>
-                                {__('Connected! Now select which project to use with this WordPress site.', 'quant')}
+                                {changingProject
+                                    ? __('Select a different project for this WordPress site.', 'quant')
+                                    : __('Connected! Now select which project to use with this WordPress site.', 'quant')
+                                }
                             </p>
                             {oauthStatus.user && (
                                 <p style={{ color: '#666', margin: '8px 0' }}>
@@ -395,17 +409,26 @@ export function Settings() {
                                                 disabled={!selectedOrg || !selectedProject || selectingProject}
                                                 isBusy={selectingProject}
                                             >
-                                                {__('Use This Project', 'quant')}
+                                                {changingProject ? __('Switch to This Project', 'quant') : __('Use This Project', 'quant')}
                                             </Button>
                                         </FlexItem>
                                         <FlexItem>
-                                            <Button
-                                                variant="secondary"
-                                                onClick={handleOAuthDisconnect}
-                                                isDestructive
-                                            >
-                                                {__('Cancel', 'quant')}
-                                            </Button>
+                                            {changingProject ? (
+                                                <Button
+                                                    variant="secondary"
+                                                    onClick={() => setChangingProject(false)}
+                                                >
+                                                    {__('Cancel', 'quant')}
+                                                </Button>
+                                            ) : (
+                                                <Button
+                                                    variant="secondary"
+                                                    onClick={handleOAuthDisconnect}
+                                                    isDestructive
+                                                >
+                                                    {__('Disconnect', 'quant')}
+                                                </Button>
+                                            )}
                                         </FlexItem>
                                     </Flex>
                                 </>
