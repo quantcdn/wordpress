@@ -2,8 +2,11 @@
 .worktrees/
 
 # Dependencies
-/vendor/
+vendor/
 node_modules/
+
+# Test cache
+.phpunit.cache/
 
 # Build output
 /assets/build/
