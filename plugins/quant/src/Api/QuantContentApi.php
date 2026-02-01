@@ -8,26 +8,37 @@ use Quant\Core\Settings;
 
 class QuantContentApi implements ContentApiInterface
 {
-    private string $endpoint;
-    private string $token;
-    private string $project;
-    private string $organization;
-
     public function __construct(
         private readonly Settings $settings,
         private readonly HttpClientInterface $http
     ) {
+    }
+
+    private function getEndpoint(): string
+    {
         $credentials = $this->settings->getCredentials();
-        $this->endpoint = rtrim($credentials['endpoint'] ?? 'https://api.quantcdn.io', '/');
-        $this->token = $credentials['token'] ?? '';
-        $this->project = $credentials['project'] ?? '';
-        $this->organization = $credentials['organization'] ?? '';
+        return rtrim($credentials['endpoint'] ?? 'https://api.quantcdn.io', '/');
+    }
+
+    private function getToken(): string
+    {
+        return $this->settings->getCredentials()['token'] ?? '';
+    }
+
+    private function getProject(): string
+    {
+        return $this->settings->getCredentials()['project'] ?? '';
+    }
+
+    private function getOrganization(): string
+    {
+        return $this->settings->getCredentials()['organization'] ?? '';
     }
 
     public function ping(): ApiResponse
     {
         $response = $this->http->get(
-            "{$this->endpoint}/v1/ping",
+            "{$this->getEndpoint()}/v1/ping",
             $this->getHeaders()
         );
 
@@ -50,7 +61,7 @@ class QuantContentApi implements ContentApiInterface
         }
 
         $response = $this->http->post(
-            "{$this->endpoint}/v1/content",
+            "{$this->getEndpoint()}/v1/content",
             $this->getHeaders(),
             $body
         );
@@ -63,7 +74,7 @@ class QuantContentApi implements ContentApiInterface
         $url = $this->normalizeUrl($url);
 
         $response = $this->http->patch(
-            "{$this->endpoint}/v1/unpublish",
+            "{$this->getEndpoint()}/v1/unpublish",
             array_merge($this->getHeaders(), ['Quant-Url' => $url])
         );
 
@@ -97,7 +108,7 @@ class QuantContentApi implements ContentApiInterface
             'body' => $fileContents,
         ];
 
-        $response = wp_remote_request("{$this->endpoint}/v1/file", $args);
+        $response = wp_remote_request("{$this->getEndpoint()}/v1/file", $args);
 
         if (is_wp_error($response)) {
             return ApiResponse::error($response->get_error_message());
@@ -114,7 +125,7 @@ class QuantContentApi implements ContentApiInterface
         $from = $this->normalizeUrl($from);
 
         $response = $this->http->post(
-            "{$this->endpoint}/v1/redirect",
+            "{$this->getEndpoint()}/v1/redirect",
             $this->getHeaders(),
             [
                 'url' => $from,
@@ -143,7 +154,7 @@ class QuantContentApi implements ContentApiInterface
 
             foreach ($variants as $variant) {
                 $response = $this->http->post(
-                    "{$this->endpoint}/v1/purge",
+                    "{$this->getEndpoint()}/v1/purge",
                     array_merge($this->getHeaders(), ['Quant-Url' => $variant]),
                     []
                 );
@@ -164,9 +175,9 @@ class QuantContentApi implements ContentApiInterface
     private function getHeaders(): array
     {
         return [
-            'Quant-Token' => $this->token,
-            'Quant-Project' => $this->project,
-            'Quant-Organisation' => $this->organization,
+            'Quant-Token' => $this->getToken(),
+            'Quant-Project' => $this->getProject(),
+            'Quant-Organisation' => $this->getOrganization(),
         ];
     }
 
