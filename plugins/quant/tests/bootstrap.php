@@ -30,6 +30,39 @@ if (!defined('OBJECT')) {
     define('OBJECT', 'OBJECT');
 }
 
+// Stub WP_Error class for testing
+if (!class_exists('WP_Error')) {
+    // phpcs:ignore
+    class WP_Error
+    {
+        protected string $code = '';
+        protected string $message = '';
+        protected array $data = [];
+
+        public function __construct(string $code = '', string $message = '', mixed $data = '')
+        {
+            $this->code = $code;
+            $this->message = $message;
+            $this->data = is_array($data) ? $data : [];
+        }
+
+        public function get_error_code(): string
+        {
+            return $this->code;
+        }
+
+        public function get_error_message(): string
+        {
+            return $this->message;
+        }
+
+        public function get_error_data(): array
+        {
+            return $this->data;
+        }
+    }
+}
+
 // Stub WP_Post class for testing
 if (!class_exists('WP_Post')) {
     // phpcs:ignore

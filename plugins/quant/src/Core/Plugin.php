@@ -6,8 +6,11 @@ namespace Quant\Core;
 
 use Quant\Api;
 use Quant\Admin;
+use Quant\Auth;
+use Quant\CLI;
 use Quant\Hook;
 use Quant\Migration;
+use Quant\Sync;
 
 class Plugin
 {
@@ -113,6 +116,39 @@ class Plugin
                 $c->get(Settings::class)
             )
         );
+
+        // Sync services
+        $this->container->singleton(
+            Sync\SyncQueueInterface::class,
+            function () {
+                global $wpdb;
+                return new Sync\DatabaseQueue($wpdb);
+            }
+        );
+
+        $this->container->singleton(
+            Sync\Renderer\ContentRendererInterface::class,
+            fn() => new Sync\Renderer\PostRenderer()
+        );
+
+        // CLI commands
+        $this->container->singleton(
+            CLI\Commands::class,
+            fn($c) => new CLI\Commands(
+                $c->get(Api\ContentApiInterface::class),
+                $c->get(Settings::class),
+                $c->get(Sync\SyncQueueInterface::class),
+                $c->get(Sync\Renderer\ContentRendererInterface::class)
+            )
+        );
+
+        // OAuth controller
+        $this->container->singleton(
+            Auth\OAuthController::class,
+            fn($c) => new Auth\OAuthController(
+                $c->get(Settings::class)
+            )
+        );
     }
 
     private function registerHooks(): void
@@ -121,6 +157,9 @@ class Plugin
         if (is_admin()) {
             add_action('admin_menu', [$this, 'registerAdminMenu']);
             add_action('admin_enqueue_scripts', [$this, 'enqueueAdminAssets']);
+
+            // OAuth admin hooks (callback page)
+            $this->container->get(Auth\OAuthController::class)->registerAdmin();
         }
 
         // REST API
@@ -128,6 +167,18 @@ class Plugin
 
         // Cache purge hooks (both modes)
         $this->container->get(Hook\CachePurgeSubscriber::class)->register();
+
+        // WP-CLI commands
+        $this->registerCliCommands();
+    }
+
+    private function registerCliCommands(): void
+    {
+        if (!defined('WP_CLI') || !WP_CLI) {
+            return;
+        }
+
+        \WP_CLI::add_command('quant', $this->container->get(CLI\Commands::class));
     }
 
     public function registerAdminMenu(): void
@@ -192,5 +243,6 @@ class Plugin
     {
         $this->container->get(Admin\RestController::class)->register();
         $this->container->get(Admin\DiagnosticsController::class)->register();
+        $this->container->get(Auth\OAuthController::class)->register();
     }
 }

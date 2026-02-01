@@ -7,7 +7,10 @@ import {
     Button,
     Notice,
     SelectControl,
-    Spinner
+    Spinner,
+    Flex,
+    FlexItem,
+    Icon
 } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
@@ -25,12 +28,112 @@ export function Settings() {
     const [testing, setTesting] = useState(false);
     const [notice, setNotice] = useState(null);
 
+    // OAuth state
+    const [oauthStatus, setOauthStatus] = useState(null);
+    const [oauthLoading, setOauthLoading] = useState(true);
+    const [projects, setProjects] = useState([]);
+    const [projectsLoading, setProjectsLoading] = useState(false);
+    const [selectedOrg, setSelectedOrg] = useState('');
+    const [selectedProject, setSelectedProject] = useState('');
+    const [selectingProject, setSelectingProject] = useState(false);
+    const [showManualCredentials, setShowManualCredentials] = useState(false);
+
+    // Check for OAuth success from redirect
     useEffect(() => {
-        apiFetch({ path: '/quant/v1/settings' })
-            .then(setSettings)
-            .catch(() => {})
-            .finally(() => setLoading(false));
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('oauth') === 'success') {
+            setNotice({ status: 'success', message: __('Successfully connected to Quant! Now select a project below.', 'quant') });
+            // Clean up URL
+            const newUrl = window.location.pathname + '?page=quant';
+            window.history.replaceState({}, '', newUrl);
+        }
     }, []);
+
+    useEffect(() => {
+        Promise.all([
+            apiFetch({ path: '/quant/v1/settings' }),
+            apiFetch({ path: '/quant/v1/oauth/status' })
+        ])
+            .then(([settingsData, oauthData]) => {
+                setSettings(settingsData);
+                setOauthStatus(oauthData);
+
+                // If connected via OAuth but no project selected, fetch projects
+                if (oauthData.connected && !oauthData.has_project) {
+                    fetchProjects();
+                }
+            })
+            .catch(() => {})
+            .finally(() => {
+                setLoading(false);
+                setOauthLoading(false);
+            });
+    }, []);
+
+    const fetchProjects = async () => {
+        setProjectsLoading(true);
+        try {
+            const projectsData = await apiFetch({ path: '/quant/v1/oauth/projects' });
+            setProjects(projectsData);
+        } catch (error) {
+            console.error('Failed to fetch projects:', error);
+        } finally {
+            setProjectsLoading(false);
+        }
+    };
+
+    const handleOAuthConnect = async () => {
+        try {
+            const response = await apiFetch({ path: '/quant/v1/oauth/connect' });
+            if (response.redirect_url) {
+                window.location.href = response.redirect_url;
+            }
+        } catch (error) {
+            setNotice({ status: 'error', message: error.message || __('Failed to initiate OAuth', 'quant') });
+        }
+    };
+
+    const handleOAuthDisconnect = async () => {
+        try {
+            await apiFetch({ path: '/quant/v1/oauth/disconnect', method: 'POST' });
+            setOauthStatus({ connected: false });
+            setSettings(prev => ({ ...prev, organization: '', project: '', token: '' }));
+            setProjects([]);
+            setNotice({ status: 'success', message: __('Disconnected from Quant', 'quant') });
+        } catch (error) {
+            setNotice({ status: 'error', message: error.message || __('Failed to disconnect', 'quant') });
+        }
+    };
+
+    const handleSelectProject = async () => {
+        if (!selectedOrg || !selectedProject) {
+            setNotice({ status: 'error', message: __('Please select an organization and project', 'quant') });
+            return;
+        }
+
+        setSelectingProject(true);
+        try {
+            await apiFetch({
+                path: '/quant/v1/oauth/select-project',
+                method: 'POST',
+                data: { organization: selectedOrg, project: selectedProject }
+            });
+
+            // Refresh status and settings
+            const [settingsData, oauthData] = await Promise.all([
+                apiFetch({ path: '/quant/v1/settings' }),
+                apiFetch({ path: '/quant/v1/oauth/status' })
+            ]);
+
+            setSettings(settingsData);
+            setOauthStatus(oauthData);
+            setNotice({ status: 'success', message: __('Project selected successfully!', 'quant') });
+        } catch (error) {
+            setNotice({ status: 'error', message: error.message || __('Failed to select project', 'quant') });
+        } finally {
+            setSelectingProject(false);
+        }
+    };
 
     const handleSave = async () => {
         setSaving(true);
@@ -74,13 +177,38 @@ export function Settings() {
         setSettings(prev => ({ ...prev, [key]: value }));
     };
 
-    if (loading) {
+    if (loading || oauthLoading) {
         return (
             <div className="quant-settings">
                 <h1>{__('Settings', 'quant')}</h1>
                 <Spinner />
             </div>
         );
+    }
+
+    // Build project options for select
+    const projectOptions = [{ label: __('Select a project...', 'quant'), value: '' }];
+    const orgOptions = [{ label: __('Select an organization...', 'quant'), value: '' }];
+
+    projects.forEach(orgData => {
+        const orgValue = orgData.organization.machine_name || orgData.organization.name;
+        orgOptions.push({
+            label: orgData.organization.name,
+            value: orgValue
+        });
+    });
+
+    // Get projects for selected org
+    const selectedOrgData = projects.find(
+        o => (o.organization.machine_name || o.organization.name) === selectedOrg
+    );
+    if (selectedOrgData && selectedOrgData.projects) {
+        selectedOrgData.projects.forEach(proj => {
+            projectOptions.push({
+                label: proj.name || proj.machine_name,
+                value: proj.machine_name || proj.name
+            });
+        });
     }
 
     return (
@@ -93,57 +221,211 @@ export function Settings() {
                 </Notice>
             )}
 
-            <Card>
+            {/* OAuth Connection Card */}
+            <Card style={{ marginBottom: '16px' }}>
                 <CardHeader>
-                    <h2 style={{ margin: 0 }}>{__('API Credentials', 'quant')}</h2>
+                    <h2 style={{ margin: 0 }}>{__('Connect to Quant', 'quant')}</h2>
                 </CardHeader>
                 <CardBody>
-                    <p style={{ color: '#666', marginTop: 0 }}>
-                        {__('Enter your QuantCDN API credentials. You can find these in your', 'quant')}{' '}
-                        <a href="https://dashboard.quantcdn.io" target="_blank" rel="noopener noreferrer">
-                            {__('QuantCDN Dashboard', 'quant')}
-                        </a>.
-                    </p>
-                    <TextControl
-                        label={__('Organization', 'quant')}
-                        value={settings.organization}
-                        onChange={(v) => updateSetting('organization', v)}
-                        help={__('Your QuantCDN organization identifier', 'quant')}
-                    />
-                    <TextControl
-                        label={__('Project', 'quant')}
-                        value={settings.project}
-                        onChange={(v) => updateSetting('project', v)}
-                        help={__('Your QuantCDN project name', 'quant')}
-                    />
-                    <TextControl
-                        label={__('API Token', 'quant')}
-                        type="password"
-                        value={settings.token}
-                        onChange={(v) => updateSetting('token', v)}
-                        help={__('Leave blank to keep existing token', 'quant')}
-                        placeholder={__('Enter new token or leave blank', 'quant')}
-                    />
-                    <TextControl
-                        label={__('API Endpoint', 'quant')}
-                        value={settings.endpoint}
-                        onChange={(v) => updateSetting('endpoint', v)}
-                        help={__('Default: https://api.quantcdn.io', 'quant')}
-                    />
-                    <div style={{ marginTop: '16px' }}>
-                        <Button
-                            variant="secondary"
-                            onClick={handleTest}
-                            disabled={testing || !settings.organization || !settings.project}
-                            isBusy={testing}
-                        >
-                            {__('Test Connection', 'quant')}
-                        </Button>
-                    </div>
+                    {!oauthStatus?.connected ? (
+                        <>
+                            <p style={{ color: '#666', marginTop: 0 }}>
+                                {__('Connect your WordPress site to QuantCDN with one click. This is the recommended way to configure the plugin.', 'quant')}
+                            </p>
+                            <Flex>
+                                <FlexItem>
+                                    <Button
+                                        variant="primary"
+                                        onClick={handleOAuthConnect}
+                                        icon="admin-users"
+                                    >
+                                        {__('Login to Quant', 'quant')}
+                                    </Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button
+                                        variant="link"
+                                        onClick={() => setShowManualCredentials(!showManualCredentials)}
+                                    >
+                                        {showManualCredentials
+                                            ? __('Hide manual credentials', 'quant')
+                                            : __('Use manual credentials instead', 'quant')
+                                        }
+                                    </Button>
+                                </FlexItem>
+                            </Flex>
+                        </>
+                    ) : oauthStatus.has_project ? (
+                        <>
+                            <Flex align="center" gap={4}>
+                                <FlexItem>
+                                    <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '4px 12px',
+                                        backgroundColor: '#d4edda',
+                                        color: '#155724',
+                                        borderRadius: '4px',
+                                        fontSize: '14px'
+                                    }}>
+                                        <Icon icon="yes-alt" style={{ marginRight: '6px' }} />
+                                        {__('Connected', 'quant')}
+                                    </span>
+                                </FlexItem>
+                                {oauthStatus.user && (
+                                    <FlexItem>
+                                        <span style={{ color: '#666' }}>
+                                            {oauthStatus.user.email}
+                                        </span>
+                                    </FlexItem>
+                                )}
+                            </Flex>
+                            <div style={{ marginTop: '12px' }}>
+                                <p style={{ margin: '8px 0', color: '#333' }}>
+                                    <strong>{__('Organization:', 'quant')}</strong> {oauthStatus.organization}
+                                </p>
+                                <p style={{ margin: '8px 0', color: '#333' }}>
+                                    <strong>{__('Project:', 'quant')}</strong> {oauthStatus.project}
+                                </p>
+                            </div>
+                            <div style={{ marginTop: '16px' }}>
+                                <Button
+                                    variant="secondary"
+                                    onClick={handleOAuthDisconnect}
+                                    isDestructive
+                                >
+                                    {__('Disconnect', 'quant')}
+                                </Button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <p style={{ color: '#666', marginTop: 0 }}>
+                                {__('Connected! Now select which project to use with this WordPress site.', 'quant')}
+                            </p>
+                            {oauthStatus.user && (
+                                <p style={{ color: '#666', margin: '8px 0' }}>
+                                    {__('Logged in as:', 'quant')} <strong>{oauthStatus.user.email}</strong>
+                                </p>
+                            )}
+
+                            {projectsLoading ? (
+                                <Spinner />
+                            ) : (
+                                <>
+                                    <SelectControl
+                                        label={__('Organization', 'quant')}
+                                        value={selectedOrg}
+                                        options={orgOptions}
+                                        onChange={(value) => {
+                                            setSelectedOrg(value);
+                                            setSelectedProject('');
+                                        }}
+                                    />
+
+                                    {selectedOrg && (
+                                        <SelectControl
+                                            label={__('Project', 'quant')}
+                                            value={selectedProject}
+                                            options={projectOptions}
+                                            onChange={setSelectedProject}
+                                        />
+                                    )}
+
+                                    <Flex style={{ marginTop: '16px' }}>
+                                        <FlexItem>
+                                            <Button
+                                                variant="primary"
+                                                onClick={handleSelectProject}
+                                                disabled={!selectedOrg || !selectedProject || selectingProject}
+                                                isBusy={selectingProject}
+                                            >
+                                                {__('Use This Project', 'quant')}
+                                            </Button>
+                                        </FlexItem>
+                                        <FlexItem>
+                                            <Button
+                                                variant="secondary"
+                                                onClick={handleOAuthDisconnect}
+                                                isDestructive
+                                            >
+                                                {__('Cancel', 'quant')}
+                                            </Button>
+                                        </FlexItem>
+                                    </Flex>
+                                </>
+                            )}
+                        </>
+                    )}
                 </CardBody>
             </Card>
 
-            <Card>
+            {/* Manual Credentials Card - only show if not connected via OAuth or explicitly requested */}
+            {(!oauthStatus?.connected || showManualCredentials) && (
+                <Card>
+                    <CardHeader>
+                        <h2 style={{ margin: 0 }}>{__('Manual API Credentials', 'quant')}</h2>
+                    </CardHeader>
+                    <CardBody>
+                        <p style={{ color: '#666', marginTop: 0 }}>
+                            {__('Alternatively, enter your QuantCDN API credentials manually. You can find these in your', 'quant')}{' '}
+                            <a href="https://dashboard.quantcdn.io" target="_blank" rel="noopener noreferrer">
+                                {__('QuantCDN Dashboard', 'quant')}
+                            </a>.
+                        </p>
+                        <TextControl
+                            label={__('Organization', 'quant')}
+                            value={settings.organization}
+                            onChange={(v) => updateSetting('organization', v)}
+                            help={__('Your QuantCDN organization identifier', 'quant')}
+                        />
+                        <TextControl
+                            label={__('Project', 'quant')}
+                            value={settings.project}
+                            onChange={(v) => updateSetting('project', v)}
+                            help={__('Your QuantCDN project name', 'quant')}
+                        />
+                        <TextControl
+                            label={__('API Token', 'quant')}
+                            type="password"
+                            value={settings.token}
+                            onChange={(v) => updateSetting('token', v)}
+                            help={__('Leave blank to keep existing token', 'quant')}
+                            placeholder={__('Enter new token or leave blank', 'quant')}
+                        />
+                        <TextControl
+                            label={__('API Endpoint', 'quant')}
+                            value={settings.endpoint}
+                            onChange={(v) => updateSetting('endpoint', v)}
+                            help={__('Default: https://api.quantcdn.io', 'quant')}
+                        />
+                        <Flex style={{ marginTop: '16px' }} gap={4}>
+                            <FlexItem>
+                                <Button
+                                    variant="primary"
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    isBusy={saving}
+                                >
+                                    {saving ? __('Saving...', 'quant') : __('Save Credentials', 'quant')}
+                                </Button>
+                            </FlexItem>
+                            <FlexItem>
+                                <Button
+                                    variant="secondary"
+                                    onClick={handleTest}
+                                    disabled={testing || !settings.organization || !settings.project}
+                                    isBusy={testing}
+                                >
+                                    {__('Test Connection', 'quant')}
+                                </Button>
+                            </FlexItem>
+                        </Flex>
+                    </CardBody>
+                </Card>
+            )}
+
+            <Card style={{ marginTop: '16px' }}>
                 <CardHeader>
                     <h2 style={{ margin: 0 }}>{__('Plugin Mode', 'quant')}</h2>
                 </CardHeader>
@@ -161,19 +443,18 @@ export function Settings() {
                             : __('Cache purging and CDN management only - WordPress serves dynamic content', 'quant')
                         }
                     />
+                    <div style={{ marginTop: '16px' }}>
+                        <Button
+                            variant="primary"
+                            onClick={handleSave}
+                            disabled={saving}
+                            isBusy={saving}
+                        >
+                            {saving ? __('Saving...', 'quant') : __('Save Settings', 'quant')}
+                        </Button>
+                    </div>
                 </CardBody>
             </Card>
-
-            <div style={{ marginTop: '16px' }}>
-                <Button
-                    variant="primary"
-                    onClick={handleSave}
-                    disabled={saving}
-                    isBusy={saving}
-                >
-                    {saving ? __('Saving...', 'quant') : __('Save Settings', 'quant')}
-                </Button>
-            </div>
         </div>
     );
 }
