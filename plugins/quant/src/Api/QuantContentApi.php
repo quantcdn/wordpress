@@ -195,7 +195,11 @@ class QuantContentApi implements ContentApiInterface
             return ApiResponse::success($body);
         }
 
-        $message = $body['message'] ?? $body['error'] ?? "HTTP {$code}";
+        // Extract error message - handle both string errors and boolean error flags
+        $message = $body['message'] ?? $body['errorMsg'] ?? null;
+        if ($message === null) {
+            $message = is_string($body['error'] ?? null) ? $body['error'] : "HTTP {$code}";
+        }
         return ApiResponse::error($message, $code, $body);
     }
 }
