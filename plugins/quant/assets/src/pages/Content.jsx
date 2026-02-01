@@ -14,7 +14,7 @@ import { ContentBrowser } from '../components/ContentBrowser/ContentBrowser';
 import { Progress } from '../components/Progress/Progress';
 
 export function Content() {
-    const [status, setStatus] = useState({ loading: true, mode: 'static' });
+    const [status, setStatus] = useState({ loading: true, mode: 'static', connected: false });
     const [contentTypes, setContentTypes] = useState([]);
     const [selectedItems, setSelectedItems] = useState([]);
     const [notice, setNotice] = useState(null);
@@ -35,7 +35,7 @@ export function Content() {
                 setContentTypes(typesData);
             })
             .catch(() => {
-                setStatus({ loading: false, mode: 'cdn_only' });
+                setStatus({ loading: false, mode: 'cdn_only', connected: false });
             });
     }, []);
 
@@ -220,6 +220,18 @@ export function Content() {
             <div className="quant-content">
                 <h1>{__('Content', 'quant')}</h1>
                 <Spinner />
+            </div>
+        );
+    }
+
+    // Not connected - show warning
+    if (!status.connected) {
+        return (
+            <div className="quant-content">
+                <h1>{__('Content', 'quant')}</h1>
+                <Notice status="warning" isDismissible={false}>
+                    {__('Not connected to QuantCDN. Please configure your API credentials in Settings before syncing content.', 'quant')}
+                </Notice>
             </div>
         );
     }

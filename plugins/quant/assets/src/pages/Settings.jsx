@@ -4,9 +4,11 @@ import {
     CardHeader,
     CardBody,
     TextControl,
+    TextareaControl,
     Button,
     Notice,
     SelectControl,
+    ToggleControl,
     Spinner,
     Flex,
     FlexItem,
@@ -21,8 +23,18 @@ export function Settings() {
         project: '',
         token: '',
         endpoint: 'https://api.quantcdn.io',
-        mode: 'static'
+        mode: 'static',
+        // Sync settings
+        auto_sync: true,
+        auto_purge: true,
+        // Static config
+        webserver_url: '',
+        route_404: '/404',
+        custom_routes: [],
+        domain_rewrites: []
     });
+    const [customRoutesText, setCustomRoutesText] = useState('');
+    const [domainRewritesText, setDomainRewritesText] = useState('');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
@@ -57,6 +69,18 @@ export function Settings() {
             .then(([settingsData, oauthData]) => {
                 setSettings(settingsData);
                 setOauthStatus(oauthData);
+
+                // Convert arrays to text for textareas
+                if (settingsData.custom_routes) {
+                    setCustomRoutesText(Array.isArray(settingsData.custom_routes)
+                        ? settingsData.custom_routes.join('\n')
+                        : settingsData.custom_routes);
+                }
+                if (settingsData.domain_rewrites) {
+                    setDomainRewritesText(Array.isArray(settingsData.domain_rewrites)
+                        ? settingsData.domain_rewrites.join('\n')
+                        : settingsData.domain_rewrites);
+                }
 
                 // If connected via OAuth but no project selected, fetch projects
                 if (oauthData.connected && !oauthData.has_project) {
@@ -140,10 +164,18 @@ export function Settings() {
         setNotice(null);
 
         try {
+            // Convert textarea content to arrays
+            const customRoutes = customRoutesText.split('\n').filter(r => r.trim());
+            const domainRewrites = domainRewritesText.split('\n').filter(r => r.trim());
+
             await apiFetch({
                 path: '/quant/v1/settings',
                 method: 'POST',
-                data: settings
+                data: {
+                    ...settings,
+                    custom_routes: customRoutes,
+                    domain_rewrites: domainRewrites
+                }
             });
             setNotice({ status: 'success', message: __('Settings saved successfully', 'quant') });
             // Clear token from state after save (it's stored server-side)
@@ -443,18 +475,85 @@ export function Settings() {
                             : __('Cache purging and CDN management only - WordPress serves dynamic content', 'quant')
                         }
                     />
-                    <div style={{ marginTop: '16px' }}>
-                        <Button
-                            variant="primary"
-                            onClick={handleSave}
-                            disabled={saving}
-                            isBusy={saving}
-                        >
-                            {saving ? __('Saving...', 'quant') : __('Save Settings', 'quant')}
-                        </Button>
-                    </div>
                 </CardBody>
             </Card>
+
+            {/* Sync Settings */}
+            <Card style={{ marginTop: '16px' }}>
+                <CardHeader>
+                    <h2 style={{ margin: 0 }}>{__('Sync Settings', 'quant')}</h2>
+                </CardHeader>
+                <CardBody>
+                    <ToggleControl
+                        label={__('Auto-sync on publish', 'quant')}
+                        checked={settings.auto_sync}
+                        onChange={(v) => updateSetting('auto_sync', v)}
+                        help={settings.mode === 'static'
+                            ? __('Automatically sync content to QuantCDN when published or updated', 'quant')
+                            : __('This setting only applies in Static mode', 'quant')
+                        }
+                        disabled={settings.mode !== 'static'}
+                    />
+                    <ToggleControl
+                        label={__('Auto-purge cache', 'quant')}
+                        checked={settings.auto_purge}
+                        onChange={(v) => updateSetting('auto_purge', v)}
+                        help={__('Automatically purge CDN cache when content is updated', 'quant')}
+                    />
+                </CardBody>
+            </Card>
+
+            {/* Static Configuration - only show in static mode */}
+            {settings.mode === 'static' && (
+                <Card style={{ marginTop: '16px' }}>
+                    <CardHeader>
+                        <h2 style={{ margin: 0 }}>{__('Static Configuration', 'quant')}</h2>
+                    </CardHeader>
+                    <CardBody>
+                        <TextControl
+                            label={__('Webserver URL', 'quant')}
+                            value={settings.webserver_url}
+                            onChange={(v) => updateSetting('webserver_url', v)}
+                            placeholder="http://localhost"
+                            help={__('Optional: Override the URL used for internal page rendering. Leave empty to use the site URL.', 'quant')}
+                        />
+                        <TextControl
+                            label={__('404 Route', 'quant')}
+                            value={settings.route_404}
+                            onChange={(v) => updateSetting('route_404', v)}
+                            placeholder="/404"
+                            help={__('The path to use for 404 error pages on QuantCDN', 'quant')}
+                        />
+                        <TextareaControl
+                            label={__('Custom Routes', 'quant')}
+                            value={customRoutesText}
+                            onChange={setCustomRoutesText}
+                            placeholder={'/robots.txt\n/custom-page'}
+                            rows={4}
+                            help={__('Additional routes to sync (one per line). Use for custom pages or files.', 'quant')}
+                        />
+                        <TextareaControl
+                            label={__('Domain Rewrites', 'quant')}
+                            value={domainRewritesText}
+                            onChange={setDomainRewritesText}
+                            placeholder="www.example.com"
+                            rows={3}
+                            help={__('Domains to rewrite as relative URLs (one per line). Useful for CDN or staging domains.', 'quant')}
+                        />
+                    </CardBody>
+                </Card>
+            )}
+
+            <div style={{ marginTop: '16px' }}>
+                <Button
+                    variant="primary"
+                    onClick={handleSave}
+                    disabled={saving}
+                    isBusy={saving}
+                >
+                    {saving ? __('Saving...', 'quant') : __('Save Settings', 'quant')}
+                </Button>
+            </div>
         </div>
     );
 }

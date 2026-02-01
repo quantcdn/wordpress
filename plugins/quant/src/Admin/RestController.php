@@ -214,13 +214,24 @@ class RestController
     public function getSettings(WP_REST_Request $request): array
     {
         $credentials = $this->settings->getCredentials();
+        $syncSettings = $this->settings->getSyncSettings();
+        $staticConfig = $this->settings->getStaticConfig();
 
         return [
+            // Credentials
             'organization' => $credentials['organization'] ?? '',
             'project' => $credentials['project'] ?? '',
             'token' => '', // Never expose token
             'endpoint' => $credentials['endpoint'] ?? 'https://api.quantcdn.io',
             'mode' => $this->settings->getMode(),
+            // Sync settings
+            'auto_sync' => $syncSettings['auto_sync'] ?? true,
+            'auto_purge' => $syncSettings['auto_purge'] ?? true,
+            // Static config
+            'webserver_url' => $staticConfig['webserver_url'] ?? '',
+            'route_404' => $staticConfig['route_404'] ?? '/404',
+            'custom_routes' => $staticConfig['custom_routes'] ?? [],
+            'domain_rewrites' => $staticConfig['domain_rewrites'] ?? [],
         ];
     }
 
@@ -247,6 +258,37 @@ class RestController
 
         if (in_array($mode, ['static', 'cdn_only'], true)) {
             $this->settings->setMode($mode);
+        }
+
+        // Sync settings
+        $autoSync = $request->get_param('auto_sync');
+        $autoPurge = $request->get_param('auto_purge');
+
+        if ($autoSync !== null || $autoPurge !== null) {
+            $existingSyncSettings = $this->settings->getSyncSettings();
+            $syncSettings = [
+                'auto_sync' => $autoSync !== null ? (bool) $autoSync : ($existingSyncSettings['auto_sync'] ?? true),
+                'auto_purge' => $autoPurge !== null ? (bool) $autoPurge : ($existingSyncSettings['auto_purge'] ?? true),
+                'sync_drafts' => $existingSyncSettings['sync_drafts'] ?? false,
+            ];
+            $this->settings->setSyncSettings($syncSettings);
+        }
+
+        // Static config
+        $webserverUrl = $request->get_param('webserver_url');
+        $route404 = $request->get_param('route_404');
+        $customRoutes = $request->get_param('custom_routes');
+        $domainRewrites = $request->get_param('domain_rewrites');
+
+        if ($webserverUrl !== null || $route404 !== null || $customRoutes !== null || $domainRewrites !== null) {
+            $existingStaticConfig = $this->settings->getStaticConfig();
+            $staticConfig = [
+                'webserver_url' => $webserverUrl !== null ? esc_url_raw($webserverUrl) : ($existingStaticConfig['webserver_url'] ?? ''),
+                'route_404' => $route404 !== null ? sanitize_text_field($route404) : ($existingStaticConfig['route_404'] ?? '/404'),
+                'custom_routes' => $customRoutes !== null ? array_map('sanitize_text_field', (array) $customRoutes) : ($existingStaticConfig['custom_routes'] ?? []),
+                'domain_rewrites' => $domainRewrites !== null ? array_map('sanitize_text_field', (array) $domainRewrites) : ($existingStaticConfig['domain_rewrites'] ?? []),
+            ];
+            $this->settings->setStaticConfig($staticConfig);
         }
 
         return ['success' => true];
