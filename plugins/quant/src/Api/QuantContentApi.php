@@ -177,7 +177,7 @@ class QuantContentApi implements ContentApiInterface
         return [
             'Quant-Token' => $this->getToken(),
             'Quant-Project' => $this->getProject(),
-            'Quant-Organisation' => $this->getOrganization(),
+            'Quant-Customer' => $this->getOrganization(),
         ];
     }
 
