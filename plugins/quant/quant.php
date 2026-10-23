@@ -45,7 +45,7 @@ function quant_activate()
         'api_project' => '',
         'api_account' => '',
         'api_token' => '',
-        'disable_tls_verify' => true,
+        'disable_tls_verify' => false,
         'http_request_timeout' => 15,
     ]);
 
