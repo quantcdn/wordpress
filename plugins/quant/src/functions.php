@@ -316,7 +316,10 @@ if (!function_exists('quant_init_hooks')) {
 
     function quant_init_hooks()
     {
-        if (!quant_is_enabled()) {
+        $options = quant_get_options();
+
+        // Register hooks when either automatic push or cache purge is enabled.
+        if (!quant_is_enabled() && empty($options['purge_on_save'])) {
             return;
         }
 

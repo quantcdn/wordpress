@@ -65,6 +65,10 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) 
 
 == Changelog ==
 
+= Unreleased =
+* Fix: the API endpoint now has `/v1` appended correctly when the settings are read.
+* Fix: save hooks are registered when "Cache purge on save" is on, even if "Automatic static push" is off.
+
 = 1.5.2 =
 * Tested with WordPress 6.8.2.
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).

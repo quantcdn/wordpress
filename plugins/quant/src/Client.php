@@ -25,13 +25,24 @@ class Client
         $this->settings = $settings;
         $this->webserver = $settings['webserver_url'] ?? '';
         $this->host = $settings['webserver_host'] ?? '';
-        $this->endpoint = $settings['api_endpoint'] ?? '' . '/v1';
+        $this->endpoint = self::buildEndpoint($settings);
         $this->headers['Content-type'] = 'application/json';
         $this->headers['quant-project'] = $settings['api_project'] ?? '';
         $this->headers['quant-customer'] = $settings['api_account'] ?? '';
         $this->headers['quant-token'] = $settings['api_token'] ?? '';
         $this->disableTlsVerify = $settings['disable_tls_verify'] ?? '';
         $this->httpRequestTimeout = intval($settings['http_request_timeout'] ?? 15);
+    }
+
+    /**
+     * Build the versioned API endpoint from the saved settings.
+     *
+     * @param array $settings
+     * @return string
+     */
+    public static function buildEndpoint($settings) {
+        $base = is_array($settings) ? ($settings['api_endpoint'] ?? '') : '';
+        return rtrim((string) $base, '/') . '/v1';
     }
 
     public function ping() {
