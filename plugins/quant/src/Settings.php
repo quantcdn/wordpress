@@ -52,10 +52,7 @@ class Settings
 
         add_settings_field('quant_disable_tls_verify', 'Disable SSL verify', ['Quant\Field', 'checkbox'], $key, 'general', [
             'name' => "{$key}[disable_tls_verify]",
-            'description' => 'Optionally disable TLS verification. Leave this off in production.'
-                . (!empty($options['disable_tls_verify'])
-                    ? '<br><strong style="color:#b32d2e">Warning: TLS verification is disabled. Requests to the API can be intercepted. Turn this option off unless you are testing.</strong>'
-                    : ''),
+            'description' => 'Optionally disable TLS verification.',
             'value' => $options['disable_tls_verify'] ?? 0,
         ]);
 

@@ -34,22 +34,6 @@ class SettingsScreen
     }
 
     /**
-     * Warn when TLS verification is disabled.
-     *
-     * @return void
-     */
-    public static function displayTlsWarning()
-    {
-        $options = get_option(QUANT_SETTINGS_KEY);
-        if (empty($options['disable_tls_verify'])) {
-            return;
-        }
-        ?><div class="notice notice-error">
-            <p><strong>TLS verification is disabled.</strong> Requests to the Quant API are not verified and can be intercepted. Turn off "Disable SSL verify" in the Settings tab.</p>
-        </div><?php
-    }
-
-    /**
      * Display a configuration alert if the user hasn't configured the plugin yet.
      *
      * @return void
@@ -59,8 +43,6 @@ class SettingsScreen
         global $hook_suffix;
 
         if ($hook_suffix == 'settings_page_quant') {
-
-            self::displayTlsWarning();
 
             $client = new Client();
             $success = $client->ping();
