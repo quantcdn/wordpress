@@ -109,4 +109,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'WP_POST_REVISIONS', TRUE);
 
 /** Sets up WordPress vars and included files. */
+define('WP_DEBUG_LOG', '/var/www/html/wp-content/debug.log');
+
 require_once ABSPATH . 'wp-settings.php';

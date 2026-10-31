@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from '@wordpress/element';
+import { useState, useEffect, useCallback, useRef } from '@wordpress/element';
 import {
     Button,
     CheckboxControl,
@@ -61,7 +61,7 @@ function Pagination({ page, pages, onPageChange }) {
 /**
  * ContentBrowser component - displays content list with sync status
  */
-export function ContentBrowser({ contentType, contentTypes, onSelectionChange }) {
+export function ContentBrowser({ contentType, contentTypes, specialType, onSelectionChange }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -69,40 +69,73 @@ export function ContentBrowser({ contentType, contentTypes, onSelectionChange })
     const [totalItems, setTotalItems] = useState(0);
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [selectAll, setSelectAll] = useState(false);
-    const [selectedTaxonomy, setSelectedTaxonomy] = useState('');
 
-    // Determine the actual content type to fetch
-    const getContentParams = useCallback(() => {
+    // For taxonomies, track which one is selected
+    // Initialize with the first taxonomy's subtype if available
+    const getInitialTaxonomy = () => {
+        if (contentTypes && Array.isArray(contentTypes) && contentTypes.length > 0) {
+            return contentTypes[0].subtype || 'category';
+        }
+        return '';
+    };
+    const [selectedTaxonomy, setSelectedTaxonomy] = useState(getInitialTaxonomy);
+
+    // Track the last fetched params to avoid duplicate fetches
+    const lastFetchRef = useRef(null);
+
+    // Get content params for the current view
+    const getContentParams = () => {
         // If we have multiple content types (taxonomies), use the selected one
-        if (contentTypes && contentTypes.length > 0) {
+        if (contentTypes && Array.isArray(contentTypes) && contentTypes.length > 0) {
             const taxonomy = selectedTaxonomy || contentTypes[0]?.subtype || 'category';
-            return {
-                type: 'taxonomy',
-                subtype: taxonomy
-            };
+            return { type: 'taxonomy', subtype: taxonomy };
         }
 
         // Single content type
-        if (contentType) {
-            return {
-                type: contentType.type,
-                subtype: contentType.subtype || ''
-            };
+        if (contentType && contentType.type) {
+            return { type: contentType.type, subtype: contentType.subtype || '' };
         }
 
         return { type: 'post', subtype: '' };
-    }, [contentType, contentTypes, selectedTaxonomy]);
+    };
 
-    // Fetch content
-    const fetchContent = useCallback(async () => {
-        setLoading(true);
-
+    // Fetch content - now a regular async function, not memoized
+    const fetchContent = async (fetchPage = page) => {
         const params = getContentParams();
+        const fetchKey = `${specialType || params.type}-${params.subtype}-${fetchPage}`;
+
+        // Skip if we already fetched this exact data
+        if (lastFetchRef.current === fetchKey && !loading) {
+            return;
+        }
+
+        setLoading(true);
+        lastFetchRef.current = fetchKey;
 
         try {
-            const response = await apiFetch({
-                path: `/quant/v1/content?type=${params.type}&subtype=${params.subtype}&page=${page}&per_page=20`
-            });
+            let response;
+
+            // Handle special types with their own endpoints
+            if (specialType === 'theme_assets') {
+                response = await apiFetch({
+                    path: `/quant/v1/theme-assets?page=${fetchPage}&per_page=50`
+                });
+            } else if (specialType === 'redirects') {
+                response = await apiFetch({
+                    path: `/quant/v1/redirects?page=${fetchPage}&per_page=50`
+                });
+            } else {
+                // Don't fetch if we don't have valid params
+                if (!params.type) {
+                    setLoading(false);
+                    setItems([]);
+                    return;
+                }
+
+                response = await apiFetch({
+                    path: `/quant/v1/content?type=${params.type}&subtype=${encodeURIComponent(params.subtype)}&page=${fetchPage}&per_page=20`
+                });
+            }
 
             setItems(response.items || []);
             setTotalPages(response.pages || 1);
@@ -110,29 +143,42 @@ export function ContentBrowser({ contentType, contentTypes, onSelectionChange })
         } catch (error) {
             console.error('Failed to fetch content:', error);
             setItems([]);
+            setTotalPages(1);
+            setTotalItems(0);
         } finally {
             setLoading(false);
         }
-    }, [page, getContentParams]);
+    };
 
-    // Load content on mount and when dependencies change
+    // Load content on mount
     useEffect(() => {
         fetchContent();
-    }, [fetchContent]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    // Reset page when content type changes
+    // Refetch when page changes
     useEffect(() => {
-        setPage(1);
+        if (page > 0) {
+            fetchContent(page);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page]);
+
+    // Refetch when taxonomy selection changes
+    useEffect(() => {
+        if (selectedTaxonomy) {
+            lastFetchRef.current = null; // Reset to force refetch
+            setPage(1);
+            fetchContent(1);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedTaxonomy]);
+
+    // Reset state when switching content types (via key prop on parent)
+    useEffect(() => {
         setSelectedIds(new Set());
         setSelectAll(false);
-    }, [contentType, selectedTaxonomy]);
-
-    // Set initial taxonomy selection
-    useEffect(() => {
-        if (contentTypes && contentTypes.length > 0 && !selectedTaxonomy) {
-            setSelectedTaxonomy(contentTypes[0].subtype);
-        }
-    }, [contentTypes, selectedTaxonomy]);
+    }, [contentType, contentTypes, specialType]);
 
     // Notify parent of selection changes
     useEffect(() => {
@@ -258,17 +304,29 @@ export function ContentBrowser({ contentType, contentTypes, onSelectionChange })
                                 />
                             </th>
                             <th className="quant-content-browser__col-title">
-                                {__('Title', 'quant')}
+                                {specialType === 'redirects' ? __('Source', 'quant') : __('Title', 'quant')}
                             </th>
                             <th className="quant-content-browser__col-url">
-                                {__('URL', 'quant')}
+                                {specialType === 'redirects' ? __('Destination', 'quant') : __('URL', 'quant')}
                             </th>
+                            {specialType === 'redirects' && (
+                                <th className="quant-content-browser__col-code">
+                                    {__('Code', 'quant')}
+                                </th>
+                            )}
+                            {specialType === 'theme_assets' && (
+                                <th className="quant-content-browser__col-type">
+                                    {__('Type', 'quant')}
+                                </th>
+                            )}
                             <th className="quant-content-browser__col-status">
                                 {__('Status', 'quant')}
                             </th>
-                            <th className="quant-content-browser__col-synced">
-                                {__('Last Synced', 'quant')}
-                            </th>
+                            {!specialType && (
+                                <th className="quant-content-browser__col-synced">
+                                    {__('Last Synced', 'quant')}
+                                </th>
+                            )}
                             <th className="quant-content-browser__col-actions">
                                 {__('Actions', 'quant')}
                             </th>
@@ -288,22 +346,44 @@ export function ContentBrowser({ contentType, contentTypes, onSelectionChange })
                                     />
                                 </td>
                                 <td className="quant-content-browser__col-title">
-                                    <strong>{item.title || __('(No title)', 'quant')}</strong>
-                                    {item.subtype && (
-                                        <span className="quant-content-browser__subtype">
-                                            {item.subtype}
-                                        </span>
+                                    {specialType === 'redirects' ? (
+                                        <code>{item.url}</code>
+                                    ) : (
+                                        <>
+                                            <strong>{item.title || __('(No title)', 'quant')}</strong>
+                                            {item.subtype && (
+                                                <span className="quant-content-browser__subtype">
+                                                    {item.subtype}
+                                                </span>
+                                            )}
+                                        </>
                                     )}
                                 </td>
                                 <td className="quant-content-browser__col-url">
-                                    <code>{item.url}</code>
+                                    <code>{specialType === 'redirects' ? item.destination : item.url}</code>
                                 </td>
+                                {specialType === 'redirects' && (
+                                    <td className="quant-content-browser__col-code">
+                                        <span className={`quant-redirect-code quant-redirect-code--${item.code}`}>
+                                            {item.code}
+                                        </span>
+                                    </td>
+                                )}
+                                {specialType === 'theme_assets' && (
+                                    <td className="quant-content-browser__col-type">
+                                        <span className={`quant-asset-type quant-asset-type--${item.file_type}`}>
+                                            {item.file_type}
+                                        </span>
+                                    </td>
+                                )}
                                 <td className="quant-content-browser__col-status">
                                     <StatusBadge status={item.sync_status} />
                                 </td>
-                                <td className="quant-content-browser__col-synced">
-                                    {formatDate(item.last_synced)}
-                                </td>
+                                {!specialType && (
+                                    <td className="quant-content-browser__col-synced">
+                                        {formatDate(item.last_synced)}
+                                    </td>
+                                )}
                                 <td className="quant-content-browser__col-actions">
                                     <Button
                                         variant="link"

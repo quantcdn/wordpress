@@ -60,11 +60,24 @@ class QuantContentApi implements ContentApiInterface
             $body['info'] = $meta;
         }
 
-        $response = $this->http->post(
-            "{$this->getEndpoint()}/v1/content",
-            $this->getHeaders(),
-            $body
-        );
+        // NOTE: The Quant API expects POST to /v1 for content (not /v1/content)
+        $endpoint = "{$this->getEndpoint()}/v1";
+        $headers = $this->getHeaders();
+
+        // Debug logging
+        error_log("[Quant] Publishing to: {$endpoint}");
+        error_log("[Quant] URL: {$url}");
+        error_log("[Quant] Headers: " . wp_json_encode([
+            'Quant-Token' => substr($headers['Quant-Token'] ?? '', 0, 8) . '...',
+            'Quant-Project' => $headers['Quant-Project'] ?? '',
+            'Quant-Customer' => $headers['Quant-Customer'] ?? '',
+        ]));
+        error_log("[Quant] Content length: " . strlen($markup) . " bytes");
+
+        $response = $this->http->post($endpoint, $headers, $body);
+
+        error_log("[Quant] Response code: " . ($response['code'] ?? 'null'));
+        error_log("[Quant] Response body: " . substr($response['body'] ?? '', 0, 500));
 
         return $this->parseResponse($response);
     }

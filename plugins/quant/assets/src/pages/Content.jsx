@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from '@wordpress/element';
+import { useState, useEffect, useCallback, useMemo } from '@wordpress/element';
 import {
     Card,
     CardHeader,
@@ -22,6 +22,7 @@ export function Content() {
     const [isSyncing, setIsSyncing] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [showProgress, setShowProgress] = useState(false);
+    const [autoProcessing, setAutoProcessing] = useState(false);
     const [activeTab, setActiveTab] = useState('post');
 
     // Load status and content types on mount
@@ -54,10 +55,14 @@ export function Content() {
                 .filter(t => t.type === 'cpt')
                 .map(t => t.subtype);
 
+            // Check if redirects are available
+            const hasRedirects = contentTypes.find(t => t.type === 'redirects' && t.count > 0);
+
             const types = [
                 'post', 'page', 'media', 'taxonomy',
                 'home', 'archives', 'theme_assets',
-                ...cptTypes
+                ...cptTypes,
+                ...(hasRedirects ? ['redirects'] : [])
             ];
 
             const response = await apiFetch({
@@ -68,8 +73,9 @@ export function Content() {
 
             setNotice({
                 status: 'success',
-                message: __(`Queued ${response.queued} items for sync.`, 'quant')
+                message: __(`Queued ${response.queued} items for sync. Processing...`, 'quant')
             });
+            setAutoProcessing(true);
             setShowProgress(true);
         } catch (error) {
             setNotice({
@@ -120,53 +126,37 @@ export function Content() {
         }
     };
 
-    // Handle process queue manually
+    // Handle process queue - starts auto-processing with progress display
     const handleProcessQueue = async () => {
         setIsProcessing(true);
         setNotice(null);
 
         try {
-            const response = await apiFetch({
-                path: '/quant/v1/queue/process',
-                method: 'POST',
-                data: { limit: 10 }
+            // Check if there are pending items first
+            const statusResponse = await apiFetch({
+                path: '/quant/v1/queue/status'
             });
 
-            // Build informative message
-            let message = '';
-            let status = 'info';
-
-            if (response.processed === 0 && response.failed === 0) {
-                message = __('No pending items in queue. Use "Seed All Content" or select items to sync.', 'quant');
-            } else if (response.failed > 0 && response.processed > 0) {
-                message = __(`Processed ${response.processed} items, ${response.failed} failed.`, 'quant');
-                status = 'warning';
-            } else if (response.failed > 0) {
-                message = __(`${response.failed} items failed to process.`, 'quant');
-                status = 'error';
-            } else {
-                message = __(`Processed ${response.processed} items successfully.`, 'quant');
-                status = 'success';
+            if (statusResponse.pending === 0 && statusResponse.processing === 0) {
+                setNotice({
+                    status: 'info',
+                    message: __('No pending items in queue. Use "Seed All Content" or select items to sync.', 'quant')
+                });
+                setIsProcessing(false);
+                return;
             }
 
-            if (response.remaining > 0) {
-                message += ` ${response.remaining} remaining.`;
-            }
-
-            // Add error details if any
-            if (response.errors && response.errors.length > 0) {
-                message += '\n\nErrors:\n' + response.errors.join('\n');
-            }
-
-            setNotice({ status, message });
-
-            if (response.processed > 0 || response.remaining > 0) {
-                setShowProgress(true);
-            }
+            // Start auto-processing with progress display
+            setAutoProcessing(true);
+            setShowProgress(true);
+            setNotice({
+                status: 'info',
+                message: __(`Processing ${statusResponse.pending} pending items...`, 'quant')
+            });
         } catch (error) {
             setNotice({
                 status: 'error',
-                message: error.message || __('Failed to process queue', 'quant')
+                message: error.message || __('Failed to check queue status', 'quant')
             });
         } finally {
             setIsProcessing(false);
@@ -181,16 +171,17 @@ export function Content() {
     // Handle progress complete
     const handleProgressComplete = () => {
         setShowProgress(false);
+        setAutoProcessing(false);
     };
 
-    // Build tabs from content types
-    const buildTabs = () => {
-        const tabs = [];
+    // Build tabs from content types - memoized to prevent infinite loops in child components
+    const tabs = useMemo(() => {
+        const result = [];
 
         // Add standard tabs
         const postType = contentTypes.find(t => t.type === 'post');
         if (postType) {
-            tabs.push({
+            result.push({
                 name: 'post',
                 title: `${postType.label} (${postType.count})`,
                 contentType: postType
@@ -199,7 +190,7 @@ export function Content() {
 
         const pageType = contentTypes.find(t => t.type === 'page');
         if (pageType) {
-            tabs.push({
+            result.push({
                 name: 'page',
                 title: `${pageType.label} (${pageType.count})`,
                 contentType: pageType
@@ -209,7 +200,7 @@ export function Content() {
         // Add custom post types
         const cpts = contentTypes.filter(t => t.type === 'cpt');
         cpts.forEach(cpt => {
-            tabs.push({
+            result.push({
                 name: `cpt_${cpt.subtype}`,
                 title: `${cpt.label} (${cpt.count})`,
                 contentType: cpt
@@ -220,7 +211,7 @@ export function Content() {
         const taxonomies = contentTypes.filter(t => t.type === 'taxonomy');
         if (taxonomies.length > 0) {
             const totalTaxCount = taxonomies.reduce((sum, t) => sum + t.count, 0);
-            tabs.push({
+            result.push({
                 name: 'taxonomies',
                 title: `${__('Taxonomies', 'quant')} (${totalTaxCount})`,
                 contentTypes: taxonomies
@@ -230,15 +221,37 @@ export function Content() {
         // Add media tab
         const media = contentTypes.find(t => t.type === 'media');
         if (media) {
-            tabs.push({
+            result.push({
                 name: 'media',
                 title: `${media.label} (${media.count})`,
                 contentType: media
             });
         }
 
-        return tabs;
-    };
+        // Add theme assets tab
+        const themeAssets = contentTypes.find(t => t.type === 'theme_assets');
+        if (themeAssets) {
+            result.push({
+                name: 'theme_assets',
+                title: `${themeAssets.label} (${themeAssets.count})`,
+                contentType: themeAssets,
+                specialType: 'theme_assets'
+            });
+        }
+
+        // Add redirects tab (if Redirection plugin is active)
+        const redirects = contentTypes.find(t => t.type === 'redirects');
+        if (redirects && redirects.count > 0) {
+            result.push({
+                name: 'redirects',
+                title: `${redirects.label} (${redirects.count})`,
+                contentType: redirects,
+                specialType: 'redirects'
+            });
+        }
+
+        return result;
+    }, [contentTypes]);
 
     // Loading state
     if (status.loading) {
@@ -274,8 +287,6 @@ export function Content() {
         );
     }
 
-    const tabs = buildTabs();
-
     return (
         <div className="quant-content">
             <h1>{__('Content', 'quant')}</h1>
@@ -291,7 +302,10 @@ export function Content() {
             )}
 
             {showProgress && (
-                <Progress onComplete={handleProgressComplete} />
+                <Progress
+                    onComplete={handleProgressComplete}
+                    autoProcess={autoProcessing}
+                />
             )}
 
             <Card className="quant-content__header-card">
@@ -326,10 +340,10 @@ export function Content() {
                             <Button
                                 variant="tertiary"
                                 onClick={handleProcessQueue}
-                                disabled={isProcessing || showProgress}
-                                isBusy={isProcessing}
+                                disabled={isProcessing || autoProcessing}
+                                isBusy={isProcessing || autoProcessing}
                             >
-                                {__('Process Queue', 'quant')}
+                                {autoProcessing ? __('Processing...', 'quant') : __('Process Queue', 'quant')}
                             </Button>
                         </div>
                     </div>
@@ -349,6 +363,7 @@ export function Content() {
                             <ContentBrowser
                                 contentType={tab.contentType}
                                 contentTypes={tab.contentTypes}
+                                specialType={tab.specialType}
                                 onSelectionChange={handleSelectionChange}
                                 key={tab.name}
                             />

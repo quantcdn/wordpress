@@ -6,8 +6,13 @@ import './Progress.scss';
 
 /**
  * Progress component - shows sync queue progress with polling
+ *
+ * @param {Object} props
+ * @param {Function} props.onComplete - Called when processing completes
+ * @param {number} props.pollInterval - Polling interval in ms (default: 2000)
+ * @param {boolean} props.autoProcess - Whether to auto-process pending items (default: false)
  */
-export function Progress({ onComplete, pollInterval = 2000 }) {
+export function Progress({ onComplete, pollInterval = 2000, autoProcess = false }) {
     const [status, setStatus] = useState({
         pending: 0,
         processing: 0,
@@ -20,17 +25,19 @@ export function Progress({ onComplete, pollInterval = 2000 }) {
     const pollRef = useRef(null);
     const initialTotalRef = useRef(null);
 
-    // Process pending items and fetch status
+    // Fetch status and optionally process pending items
     const fetchStatus = useCallback(async () => {
         try {
-            // First, process a batch of pending items
-            const processResponse = await apiFetch({
-                path: '/quant/v1/queue/process',
-                method: 'POST',
-                data: { limit: 5 }
-            });
+            // Optionally process a batch of pending items
+            if (autoProcess) {
+                await apiFetch({
+                    path: '/quant/v1/queue/process',
+                    method: 'POST',
+                    data: { limit: 5 }
+                });
+            }
 
-            // Then fetch the current status
+            // Fetch the current status
             const response = await apiFetch({
                 path: '/quant/v1/queue/status'
             });
@@ -53,7 +60,7 @@ export function Progress({ onComplete, pollInterval = 2000 }) {
         } catch (err) {
             setError(err.message || __('Failed to fetch queue status', 'quant'));
         }
-    }, [onComplete]);
+    }, [onComplete, autoProcess]);
 
     // Set up polling
     useEffect(() => {

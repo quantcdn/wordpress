@@ -146,31 +146,26 @@ final class ArchiveRenderer
     /**
      * Build metadata array for a date archive.
      *
-     * @return array{archive_type: string, year: int, month: int|null, day: int|null}
+     * Note: Quant API only accepts 'author_name' in the info field,
+     * so we return an empty array for archives.
+     *
+     * @return array<string, mixed>
      */
     private function buildDateMeta(int $year, ?int $month, ?int $day): array
     {
-        return [
-            'archive_type' => 'date',
-            'year' => $year,
-            'month' => $month,
-            'day' => $day,
-        ];
+        return [];
     }
 
     /**
      * Build metadata array for a post type archive.
      *
-     * @return array{archive_type: string, post_type: string, label: string}
+     * Note: Quant API only accepts 'author_name' in the info field,
+     * so we return an empty array for archives.
+     *
+     * @return array<string, mixed>
      */
     private function buildPostTypeMeta(string $postType): array
     {
-        $postTypeObject = get_post_type_object($postType);
-
-        return [
-            'archive_type' => 'post_type',
-            'post_type' => $postType,
-            'label' => $postTypeObject->label ?? $postType,
-        ];
+        return [];
     }
 }

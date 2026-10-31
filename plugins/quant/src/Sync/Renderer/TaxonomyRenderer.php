@@ -137,15 +137,13 @@ final class TaxonomyRenderer
     /**
      * Build metadata array for the rendered term.
      *
-     * @return array{taxonomy: string, term_id: int, term_name: string, term_slug: string}
+     * Note: Quant API only accepts 'author_name' in the info field,
+     * so we return an empty array for taxonomy terms.
+     *
+     * @return array<string, mixed>
      */
     private function buildMeta(WP_Term $term): array
     {
-        return [
-            'taxonomy' => $term->taxonomy,
-            'term_id' => $term->term_id,
-            'term_name' => $term->name,
-            'term_slug' => $term->slug,
-        ];
+        return [];
     }
 }

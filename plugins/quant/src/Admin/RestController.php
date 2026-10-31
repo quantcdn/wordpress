@@ -195,6 +195,46 @@ class RestController
             'callback' => [$this, 'getContentTypes'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
+
+        // Theme assets endpoint
+        register_rest_route(self::NAMESPACE, '/theme-assets', [
+            'methods' => 'GET',
+            'callback' => [$this, 'getThemeAssets'],
+            'permission_callback' => [$this, 'checkPermission'],
+            'args' => [
+                'page' => [
+                    'type' => 'integer',
+                    'default' => 1,
+                    'minimum' => 1,
+                ],
+                'per_page' => [
+                    'type' => 'integer',
+                    'default' => 50,
+                    'minimum' => 1,
+                    'maximum' => 200,
+                ],
+            ],
+        ]);
+
+        // Redirects endpoint
+        register_rest_route(self::NAMESPACE, '/redirects', [
+            'methods' => 'GET',
+            'callback' => [$this, 'getRedirects'],
+            'permission_callback' => [$this, 'checkPermission'],
+            'args' => [
+                'page' => [
+                    'type' => 'integer',
+                    'default' => 1,
+                    'minimum' => 1,
+                ],
+                'per_page' => [
+                    'type' => 'integer',
+                    'default' => 50,
+                    'minimum' => 1,
+                    'maximum' => 200,
+                ],
+            ],
+        ]);
     }
 
     public function checkPermission(): bool
@@ -640,6 +680,9 @@ class RestController
                 case 'archives':
                     $totalQueued += $this->seedArchives();
                     break;
+                case 'redirects':
+                    $totalQueued += $this->seedRedirects();
+                    break;
                 default:
                     // Check if it's a custom post type
                     if (post_type_exists($type)) {
@@ -818,6 +861,36 @@ class RestController
     }
 
     /**
+     * Seed redirects from Redirection plugin.
+     */
+    private function seedRedirects(): int
+    {
+        $redirects = $this->getRedirectsList();
+
+        if (empty($redirects)) {
+            return 0;
+        }
+
+        $jobs = [];
+        foreach ($redirects as $redirect) {
+            $jobs[] = new SyncJob(
+                type: SyncType::Redirect,
+                objectId: (string) $redirect['id'],
+                action: SyncAction::Publish,
+                meta: [
+                    'source' => $redirect['source'],
+                    'destination' => $redirect['destination'],
+                    'code' => $redirect['code'],
+                ]
+            );
+        }
+
+        $this->getQueue()->pushBatch($jobs);
+
+        return count($jobs);
+    }
+
+    /**
      * Get queue status.
      */
     public function getQueueStatus(WP_REST_Request $request): array
@@ -934,9 +1007,15 @@ class RestController
         }
 
         $limit = (int) $request->get_param('limit');
+
+        error_log("[Quant] processQueue called with limit: {$limit}");
+
         $jobs = $this->getQueue()->fetchPending($limit);
 
+        error_log("[Quant] Fetched " . count($jobs) . " pending jobs");
+
         if (empty($jobs)) {
+            error_log("[Quant] No pending jobs found");
             return [
                 'success' => true,
                 'processed' => 0,
@@ -950,20 +1029,24 @@ class RestController
         $errors = [];
 
         foreach ($jobs as $job) {
+            error_log("[Quant] Processing job: {$job->type->value} #{$job->objectId}");
             try {
                 $success = $this->processJob($job);
 
                 if ($success) {
+                    error_log("[Quant] Job {$job->id} completed successfully");
                     $this->getQueue()->markCompleted($job->id);
                     $processed++;
                 } else {
-                    $error = 'Processing failed';
+                    $error = 'Processing failed (returned false)';
+                    error_log("[Quant] Job {$job->id} failed: {$error}");
                     $this->getQueue()->markFailed($job->id, $error);
                     $errors[] = "{$job->type->value} #{$job->objectId}: {$error}";
                     $failed++;
                 }
             } catch (\Throwable $e) {
                 $error = $e->getMessage();
+                error_log("[Quant] Job {$job->id} threw exception: {$error}");
                 $this->getQueue()->markFailed($job->id, $error);
                 $errors[] = "{$job->type->value} #{$job->objectId}: {$error}";
                 $failed++;
@@ -1062,13 +1145,11 @@ class RestController
                     throw new \RuntimeException("Cannot get link for term #{$job->objectId}");
                 }
 
-                $path = wp_parse_url($url, PHP_URL_PATH);
+                $path = $this->extractUrlPath($url);
                 $markup = $this->renderUrl($url);
 
-                $response = $this->api->publish($path, $markup, [
-                    'taxonomy' => $taxonomy,
-                    'term_id' => $term->term_id,
-                ]);
+                // Note: Quant API only accepts 'author_name' in info, so we pass empty meta
+                $response = $this->api->publish($path, $markup, []);
                 if (!$response->success) {
                     throw new \RuntimeException("API error: {$response->message}");
                 }
@@ -1079,7 +1160,8 @@ class RestController
                 $path = '/';
                 $markup = $this->renderUrl($url);
 
-                $response = $this->api->publish($path, $markup, ['type' => 'home']);
+                // Note: Quant API only accepts 'author_name' in info, so we pass empty meta
+                $response = $this->api->publish($path, $markup, []);
                 if (!$response->success) {
                     throw new \RuntimeException("API error: {$response->message}");
                 }
@@ -1098,13 +1180,11 @@ class RestController
                     throw new \RuntimeException("Cannot get archive URL for post type: {$postType}");
                 }
 
-                $path = wp_parse_url($url, PHP_URL_PATH) ?: '/';
+                $path = $this->extractUrlPath($url);
                 $markup = $this->renderUrl($url);
 
-                $response = $this->api->publish($path, $markup, [
-                    'type' => 'archive',
-                    'post_type' => $postType,
-                ]);
+                // Note: Quant API only accepts 'author_name' in info, so we pass empty meta
+                $response = $this->api->publish($path, $markup, []);
                 if (!$response->success) {
                     throw new \RuntimeException("API error: {$response->message}");
                 }
@@ -1112,6 +1192,21 @@ class RestController
 
             case SyncType::ThemeAssets:
                 return $this->syncThemeAssets();
+
+            case SyncType::Redirect:
+                $source = $job->meta['source'] ?? null;
+                $destination = $job->meta['destination'] ?? null;
+                $code = $job->meta['code'] ?? 301;
+
+                if (!$source || !$destination) {
+                    throw new \RuntimeException("Missing source or destination for redirect #{$job->objectId}");
+                }
+
+                $response = $this->api->createRedirect($source, $destination, $code);
+                if (!$response->success) {
+                    throw new \RuntimeException("API error publishing redirect: {$response->message}");
+                }
+                return true;
 
             default:
                 throw new \RuntimeException("Unknown sync type: {$job->type->value}");
@@ -1209,7 +1304,7 @@ class RestController
             if ($permalink === false) {
                 return false;
             }
-            $url = wp_parse_url($permalink, PHP_URL_PATH) ?? '/';
+            $url = $this->extractUrlPath($permalink);
         }
 
         $response = $this->api->unpublish($url);
@@ -1302,14 +1397,248 @@ class RestController
             'category' => 'special',
         ];
 
+        // Theme assets - count actual files
+        $themeAssets = $this->scanThemeAssets();
         $types[] = [
             'type' => 'theme_assets',
             'label' => __('Theme Assets', 'quant'),
-            'count' => 1,
+            'count' => count($themeAssets),
             'category' => 'special',
         ];
 
+        // Redirects (from Redirection plugin if active)
+        $redirectCount = $this->countRedirects();
+        if ($redirectCount > 0) {
+            $types[] = [
+                'type' => 'redirects',
+                'label' => __('Redirects', 'quant'),
+                'count' => $redirectCount,
+                'category' => 'special',
+            ];
+        }
+
         return $types;
+    }
+
+    /**
+     * Get theme assets list.
+     */
+    public function getThemeAssets(WP_REST_Request $request): array
+    {
+        $page = (int) $request->get_param('page');
+        $perPage = (int) $request->get_param('per_page');
+
+        $allAssets = $this->scanThemeAssets();
+        $total = count($allAssets);
+        $totalPages = (int) ceil($total / $perPage);
+
+        // Paginate
+        $offset = ($page - 1) * $perPage;
+        $assets = array_slice($allAssets, $offset, $perPage);
+
+        $items = [];
+        foreach ($assets as $asset) {
+            $items[] = [
+                'id' => md5($asset['route']),
+                'title' => basename($asset['route']),
+                'url' => $asset['route'],
+                'type' => 'theme_asset',
+                'file_type' => $asset['type'],
+                'sync_status' => 'never', // Theme assets don't track individual sync status
+            ];
+        }
+
+        return [
+            'items' => $items,
+            'total' => $total,
+            'pages' => $totalPages,
+            'page' => $page,
+            'per_page' => $perPage,
+        ];
+    }
+
+    /**
+     * Get redirects from Redirection plugin.
+     */
+    public function getRedirects(WP_REST_Request $request): array
+    {
+        $page = (int) $request->get_param('page');
+        $perPage = (int) $request->get_param('per_page');
+
+        $allRedirects = $this->getRedirectsList();
+        $total = count($allRedirects);
+        $totalPages = (int) ceil($total / $perPage);
+
+        // Paginate
+        $offset = ($page - 1) * $perPage;
+        $redirects = array_slice($allRedirects, $offset, $perPage);
+
+        $items = [];
+        foreach ($redirects as $redirect) {
+            $items[] = [
+                'id' => $redirect['id'],
+                'title' => $redirect['source'],
+                'url' => $redirect['source'],
+                'type' => 'redirect',
+                'destination' => $redirect['destination'],
+                'code' => $redirect['code'],
+                'sync_status' => $this->getRedirectSyncStatus($redirect['id']),
+            ];
+        }
+
+        return [
+            'items' => $items,
+            'total' => $total,
+            'pages' => $totalPages,
+            'page' => $page,
+            'per_page' => $perPage,
+        ];
+    }
+
+    /**
+     * Scan theme directory for assets.
+     *
+     * @return array<array{route: string, file: string, type: string}>
+     */
+    private function scanThemeAssets(): array
+    {
+        $assets = [];
+        $theme = wp_get_theme();
+        $themeDir = $theme->get_stylesheet_directory();
+
+        $extensions = ['css', 'js', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'woff', 'woff2', 'ttf', 'eot', 'ico'];
+        $pattern = $themeDir . '/**/*.{' . implode(',', $extensions) . '}';
+
+        $files = glob($pattern, GLOB_BRACE) ?: [];
+
+        foreach ($files as $file) {
+            // Skip node_modules
+            if (strpos($file, 'node_modules') !== false) {
+                continue;
+            }
+
+            $relativePath = str_replace(ABSPATH, '/', $file);
+            $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+
+            $type = match ($extension) {
+                'css' => 'stylesheet',
+                'js' => 'script',
+                'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico' => 'image',
+                'woff', 'woff2', 'ttf', 'eot' => 'font',
+                default => 'other',
+            };
+
+            $assets[] = [
+                'route' => $relativePath,
+                'file' => $file,
+                'type' => $type,
+            ];
+        }
+
+        return $assets;
+    }
+
+    /**
+     * Count redirects from Redirection plugin.
+     */
+    private function countRedirects(): int
+    {
+        // Ensure is_plugin_active is available
+        if (!function_exists('is_plugin_active')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        if (!is_plugin_active('redirection/redirection.php')) {
+            return 0;
+        }
+
+        if (!class_exists('Red_Item')) {
+            return 0;
+        }
+
+        $redirects = \Red_Item::get_all();
+        $count = 0;
+
+        foreach ($redirects as $redirect) {
+            // Only count enabled, non-regex, URL match redirects
+            if (!$redirect->is_enabled()) {
+                continue;
+            }
+            if ($redirect->is_regex()) {
+                continue;
+            }
+            if ($redirect->get_match_type() !== 'url') {
+                continue;
+            }
+            if ($redirect->get_action_type() !== 'url') {
+                continue;
+            }
+            $count++;
+        }
+
+        return $count;
+    }
+
+    /**
+     * Get list of redirects from Redirection plugin.
+     *
+     * @return array<array{id: int, source: string, destination: string, code: int}>
+     */
+    private function getRedirectsList(): array
+    {
+        // Ensure is_plugin_active is available
+        if (!function_exists('is_plugin_active')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        if (!is_plugin_active('redirection/redirection.php')) {
+            return [];
+        }
+
+        if (!class_exists('Red_Item')) {
+            return [];
+        }
+
+        $redirects = \Red_Item::get_all();
+        $list = [];
+
+        foreach ($redirects as $redirect) {
+            // Only include enabled, non-regex, URL match redirects
+            if (!$redirect->is_enabled()) {
+                continue;
+            }
+            if ($redirect->is_regex()) {
+                continue;
+            }
+            if ($redirect->get_match_type() !== 'url') {
+                continue;
+            }
+            if ($redirect->get_action_type() !== 'url') {
+                continue;
+            }
+            if (!is_string($redirect->get_action_data())) {
+                continue;
+            }
+
+            $code = $redirect->get_action_code();
+            $list[] = [
+                'id' => $redirect->get_id(),
+                'source' => $redirect->get_url(),
+                'destination' => $redirect->get_action_data(),
+                'code' => $code === '301' ? 301 : 302,
+            ];
+        }
+
+        return $list;
+    }
+
+    /**
+     * Get sync status for a redirect.
+     */
+    private function getRedirectSyncStatus(int $redirectId): string
+    {
+        $statuses = $this->getSyncStatuses('redirect', [$redirectId]);
+        return $statuses[$redirectId] ?? 'never';
     }
 
     /**
@@ -1326,5 +1655,27 @@ class RestController
             'redirect' => SyncType::Redirect,
             default => null,
         };
+    }
+
+    /**
+     * Extract path with query string from a URL.
+     *
+     * This is important for plain permalinks like /?p=123 or /?cat=1
+     */
+    private function extractUrlPath(string $url): string
+    {
+        $parsed = wp_parse_url($url);
+
+        $path = $parsed['path'] ?? '/';
+        if ($path === '') {
+            $path = '/';
+        }
+
+        // Include query string if present (important for plain permalinks)
+        if (!empty($parsed['query'])) {
+            $path .= '?' . $parsed['query'];
+        }
+
+        return $path;
     }
 }

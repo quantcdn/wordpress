@@ -130,7 +130,7 @@ final class PostRenderer implements ContentRendererInterface
     }
 
     /**
-     * Extract the path from a full URL.
+     * Extract the path (with query string) from a full URL.
      */
     private function extractPath(string $url): string
     {
@@ -142,21 +142,32 @@ final class PostRenderer implements ContentRendererInterface
             $path = '/';
         }
 
+        // Include query string if present (important for plain permalinks like /?p=123)
+        if (!empty($parsed['query'])) {
+            $path .= '?' . $parsed['query'];
+        }
+
         return $path;
     }
 
     /**
      * Build metadata array for the rendered content.
      *
-     * @return array{post_type: string, title: string, modified: string, published: string}
+     * The Quant API only accepts specific fields in the 'info' object.
+     * Valid fields: author_name
+     *
+     * @return array{author_name?: string}
      */
     private function buildMeta(WP_Post $post): array
     {
-        return [
-            'post_type' => $post->post_type,
-            'title' => $post->post_title,
-            'modified' => $post->post_modified_gmt,
-            'published' => $post->post_date_gmt,
-        ];
+        $authorId = $post->post_author;
+        $authorName = get_the_author_meta('display_name', $authorId);
+
+        // Only include author_name if it's not empty
+        if (!empty($authorName)) {
+            return ['author_name' => $authorName];
+        }
+
+        return [];
     }
 }
