@@ -1,86 +1,86 @@
 .quant-admin {
-    margin-left: -20px;
-    min-height: 100vh;
-    background: #f0f0f1;
+	margin-left: -20px;
+	min-height: 100vh;
+	background: #f0f0f1;
 
-    &__header {
-        background: #1e1e1e;
-        padding: 12px 24px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
+	&__header {
+		background: #1e1e1e;
+		padding: 12px 24px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
 
-    &__logo {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        color: #fff;
-        font-size: 18px;
-        font-weight: 600;
-    }
+	&__logo {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		color: #fff;
+		font-size: 18px;
+		font-weight: 600;
+	}
 
-    &__version {
-        color: #999;
-        font-size: 12px;
-    }
+	&__version {
+		color: #999;
+		font-size: 12px;
+	}
 
-    &__body {
-        display: flex;
-        min-height: calc(100vh - 56px);
-    }
+	&__body {
+		display: flex;
+		min-height: calc(100vh - 56px);
+	}
 
-    &__sidebar {
-        width: 200px;
-        background: #fff;
-        border-right: 1px solid #ddd;
-        padding: 16px 0;
-        flex-shrink: 0;
+	&__sidebar {
+		width: 200px;
+		background: #fff;
+		border-right: 1px solid #ddd;
+		padding: 16px 0;
+		flex-shrink: 0;
 
-        ul {
-            list-style: none;
-            margin: 0;
-            padding: 0;
-        }
+		ul {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
 
-        li {
-            margin: 0;
-        }
+		li {
+			margin: 0;
+		}
 
-        a {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px 24px;
-            color: #1e1e1e;
-            text-decoration: none;
-            font-size: 14px;
-            transition: background-color 0.15s ease;
+		a {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 12px 24px;
+			color: #1e1e1e;
+			text-decoration: none;
+			font-size: 14px;
+			transition: background-color 0.15s ease;
 
-            .dashicons {
-                font-size: 18px;
-                width: 18px;
-                height: 18px;
-            }
+			.dashicons {
+				font-size: 18px;
+				width: 18px;
+				height: 18px;
+			}
 
-            &:hover {
-                background: #f6f7f7;
-            }
+			&:hover {
+				background: #f6f7f7;
+			}
 
-            &.active {
-                background: #5c40ff;
-                color: #fff;
+			&.active {
+				background: #5c40ff;
+				color: #fff;
 
-                .dashicons {
-                    color: #fff;
-                }
-            }
-        }
-    }
+				.dashicons {
+					color: #fff;
+				}
+			}
+		}
+	}
 
-    &__content {
-        flex: 1;
-        padding: 24px;
-        max-width: 1200px;
-    }
+	&__content {
+		flex: 1;
+		padding: 24px;
+		max-width: 1200px;
+	}
 }

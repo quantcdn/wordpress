@@ -5,6 +5,9 @@ module.exports = {
     ...defaultConfig,
     entry: {
         index: path.resolve(__dirname, 'assets/src/index.js'),
+        search: path.resolve(__dirname, 'assets/src/frontend/search.js'),
+        autocomplete: path.resolve(__dirname, 'assets/src/frontend/autocomplete.js'),
+        blocks: path.resolve(__dirname, 'assets/src/blocks/index.js'),
     },
     output: {
         ...defaultConfig.output,

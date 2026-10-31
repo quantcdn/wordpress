@@ -1,646 +1,984 @@
-import { useState, useEffect } from '@wordpress/element';
+import { useState, useEffect, useCallback } from '@wordpress/element';
 import {
-    Card,
-    CardHeader,
-    CardBody,
-    TextControl,
-    TextareaControl,
-    Button,
-    Notice,
-    SelectControl,
-    ToggleControl,
-    Spinner,
-    Flex,
-    FlexItem,
-    Icon
+	Card,
+	CardHeader,
+	CardBody,
+	TextControl,
+	TextareaControl,
+	Button,
+	Notice,
+	SelectControl,
+	ToggleControl,
+	CheckboxControl,
+	Spinner,
+	Flex,
+	FlexItem,
+	Icon,
 } from '@wordpress/components';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 
+const SCHEDULE_TYPES = [
+	[ 'home', __( 'Home page', 'quant' ) ],
+	[ 'post', __( 'Posts', 'quant' ) ],
+	[ 'page', __( 'Pages', 'quant' ) ],
+	[ 'taxonomy', __( 'Categories and tags', 'quant' ) ],
+	[ 'archives', __( 'Archives', 'quant' ) ],
+	[ 'authors', __( 'Author pages', 'quant' ) ],
+	[ 'sitemaps', __( 'Sitemaps', 'quant' ) ],
+];
+
+const listToText = ( list ) =>
+	Array.isArray( list ) ? list.join( '\n' ) : list || '';
+const textToList = ( text ) =>
+	text
+		.split( '\n' )
+		.map( ( l ) => l.trim() )
+		.filter( Boolean );
+
+function SectionCard( { title, children, description } ) {
+	return (
+		<Card style={ { marginBottom: '16px' } }>
+			<CardHeader>
+				<h2 style={ { margin: 0 } }>{ title }</h2>
+			</CardHeader>
+			<CardBody>
+				{ description && (
+					<p style={ { color: '#666', marginTop: 0 } }>
+						{ description }
+					</p>
+				) }
+				{ children }
+			</CardBody>
+		</Card>
+	);
+}
+
+function OverrideHint( { overridden, group, field } ) {
+	if (
+		! overridden ||
+		! overridden[ group ] ||
+		! overridden[ group ].includes( field )
+	) {
+		return null;
+	}
+	return (
+		<p className="quant-override-hint">
+			{ __(
+				'Set by a QUANT_* environment variable or constant. Change it there.',
+				'quant'
+			) }
+		</p>
+	);
+}
+
+/**
+ * OAuth connection card: login, project selection, change project, disconnect.
+ *
+ * @param {Object}   props                   Component props.
+ * @param {Object}   props.oauthStatus       OAuth status from the API.
+ * @param {Function} props.setOauthStatus    Status setter.
+ * @param {Function} props.onProjectSelected Called after a project change.
+ * @param {Function} props.notify            Notice helper.
+ * @param {boolean}  props.showManual        Whether manual credentials show.
+ * @param {Function} props.setShowManual     Toggle for manual credentials.
+ */
+function ConnectionCard( {
+	oauthStatus,
+	setOauthStatus,
+	onProjectSelected,
+	notify,
+	showManual,
+	setShowManual,
+} ) {
+	const [ projects, setProjects ] = useState( [] );
+	const [ projectsLoading, setProjectsLoading ] = useState( false );
+	const [ selectedOrg, setSelectedOrg ] = useState( '' );
+	const [ selectedProject, setSelectedProject ] = useState( '' );
+	const [ busy, setBusy ] = useState( false );
+	const [ changing, setChanging ] = useState( false );
+
+	const fetchProjects = useCallback( async () => {
+		setProjectsLoading( true );
+		try {
+			setProjects(
+				await apiFetch( { path: '/quant/v1/oauth/projects' } )
+			);
+		} catch ( error ) {
+			notify(
+				'error',
+				error.message || __( 'Failed to load projects', 'quant' )
+			);
+		} finally {
+			setProjectsLoading( false );
+		}
+	}, [ notify ] );
+
+	useEffect( () => {
+		if ( oauthStatus?.connected && ! oauthStatus.has_project ) {
+			fetchProjects();
+		}
+	}, [ oauthStatus, fetchProjects ] );
+
+	const connect = async () => {
+		try {
+			const response = await apiFetch( {
+				path: '/quant/v1/oauth/connect',
+			} );
+			if ( response.redirect_url ) {
+				window.location.href = response.redirect_url;
+			}
+		} catch ( error ) {
+			notify(
+				'error',
+				error.message || __( 'Failed to start the login', 'quant' )
+			);
+		}
+	};
+
+	const disconnect = async () => {
+		try {
+			await apiFetch( {
+				path: '/quant/v1/oauth/disconnect',
+				method: 'POST',
+			} );
+			setOauthStatus( { connected: false } );
+			setProjects( [] );
+			onProjectSelected();
+			notify( 'success', __( 'Disconnected from Quant', 'quant' ) );
+		} catch ( error ) {
+			notify(
+				'error',
+				error.message || __( 'Failed to disconnect', 'quant' )
+			);
+		}
+	};
+
+	const selectProject = async () => {
+		setBusy( true );
+		try {
+			await apiFetch( {
+				path: '/quant/v1/oauth/select-project',
+				method: 'POST',
+				data: { organization: selectedOrg, project: selectedProject },
+			} );
+			setOauthStatus(
+				await apiFetch( { path: '/quant/v1/oauth/status' } )
+			);
+			setChanging( false );
+			onProjectSelected();
+			notify( 'success', __( 'Project selected.', 'quant' ) );
+		} catch ( error ) {
+			notify(
+				'error',
+				error.message || __( 'Failed to select the project', 'quant' )
+			);
+		} finally {
+			setBusy( false );
+		}
+	};
+
+	const orgOptions = [
+		{ label: __( 'Select an organization…', 'quant' ), value: '' },
+	].concat(
+		projects.map( ( o ) => ( {
+			label: o.organization.name,
+			value: o.organization.machine_name || o.organization.name,
+		} ) )
+	);
+	const org = projects.find(
+		( o ) =>
+			( o.organization.machine_name || o.organization.name ) ===
+			selectedOrg
+	);
+	const projectOptions = [
+		{ label: __( 'Select a project…', 'quant' ), value: '' },
+	].concat(
+		( org?.projects || [] ).map( ( p ) => ( {
+			label: p.name || p.machine_name,
+			value: p.machine_name || p.name,
+		} ) )
+	);
+
+	if ( ! oauthStatus?.connected ) {
+		return (
+			<SectionCard
+				title={ __( 'Connect to Quant', 'quant' ) }
+				description={ __(
+					'Sign in to Quant and pick the project this site publishes to. You can also enter the project credentials by hand.',
+					'quant'
+				) }
+			>
+				<Flex justify="flex-start" gap={ 4 }>
+					<FlexItem>
+						<Button
+							variant="primary"
+							onClick={ connect }
+							icon="admin-users"
+						>
+							{ __( 'Login to Quant', 'quant' ) }
+						</Button>
+					</FlexItem>
+					<FlexItem>
+						<Button
+							variant="link"
+							onClick={ () => setShowManual( ! showManual ) }
+						>
+							{ showManual
+								? __( 'Hide manual credentials', 'quant' )
+								: __(
+										'Use manual credentials instead',
+										'quant'
+								  ) }
+						</Button>
+					</FlexItem>
+				</Flex>
+			</SectionCard>
+		);
+	}
+
+	if ( oauthStatus.has_project && ! changing ) {
+		return (
+			<SectionCard title={ __( 'Connect to Quant', 'quant' ) }>
+				<p className="quant-connected-badge">
+					<Icon icon="yes-alt" /> { __( 'Connected', 'quant' ) }
+					{ oauthStatus.user?.email && (
+						<span style={ { color: '#666', marginLeft: '8px' } }>
+							{ oauthStatus.user.email }
+						</span>
+					) }
+				</p>
+				<p style={ { margin: '8px 0' } }>
+					<strong>{ __( 'Organization:', 'quant' ) }</strong>{ ' ' }
+					{ oauthStatus.organization }
+				</p>
+				<p style={ { margin: '8px 0' } }>
+					<strong>{ __( 'Project:', 'quant' ) }</strong>{ ' ' }
+					{ oauthStatus.project }
+				</p>
+				<Flex
+					justify="flex-start"
+					gap={ 2 }
+					style={ { marginTop: '16px' } }
+				>
+					<FlexItem>
+						<Button
+							variant="secondary"
+							onClick={ () => {
+								setChanging( true );
+								fetchProjects();
+							} }
+						>
+							{ __( 'Change Project', 'quant' ) }
+						</Button>
+					</FlexItem>
+					<FlexItem>
+						<Button
+							variant="secondary"
+							isDestructive
+							onClick={ disconnect }
+						>
+							{ __( 'Disconnect', 'quant' ) }
+						</Button>
+					</FlexItem>
+				</Flex>
+			</SectionCard>
+		);
+	}
+
+	return (
+		<SectionCard
+			title={ __( 'Connect to Quant', 'quant' ) }
+			description={
+				changing
+					? __( 'Select a different project for this site.', 'quant' )
+					: __(
+							'Connected. Select the project to use with this site.',
+							'quant'
+					  )
+			}
+		>
+			{ projectsLoading ? (
+				<Spinner />
+			) : (
+				<>
+					<SelectControl
+						label={ __( 'Organization', 'quant' ) }
+						value={ selectedOrg }
+						options={ orgOptions }
+						onChange={ ( v ) => {
+							setSelectedOrg( v );
+							setSelectedProject( '' );
+						} }
+					/>
+					{ selectedOrg && (
+						<SelectControl
+							label={ __( 'Project', 'quant' ) }
+							value={ selectedProject }
+							options={ projectOptions }
+							onChange={ setSelectedProject }
+						/>
+					) }
+					<Flex
+						justify="flex-start"
+						gap={ 2 }
+						style={ { marginTop: '16px' } }
+					>
+						<FlexItem>
+							<Button
+								variant="primary"
+								onClick={ selectProject }
+								disabled={
+									! selectedOrg || ! selectedProject || busy
+								}
+								isBusy={ busy }
+							>
+								{ changing
+									? __( 'Switch to This Project', 'quant' )
+									: __( 'Use This Project', 'quant' ) }
+							</Button>
+						</FlexItem>
+						<FlexItem>
+							{ changing ? (
+								<Button
+									variant="secondary"
+									onClick={ () => setChanging( false ) }
+								>
+									{ __( 'Cancel', 'quant' ) }
+								</Button>
+							) : (
+								<Button
+									variant="secondary"
+									isDestructive
+									onClick={ disconnect }
+								>
+									{ __( 'Disconnect', 'quant' ) }
+								</Button>
+							) }
+						</FlexItem>
+					</Flex>
+				</>
+			) }
+		</SectionCard>
+	);
+}
+
 export function Settings() {
-    const [settings, setSettings] = useState({
-        organization: '',
-        project: '',
-        token: '',
-        endpoint: 'https://api.quantcdn.io',
-        mode: 'static',
-        // Sync settings
-        auto_sync: true,
-        auto_purge: true,
-        // Static config
-        webserver_url: '',
-        webserver_host: '',
-        route_404: '/404',
-        custom_routes: [],
-        domain_rewrites: []
-    });
-    const [customRoutesText, setCustomRoutesText] = useState('');
-    const [domainRewritesText, setDomainRewritesText] = useState('');
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [testing, setTesting] = useState(false);
-    const [testingInternal, setTestingInternal] = useState(false);
-    const [internalTestResult, setInternalTestResult] = useState(null);
-    const [notice, setNotice] = useState(null);
+	const [ settings, setSettings ] = useState( null );
+	const [ customRoutesText, setCustomRoutesText ] = useState( '' );
+	const [ domainRewritesText, setDomainRewritesText ] = useState( '' );
+	const [ scheduleRoutesText, setScheduleRoutesText ] = useState( '' );
+	const [ oauthStatus, setOauthStatus ] = useState( null );
+	const [ showManual, setShowManual ] = useState( false );
+	const [ saving, setSaving ] = useState( false );
+	const [ testing, setTesting ] = useState( false );
+	const [ testingInternal, setTestingInternal ] = useState( false );
+	const [ internalResult, setInternalResult ] = useState( null );
+	const [ notice, setNotice ] = useState( null );
 
-    // OAuth state
-    const [oauthStatus, setOauthStatus] = useState(null);
-    const [oauthLoading, setOauthLoading] = useState(true);
-    const [projects, setProjects] = useState([]);
-    const [projectsLoading, setProjectsLoading] = useState(false);
-    const [selectedOrg, setSelectedOrg] = useState('');
-    const [selectedProject, setSelectedProject] = useState('');
-    const [selectingProject, setSelectingProject] = useState(false);
-    const [changingProject, setChangingProject] = useState(false);
-    const [showManualCredentials, setShowManualCredentials] = useState(false);
+	const notify = useCallback(
+		( status, message ) => setNotice( { status, message } ),
+		[]
+	);
 
-    // Check for OAuth success from redirect
-    useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('oauth') === 'success') {
-            setNotice({ status: 'success', message: __('Successfully connected to Quant! Now select a project below.', 'quant') });
-            // Clean up URL
-            const newUrl = window.location.pathname + '?page=quant';
-            window.history.replaceState({}, '', newUrl);
-        }
-    }, []);
+	const load = useCallback( async () => {
+		const [ data, oauth ] = await Promise.all( [
+			apiFetch( { path: '/quant/v1/settings' } ),
+			apiFetch( { path: '/quant/v1/oauth/status' } ),
+		] );
+		setSettings( data );
+		setOauthStatus( oauth );
+		setCustomRoutesText( listToText( data.custom_routes ) );
+		setDomainRewritesText( listToText( data.domain_rewrites ) );
+		setScheduleRoutesText( listToText( data.schedule?.custom_routes ) );
+	}, [] );
 
-    useEffect(() => {
-        Promise.all([
-            apiFetch({ path: '/quant/v1/settings' }),
-            apiFetch({ path: '/quant/v1/oauth/status' })
-        ])
-            .then(([settingsData, oauthData]) => {
-                setSettings(settingsData);
-                setOauthStatus(oauthData);
+	useEffect( () => {
+		if (
+			new URLSearchParams( window.location.search ).get( 'oauth' ) ===
+			'success'
+		) {
+			notify(
+				'success',
+				__( 'Connected to Quant. Now select a project below.', 'quant' )
+			);
+			window.history.replaceState(
+				{},
+				'',
+				window.location.pathname + '?page=quant#/settings'
+			);
+		}
+		load().catch( ( error ) =>
+			notify(
+				'error',
+				error.message || __( 'Failed to load settings', 'quant' )
+			)
+		);
+	}, [ load, notify ] );
 
-                // Convert arrays to text for textareas
-                if (settingsData.custom_routes) {
-                    setCustomRoutesText(Array.isArray(settingsData.custom_routes)
-                        ? settingsData.custom_routes.join('\n')
-                        : settingsData.custom_routes);
-                }
-                if (settingsData.domain_rewrites) {
-                    setDomainRewritesText(Array.isArray(settingsData.domain_rewrites)
-                        ? settingsData.domain_rewrites.join('\n')
-                        : settingsData.domain_rewrites);
-                }
+	const update = ( key, value ) =>
+		setSettings( ( prev ) => ( { ...prev, [ key ]: value } ) );
+	const updateSchedule = ( key, value ) =>
+		setSettings( ( prev ) => ( {
+			...prev,
+			schedule: { ...prev.schedule, [ key ]: value },
+		} ) );
 
-                // If connected via OAuth but no project selected, fetch projects
-                if (oauthData.connected && !oauthData.has_project) {
-                    fetchProjects();
-                }
-            })
-            .catch(() => {})
-            .finally(() => {
-                setLoading(false);
-                setOauthLoading(false);
-            });
-    }, []);
+	const save = async () => {
+		setSaving( true );
+		setNotice( null );
+		try {
+			const data = {
+				...settings,
+				custom_routes: textToList( customRoutesText ),
+				domain_rewrites: textToList( domainRewritesText ),
+				schedule: {
+					...settings.schedule,
+					custom_routes: textToList( scheduleRoutesText ),
+				},
+			};
+			delete data.overridden;
+			delete data.schedules;
+			delete data.has_token;
+			if ( ! data.token ) {
+				delete data.token;
+			}
+			const response = await apiFetch( {
+				path: '/quant/v1/settings',
+				method: 'POST',
+				data,
+			} );
+			setSettings( { ...response, token: '' } );
+			notify( 'success', __( 'Settings saved.', 'quant' ) );
+		} catch ( error ) {
+			notify(
+				'error',
+				error.message || __( 'Failed to save settings', 'quant' )
+			);
+		} finally {
+			setSaving( false );
+		}
+	};
 
-    const fetchProjects = async () => {
-        setProjectsLoading(true);
-        try {
-            const projectsData = await apiFetch({ path: '/quant/v1/oauth/projects' });
-            setProjects(projectsData);
-        } catch (error) {
-            console.error('Failed to fetch projects:', error);
-        } finally {
-            setProjectsLoading(false);
-        }
-    };
+	const testConnection = async () => {
+		setTesting( true );
+		try {
+			const status = await apiFetch( { path: '/quant/v1/status' } );
+			notify(
+				status.connected ? 'success' : 'error',
+				status.connected
+					? __( 'Connected to the Quant API.', 'quant' )
+					: sprintf(
+							/* translators: %s: error message */
+							__( 'Connection failed: %s', 'quant' ),
+							status.error ||
+								__( 'check your credentials', 'quant' )
+					  )
+			);
+		} catch ( error ) {
+			notify(
+				'error',
+				error.message || __( 'Connection test failed', 'quant' )
+			);
+		} finally {
+			setTesting( false );
+		}
+	};
 
-    const handleOAuthConnect = async () => {
-        try {
-            const response = await apiFetch({ path: '/quant/v1/oauth/connect' });
-            if (response.redirect_url) {
-                window.location.href = response.redirect_url;
-            }
-        } catch (error) {
-            setNotice({ status: 'error', message: error.message || __('Failed to initiate OAuth', 'quant') });
-        }
-    };
+	const testInternal = async () => {
+		setTestingInternal( true );
+		setInternalResult( null );
+		try {
+			setInternalResult(
+				await apiFetch( {
+					path: '/quant/v1/test-internal',
+					method: 'POST',
+				} )
+			);
+		} catch ( error ) {
+			setInternalResult( {
+				success: false,
+				message: error.message || __( 'Test failed', 'quant' ),
+			} );
+		} finally {
+			setTestingInternal( false );
+		}
+	};
 
-    const handleOAuthDisconnect = async () => {
-        try {
-            await apiFetch({ path: '/quant/v1/oauth/disconnect', method: 'POST' });
-            setOauthStatus({ connected: false });
-            setSettings(prev => ({ ...prev, organization: '', project: '', token: '' }));
-            setProjects([]);
-            setNotice({ status: 'success', message: __('Disconnected from Quant', 'quant') });
-        } catch (error) {
-            setNotice({ status: 'error', message: error.message || __('Failed to disconnect', 'quant') });
-        }
-    };
+	if ( ! settings ) {
+		return (
+			<div className="quant-settings">
+				<h1>{ __( 'Settings', 'quant' ) }</h1>
+				<Spinner />
+			</div>
+		);
+	}
 
-    const handleSelectProject = async () => {
-        if (!selectedOrg || !selectedProject) {
-            setNotice({ status: 'error', message: __('Please select an organization and project', 'quant') });
-            return;
-        }
+	const overridden = settings.overridden || {};
+	const isOverridden = ( group, field ) =>
+		!! ( overridden[ group ] && overridden[ group ].includes( field ) );
+	const scheduleOptions = Object.entries( settings.schedules || {} ).map(
+		( [ value, label ] ) => ( { value, label } )
+	);
 
-        setSelectingProject(true);
-        try {
-            await apiFetch({
-                path: '/quant/v1/oauth/select-project',
-                method: 'POST',
-                data: { organization: selectedOrg, project: selectedProject }
-            });
+	return (
+		<div className="quant-settings">
+			<h1>{ __( 'Settings', 'quant' ) }</h1>
 
-            // Refresh status and settings
-            const [settingsData, oauthData] = await Promise.all([
-                apiFetch({ path: '/quant/v1/settings' }),
-                apiFetch({ path: '/quant/v1/oauth/status' })
-            ]);
+			{ notice && (
+				<Notice
+					status={ notice.status }
+					onRemove={ () => setNotice( null ) }
+					isDismissible
+				>
+					{ notice.message }
+				</Notice>
+			) }
 
-            setSettings(settingsData);
-            setOauthStatus(oauthData);
-            setChangingProject(false);
-            setNotice({ status: 'success', message: __('Project selected successfully!', 'quant') });
-        } catch (error) {
-            setNotice({ status: 'error', message: error.message || __('Failed to select project', 'quant') });
-        } finally {
-            setSelectingProject(false);
-        }
-    };
+			<ConnectionCard
+				oauthStatus={ oauthStatus }
+				setOauthStatus={ setOauthStatus }
+				onProjectSelected={ () => load().catch( () => {} ) }
+				notify={ notify }
+				showManual={ showManual }
+				setShowManual={ setShowManual }
+			/>
 
-    const handleSave = async () => {
-        setSaving(true);
-        setNotice(null);
+			{ ( ! oauthStatus?.connected || showManual ) && (
+				<SectionCard
+					title={ __( 'Project Credentials', 'quant' ) }
+					description={ __(
+						'Copy these from the Integrations page of the Quant dashboard.',
+						'quant'
+					) }
+				>
+					<TextControl
+						label={ __( 'API Endpoint', 'quant' ) }
+						value={ settings.endpoint }
+						onChange={ ( v ) => update( 'endpoint', v ) }
+						disabled={ isOverridden( 'credentials', 'endpoint' ) }
+						help={ __(
+							'https://api.quantcdn.io for QuantCDN, https://api.quantgov.cloud for QuantGov. Without /v1.',
+							'quant'
+						) }
+					/>
+					<OverrideHint
+						overridden={ overridden }
+						group="credentials"
+						field="endpoint"
+					/>
+					<TextControl
+						label={ __( 'Organization (API Customer)', 'quant' ) }
+						value={ settings.organization }
+						onChange={ ( v ) => update( 'organization', v ) }
+						disabled={ isOverridden(
+							'credentials',
+							'organization'
+						) }
+					/>
+					<OverrideHint
+						overridden={ overridden }
+						group="credentials"
+						field="organization"
+					/>
+					<TextControl
+						label={ __( 'Project', 'quant' ) }
+						value={ settings.project }
+						onChange={ ( v ) => update( 'project', v ) }
+						disabled={ isOverridden( 'credentials', 'project' ) }
+					/>
+					<OverrideHint
+						overridden={ overridden }
+						group="credentials"
+						field="project"
+					/>
+					<TextControl
+						label={ __( 'API Token', 'quant' ) }
+						type="password"
+						value={ settings.token }
+						onChange={ ( v ) => update( 'token', v ) }
+						disabled={ isOverridden( 'credentials', 'token' ) }
+						placeholder={
+							settings.has_token
+								? __(
+										'Token saved. Enter a new one to replace it.',
+										'quant'
+								  )
+								: __( 'Project token', 'quant' )
+						}
+					/>
+					<OverrideHint
+						overridden={ overridden }
+						group="credentials"
+						field="token"
+					/>
+					<Flex
+						justify="flex-start"
+						gap={ 2 }
+						style={ { marginTop: '16px' } }
+					>
+						<FlexItem>
+							<Button
+								variant="primary"
+								onClick={ save }
+								disabled={ saving }
+								isBusy={ saving }
+							>
+								{ __( 'Save Credentials', 'quant' ) }
+							</Button>
+						</FlexItem>
+						<FlexItem>
+							<Button
+								variant="secondary"
+								onClick={ testConnection }
+								disabled={ testing }
+								isBusy={ testing }
+							>
+								{ __( 'Test Connection', 'quant' ) }
+							</Button>
+						</FlexItem>
+					</Flex>
+				</SectionCard>
+			) }
 
-        try {
-            // Convert textarea content to arrays
-            const customRoutes = customRoutesText.split('\n').filter(r => r.trim());
-            const domainRewrites = domainRewritesText.split('\n').filter(r => r.trim());
+			<SectionCard title={ __( 'Mode', 'quant' ) }>
+				<SelectControl
+					label={ __( 'Plugin mode', 'quant' ) }
+					value={ settings.mode }
+					disabled={ isOverridden( 'mode', 'mode' ) }
+					options={ [
+						{
+							label: __(
+								'Static Site: publish the whole site to the Quant edge',
+								'quant'
+							),
+							value: 'static',
+						},
+						{
+							label: __(
+								'CDN Only: WordPress serves pages, Quant caches and purges them',
+								'quant'
+							),
+							value: 'cdn_only',
+						},
+					] }
+					onChange={ ( v ) => update( 'mode', v ) }
+				/>
+				<ToggleControl
+					label={ __( 'Automatic static push', 'quant' ) }
+					checked={ !! settings.auto_sync }
+					onChange={ ( v ) => update( 'auto_sync', v ) }
+					disabled={
+						settings.mode !== 'static' ||
+						isOverridden( 'sync', 'auto_sync' )
+					}
+					help={ __(
+						'Push pages, terms and media to Quant when they change (Static mode).',
+						'quant'
+					) }
+				/>
+				<ToggleControl
+					label={ __( 'Also push related pages', 'quant' ) }
+					checked={ settings.sync_related !== false }
+					onChange={ ( v ) => update( 'sync_related', v ) }
+					disabled={
+						settings.mode !== 'static' || ! settings.auto_sync
+					}
+					help={ __(
+						'When a post changes, also push the home page, its categories, tags, author and archive pages.',
+						'quant'
+					) }
+				/>
+				<ToggleControl
+					label={ __( 'Cache purge on save', 'quant' ) }
+					checked={ !! settings.auto_purge }
+					onChange={ ( v ) => update( 'auto_purge', v ) }
+					disabled={ isOverridden( 'sync', 'auto_purge' ) }
+					help={ __(
+						'Purge the edge cache when content changes. Used in CDN Only mode, or in Static mode when automatic push is off.',
+						'quant'
+					) }
+				/>
+			</SectionCard>
 
-            await apiFetch({
-                path: '/quant/v1/settings',
-                method: 'POST',
-                data: {
-                    ...settings,
-                    custom_routes: customRoutes,
-                    domain_rewrites: domainRewrites
-                }
-            });
-            setNotice({ status: 'success', message: __('Settings saved successfully', 'quant') });
-            // Clear token from state after save (it's stored server-side)
-            setSettings(prev => ({ ...prev, token: '' }));
-        } catch (error) {
-            setNotice({ status: 'error', message: error.message || __('Failed to save settings', 'quant') });
-        } finally {
-            setSaving(false);
-        }
-    };
+			{ settings.mode === 'static' && (
+				<SectionCard
+					title={ __( 'Static Site Rendering', 'quant' ) }
+					description={ __(
+						'How the plugin fetches pages from this server before it pushes them.',
+						'quant'
+					) }
+				>
+					<div className="quant-inline-test">
+						<strong>
+							{ __( 'Internal connectivity', 'quant' ) }
+						</strong>
+						{ internalResult === null ? (
+							<span style={ { color: '#757575' } }>
+								{ __( 'Not tested', 'quant' ) }
+							</span>
+						) : (
+							<span
+								style={ {
+									color: internalResult.success
+										? '#00a32a'
+										: '#d63638',
+								} }
+							>
+								{ internalResult.success
+									? '✓ ' + __( 'Working', 'quant' )
+									: '✗ ' + internalResult.message }
+							</span>
+						) }
+						<Button
+							variant="secondary"
+							size="small"
+							onClick={ testInternal }
+							disabled={ testingInternal }
+							isBusy={ testingInternal }
+						>
+							{ __( 'Test', 'quant' ) }
+						</Button>
+						{ internalResult?.adjusted_url && (
+							<div className="quant-inline-test__detail">
+								{ internalResult.adjusted_url }
+								{ internalResult.host_header
+									? ` (Host: ${ internalResult.host_header })`
+									: '' }
+							</div>
+						) }
+					</div>
+					<TextControl
+						label={ __( 'Webserver URL', 'quant' ) }
+						value={ settings.webserver_url }
+						onChange={ ( v ) => update( 'webserver_url', v ) }
+						placeholder="http://localhost"
+						disabled={ isOverridden( 'static', 'webserver_url' ) }
+						help={ __(
+							'Where the plugin can reach this site from the server, for example http://localhost. Leave empty to use the site URL.',
+							'quant'
+						) }
+					/>
+					<OverrideHint
+						overridden={ overridden }
+						group="static"
+						field="webserver_url"
+					/>
+					<TextControl
+						label={ __( 'Hostname (Host header)', 'quant' ) }
+						value={ settings.webserver_host }
+						onChange={ ( v ) => update( 'webserver_host', v ) }
+						placeholder="www.example.com"
+						disabled={ isOverridden( 'static', 'webserver_host' ) }
+						help={ __(
+							'The public hostname WordPress expects, so rendered links use the public domain.',
+							'quant'
+						) }
+					/>
+					<OverrideHint
+						overridden={ overridden }
+						group="static"
+						field="webserver_host"
+					/>
+					<ToggleControl
+						label={ __(
+							'Strip host domain from content',
+							'quant'
+						) }
+						checked={ !! settings.strip_host }
+						onChange={ ( v ) => update( 'strip_host', v ) }
+						help={ __(
+							'Rewrite absolute links to this site as relative links, and upgrade http:// links to https://.',
+							'quant'
+						) }
+					/>
+					<TextareaControl
+						label={ __(
+							'Additional domains to make relative',
+							'quant'
+						) }
+						value={ domainRewritesText }
+						onChange={ setDomainRewritesText }
+						rows={ 3 }
+						placeholder="cdn.example.com"
+						help={ __(
+							'One per line. Useful for staging or editorial domains.',
+							'quant'
+						) }
+					/>
+					<ToggleControl
+						label={ __( 'Follow pagination links', 'quant' ) }
+						checked={ !! settings.follow_links }
+						onChange={ ( v ) => update( 'follow_links', v ) }
+						help={ __(
+							'Queue the next pages of listings found in rendered markup.',
+							'quant'
+						) }
+					/>
+					<ToggleControl
+						label={ __( 'Override existing proxies', 'quant' ) }
+						checked={ !! settings.proxy_override }
+						onChange={ ( v ) => update( 'proxy_override', v ) }
+						help={ __(
+							'Tell Quant that pushed pages replace proxy rules at the same path.',
+							'quant'
+						) }
+					/>
+					<TextControl
+						label={ __(
+							'HTTP request timeout (seconds)',
+							'quant'
+						) }
+						type="number"
+						value={ settings.http_request_timeout }
+						onChange={ ( v ) =>
+							update(
+								'http_request_timeout',
+								parseInt( v, 10 ) || 30
+							)
+						}
+						disabled={ isOverridden(
+							'credentials',
+							'http_request_timeout'
+						) }
+					/>
+					<ToggleControl
+						label={ __( 'Disable SSL verification', 'quant' ) }
+						checked={ !! settings.disable_tls_verify }
+						onChange={ ( v ) => update( 'disable_tls_verify', v ) }
+						disabled={ isOverridden(
+							'credentials',
+							'disable_tls_verify'
+						) }
+						help={ __(
+							'Only for local servers with self-signed certificates.',
+							'quant'
+						) }
+					/>
+				</SectionCard>
+			) }
 
-    const handleTest = async () => {
-        setTesting(true);
-        setNotice(null);
+			{ settings.mode === 'static' && (
+				<SectionCard
+					title={ __( 'Seed Content', 'quant' ) }
+					description={ __(
+						'What a full push includes besides posts, pages, terms and media.',
+						'quant'
+					) }
+				>
+					<ToggleControl
+						label={ __( 'Theme assets', 'quant' ) }
+						checked={ !! settings.theme_assets }
+						onChange={ ( v ) => update( 'theme_assets', v ) }
+						help={ __(
+							'CSS, JavaScript, images and fonts of the active theme and its parent.',
+							'quant'
+						) }
+					/>
+					<ToggleControl
+						label={ __( 'Sitemaps', 'quant' ) }
+						checked={ !! settings.sitemap }
+						onChange={ ( v ) => update( 'sitemap', v ) }
+						help={ __(
+							'WordPress core sitemaps, Yoast SEO and Rank Math sitemaps with their stylesheets.',
+							'quant'
+						) }
+					/>
+					<TextControl
+						label={ __( '404 page path', 'quant' ) }
+						value={ settings.route_404 }
+						onChange={ ( v ) => update( 'route_404', v ) }
+						placeholder="/404"
+						help={ __(
+							'A path that returns your 404 page. It is published as the Quant 404 page.',
+							'quant'
+						) }
+					/>
+					<TextareaControl
+						label={ __( 'Custom routes', 'quant' ) }
+						value={ customRoutesText }
+						onChange={ setCustomRoutesText }
+						rows={ 4 }
+						placeholder={ '/robots.txt\n/custom-page' }
+						help={ __(
+							'One per line. Content routes are rendered; paths that match a file on disk are uploaded.',
+							'quant'
+						) }
+					/>
+				</SectionCard>
+			) }
 
-        try {
-            const response = await apiFetch({ path: '/quant/v1/status' });
-            if (response.connected) {
-                setNotice({ status: 'success', message: __('Connection successful!', 'quant') });
-            } else {
-                setNotice({ status: 'error', message: __('Connection failed. Check your credentials.', 'quant') });
-            }
-        } catch (error) {
-            setNotice({ status: 'error', message: error.message || __('Connection test failed', 'quant') });
-        } finally {
-            setTesting(false);
-        }
-    };
+			{ settings.mode === 'static' && (
+				<SectionCard
+					title={ __( 'Scheduled Push', 'quant' ) }
+					description={ __(
+						'Re-push chosen content on a schedule, for example for listings that change without a save.',
+						'quant'
+					) }
+				>
+					<ToggleControl
+						label={ __( 'Enable scheduled push', 'quant' ) }
+						checked={ !! settings.schedule?.enabled }
+						onChange={ ( v ) => updateSchedule( 'enabled', v ) }
+					/>
+					{ settings.schedule?.enabled && (
+						<>
+							<SelectControl
+								label={ __( 'Schedule', 'quant' ) }
+								value={ settings.schedule.interval }
+								options={ scheduleOptions }
+								onChange={ ( v ) =>
+									updateSchedule( 'interval', v )
+								}
+							/>
+							{ SCHEDULE_TYPES.map( ( [ type, label ] ) => (
+								<CheckboxControl
+									key={ type }
+									label={ label }
+									checked={ (
+										settings.schedule.types || []
+									).includes( type ) }
+									onChange={ ( checked ) =>
+										updateSchedule(
+											'types',
+											checked
+												? [
+														...( settings.schedule
+															.types || [] ),
+														type,
+												  ]
+												: (
+														settings.schedule
+															.types || []
+												  ).filter(
+														( t ) => t !== type
+												  )
+										)
+									}
+								/>
+							) ) }
+							<TextareaControl
+								label={ __( 'Custom routes', 'quant' ) }
+								value={ scheduleRoutesText }
+								onChange={ setScheduleRoutesText }
+								rows={ 3 }
+								placeholder="/robots.txt"
+							/>
+						</>
+					) }
+				</SectionCard>
+			) }
 
-    const handleTestInternal = async () => {
-        setTestingInternal(true);
-        setInternalTestResult(null);
-
-        try {
-            const response = await apiFetch({
-                path: '/quant/v1/test-internal',
-                method: 'POST'
-            });
-            setInternalTestResult(response);
-        } catch (error) {
-            setInternalTestResult({
-                success: false,
-                message: error.message || __('Test failed', 'quant')
-            });
-        } finally {
-            setTestingInternal(false);
-        }
-    };
-
-    const updateSetting = (key, value) => {
-        setSettings(prev => ({ ...prev, [key]: value }));
-    };
-
-    if (loading || oauthLoading) {
-        return (
-            <div className="quant-settings">
-                <h1>{__('Settings', 'quant')}</h1>
-                <Spinner />
-            </div>
-        );
-    }
-
-    // Build project options for select
-    const projectOptions = [{ label: __('Select a project...', 'quant'), value: '' }];
-    const orgOptions = [{ label: __('Select an organization...', 'quant'), value: '' }];
-
-    projects.forEach(orgData => {
-        const orgValue = orgData.organization.machine_name || orgData.organization.name;
-        orgOptions.push({
-            label: orgData.organization.name,
-            value: orgValue
-        });
-    });
-
-    // Get projects for selected org
-    const selectedOrgData = projects.find(
-        o => (o.organization.machine_name || o.organization.name) === selectedOrg
-    );
-    if (selectedOrgData && selectedOrgData.projects) {
-        selectedOrgData.projects.forEach(proj => {
-            projectOptions.push({
-                label: proj.name || proj.machine_name,
-                value: proj.machine_name || proj.name
-            });
-        });
-    }
-
-    return (
-        <div className="quant-settings">
-            <h1>{__('Settings', 'quant')}</h1>
-
-            {notice && (
-                <Notice status={notice.status} onRemove={() => setNotice(null)} isDismissible>
-                    {notice.message}
-                </Notice>
-            )}
-
-            {/* OAuth Connection Card */}
-            <Card style={{ marginBottom: '16px' }}>
-                <CardHeader>
-                    <h2 style={{ margin: 0 }}>{__('Connect to Quant', 'quant')}</h2>
-                </CardHeader>
-                <CardBody>
-                    {!oauthStatus?.connected ? (
-                        <>
-                            <p style={{ color: '#666', marginTop: 0 }}>
-                                {__('Connect your WordPress site to QuantCDN with one click. This is the recommended way to configure the plugin.', 'quant')}
-                            </p>
-                            <Flex>
-                                <FlexItem>
-                                    <Button
-                                        variant="primary"
-                                        onClick={handleOAuthConnect}
-                                        icon="admin-users"
-                                    >
-                                        {__('Login to Quant', 'quant')}
-                                    </Button>
-                                </FlexItem>
-                                <FlexItem>
-                                    <Button
-                                        variant="link"
-                                        onClick={() => setShowManualCredentials(!showManualCredentials)}
-                                    >
-                                        {showManualCredentials
-                                            ? __('Hide manual credentials', 'quant')
-                                            : __('Use manual credentials instead', 'quant')
-                                        }
-                                    </Button>
-                                </FlexItem>
-                            </Flex>
-                        </>
-                    ) : oauthStatus.has_project && !changingProject ? (
-                        <>
-                            <Flex align="center" gap={4}>
-                                <FlexItem>
-                                    <span style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        padding: '4px 12px',
-                                        backgroundColor: '#d4edda',
-                                        color: '#155724',
-                                        borderRadius: '4px',
-                                        fontSize: '14px'
-                                    }}>
-                                        <Icon icon="yes-alt" style={{ marginRight: '6px' }} />
-                                        {__('Connected', 'quant')}
-                                    </span>
-                                </FlexItem>
-                                {oauthStatus.user && (
-                                    <FlexItem>
-                                        <span style={{ color: '#666' }}>
-                                            {oauthStatus.user.email}
-                                        </span>
-                                    </FlexItem>
-                                )}
-                            </Flex>
-                            <div style={{ marginTop: '12px' }}>
-                                <p style={{ margin: '8px 0', color: '#333' }}>
-                                    <strong>{__('Organization:', 'quant')}</strong> {oauthStatus.organization}
-                                </p>
-                                <p style={{ margin: '8px 0', color: '#333' }}>
-                                    <strong>{__('Project:', 'quant')}</strong> {oauthStatus.project}
-                                </p>
-                            </div>
-                            <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
-                                <Button
-                                    variant="secondary"
-                                    onClick={() => {
-                                        setChangingProject(true);
-                                        fetchProjects();
-                                    }}
-                                >
-                                    {__('Change Project', 'quant')}
-                                </Button>
-                                <Button
-                                    variant="secondary"
-                                    onClick={handleOAuthDisconnect}
-                                    isDestructive
-                                >
-                                    {__('Disconnect', 'quant')}
-                                </Button>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <p style={{ color: '#666', marginTop: 0 }}>
-                                {changingProject
-                                    ? __('Select a different project for this WordPress site.', 'quant')
-                                    : __('Connected! Now select which project to use with this WordPress site.', 'quant')
-                                }
-                            </p>
-                            {oauthStatus.user && (
-                                <p style={{ color: '#666', margin: '8px 0' }}>
-                                    {__('Logged in as:', 'quant')} <strong>{oauthStatus.user.email}</strong>
-                                </p>
-                            )}
-
-                            {projectsLoading ? (
-                                <Spinner />
-                            ) : (
-                                <>
-                                    <SelectControl
-                                        label={__('Organization', 'quant')}
-                                        value={selectedOrg}
-                                        options={orgOptions}
-                                        onChange={(value) => {
-                                            setSelectedOrg(value);
-                                            setSelectedProject('');
-                                        }}
-                                    />
-
-                                    {selectedOrg && (
-                                        <SelectControl
-                                            label={__('Project', 'quant')}
-                                            value={selectedProject}
-                                            options={projectOptions}
-                                            onChange={setSelectedProject}
-                                        />
-                                    )}
-
-                                    <Flex style={{ marginTop: '16px' }}>
-                                        <FlexItem>
-                                            <Button
-                                                variant="primary"
-                                                onClick={handleSelectProject}
-                                                disabled={!selectedOrg || !selectedProject || selectingProject}
-                                                isBusy={selectingProject}
-                                            >
-                                                {changingProject ? __('Switch to This Project', 'quant') : __('Use This Project', 'quant')}
-                                            </Button>
-                                        </FlexItem>
-                                        <FlexItem>
-                                            {changingProject ? (
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={() => setChangingProject(false)}
-                                                >
-                                                    {__('Cancel', 'quant')}
-                                                </Button>
-                                            ) : (
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={handleOAuthDisconnect}
-                                                    isDestructive
-                                                >
-                                                    {__('Disconnect', 'quant')}
-                                                </Button>
-                                            )}
-                                        </FlexItem>
-                                    </Flex>
-                                </>
-                            )}
-                        </>
-                    )}
-                </CardBody>
-            </Card>
-
-            {/* Manual Credentials Card - only show if not connected via OAuth or explicitly requested */}
-            {(!oauthStatus?.connected || showManualCredentials) && (
-                <Card>
-                    <CardHeader>
-                        <h2 style={{ margin: 0 }}>{__('Manual API Credentials', 'quant')}</h2>
-                    </CardHeader>
-                    <CardBody>
-                        <p style={{ color: '#666', marginTop: 0 }}>
-                            {__('Alternatively, enter your QuantCDN API credentials manually. You can find these in your', 'quant')}{' '}
-                            <a href="https://dashboard.quantcdn.io" target="_blank" rel="noopener noreferrer">
-                                {__('QuantCDN Dashboard', 'quant')}
-                            </a>.
-                        </p>
-                        <TextControl
-                            label={__('Organization', 'quant')}
-                            value={settings.organization}
-                            onChange={(v) => updateSetting('organization', v)}
-                            help={__('Your QuantCDN organization identifier', 'quant')}
-                        />
-                        <TextControl
-                            label={__('Project', 'quant')}
-                            value={settings.project}
-                            onChange={(v) => updateSetting('project', v)}
-                            help={__('Your QuantCDN project name', 'quant')}
-                        />
-                        <TextControl
-                            label={__('API Token', 'quant')}
-                            type="password"
-                            value={settings.token}
-                            onChange={(v) => updateSetting('token', v)}
-                            help={__('Leave blank to keep existing token', 'quant')}
-                            placeholder={__('Enter new token or leave blank', 'quant')}
-                        />
-                        <TextControl
-                            label={__('API Endpoint', 'quant')}
-                            value={settings.endpoint}
-                            onChange={(v) => updateSetting('endpoint', v)}
-                            help={__('Default: https://api.quantcdn.io', 'quant')}
-                        />
-                        <Flex style={{ marginTop: '16px' }} gap={4}>
-                            <FlexItem>
-                                <Button
-                                    variant="primary"
-                                    onClick={handleSave}
-                                    disabled={saving}
-                                    isBusy={saving}
-                                >
-                                    {saving ? __('Saving...', 'quant') : __('Save Credentials', 'quant')}
-                                </Button>
-                            </FlexItem>
-                            <FlexItem>
-                                <Button
-                                    variant="secondary"
-                                    onClick={handleTest}
-                                    disabled={testing || !settings.organization || !settings.project}
-                                    isBusy={testing}
-                                >
-                                    {__('Test Connection', 'quant')}
-                                </Button>
-                            </FlexItem>
-                        </Flex>
-                    </CardBody>
-                </Card>
-            )}
-
-            <Card style={{ marginTop: '16px' }}>
-                <CardHeader>
-                    <h2 style={{ margin: 0 }}>{__('Plugin Mode', 'quant')}</h2>
-                </CardHeader>
-                <CardBody>
-                    <SelectControl
-                        label={__('Mode', 'quant')}
-                        value={settings.mode}
-                        options={[
-                            { label: __('Static Site', 'quant'), value: 'static' },
-                            { label: __('CDN Only', 'quant'), value: 'cdn_only' }
-                        ]}
-                        onChange={(v) => updateSetting('mode', v)}
-                        help={settings.mode === 'static'
-                            ? __('Full content sync to QuantCDN edge - your entire site is served statically', 'quant')
-                            : __('Cache purging and CDN management only - WordPress serves dynamic content', 'quant')
-                        }
-                    />
-                </CardBody>
-            </Card>
-
-            {/* Sync Settings */}
-            <Card style={{ marginTop: '16px' }}>
-                <CardHeader>
-                    <h2 style={{ margin: 0 }}>{__('Sync Settings', 'quant')}</h2>
-                </CardHeader>
-                <CardBody>
-                    <ToggleControl
-                        label={__('Auto-sync on publish', 'quant')}
-                        checked={settings.auto_sync}
-                        onChange={(v) => updateSetting('auto_sync', v)}
-                        help={settings.mode === 'static'
-                            ? __('Automatically sync content to QuantCDN when published or updated', 'quant')
-                            : __('This setting only applies in Static mode', 'quant')
-                        }
-                        disabled={settings.mode !== 'static'}
-                    />
-                    <ToggleControl
-                        label={__('Auto-purge cache', 'quant')}
-                        checked={settings.auto_purge}
-                        onChange={(v) => updateSetting('auto_purge', v)}
-                        help={__('Automatically purge CDN cache when content is updated', 'quant')}
-                    />
-                </CardBody>
-            </Card>
-
-            {/* Static Configuration - only show in static mode */}
-            {settings.mode === 'static' && (
-                <Card style={{ marginTop: '16px' }}>
-                    <CardHeader>
-                        <h2 style={{ margin: 0 }}>{__('Static Configuration', 'quant')}</h2>
-                    </CardHeader>
-                    <CardBody>
-                        {/* Internal connectivity test */}
-                        <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
-                            <Flex align="center" gap={3}>
-                                <FlexItem>
-                                    <strong>{__('Internal Connectivity', 'quant')}</strong>
-                                </FlexItem>
-                                <FlexItem>
-                                    {internalTestResult === null ? (
-                                        <span style={{ color: '#757575' }}>{__('Not tested', 'quant')}</span>
-                                    ) : internalTestResult.success ? (
-                                        <span style={{ color: '#00a32a' }}>✓ {__('Working', 'quant')}</span>
-                                    ) : (
-                                        <span style={{ color: '#d63638' }}>✗ {internalTestResult.message}</span>
-                                    )}
-                                </FlexItem>
-                                <FlexItem>
-                                    <Button
-                                        variant="secondary"
-                                        size="small"
-                                        onClick={handleTestInternal}
-                                        disabled={testingInternal}
-                                        isBusy={testingInternal}
-                                    >
-                                        {__('Test Connection', 'quant')}
-                                    </Button>
-                                </FlexItem>
-                            </Flex>
-                            {internalTestResult && (
-                                <div style={{ marginTop: '8px', fontSize: '12px', color: '#757575' }}>
-                                    {__('Testing:', 'quant')} {internalTestResult.adjusted_url || internalTestResult.original_url}
-                                </div>
-                            )}
-                        </div>
-
-                        <TextControl
-                            label={__('Webserver URL', 'quant')}
-                            value={settings.webserver_url}
-                            onChange={(v) => updateSetting('webserver_url', v)}
-                            placeholder="http://localhost"
-                            help={__('Optional: Override the URL used for internal page rendering. Leave empty to use the site URL.', 'quant')}
-                        />
-                        <TextControl
-                            label={__('Webserver Host', 'quant')}
-                            value={settings.webserver_host}
-                            onChange={(v) => updateSetting('webserver_host', v)}
-                            placeholder="www.example.com"
-                            help={__('Optional: Host header to send with internal requests. Use when the webserver expects a specific hostname.', 'quant')}
-                        />
-                        <TextControl
-                            label={__('404 Route', 'quant')}
-                            value={settings.route_404}
-                            onChange={(v) => updateSetting('route_404', v)}
-                            placeholder="/404"
-                            help={__('The path to use for 404 error pages on QuantCDN', 'quant')}
-                        />
-                        <TextareaControl
-                            label={__('Custom Routes', 'quant')}
-                            value={customRoutesText}
-                            onChange={setCustomRoutesText}
-                            placeholder={'/robots.txt\n/custom-page'}
-                            rows={4}
-                            help={__('Additional routes to sync (one per line). Use for custom pages or files.', 'quant')}
-                        />
-                        <TextareaControl
-                            label={__('Domain Rewrites', 'quant')}
-                            value={domainRewritesText}
-                            onChange={setDomainRewritesText}
-                            placeholder="www.example.com"
-                            rows={3}
-                            help={__('Domains to rewrite as relative URLs (one per line). Useful for CDN or staging domains.', 'quant')}
-                        />
-                    </CardBody>
-                </Card>
-            )}
-
-            <div style={{ marginTop: '16px' }}>
-                <Button
-                    variant="primary"
-                    onClick={handleSave}
-                    disabled={saving}
-                    isBusy={saving}
-                >
-                    {saving ? __('Saving...', 'quant') : __('Save Settings', 'quant')}
-                </Button>
-            </div>
-        </div>
-    );
+			<div style={ { marginTop: '16px' } }>
+				<Button
+					variant="primary"
+					onClick={ save }
+					disabled={ saving }
+					isBusy={ saving }
+				>
+					{ __( 'Save Settings', 'quant' ) }
+				</Button>
+			</div>
+		</div>
+	);
 }

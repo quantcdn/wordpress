@@ -1,376 +1,408 @@
-import { useState, useEffect, useCallback, useMemo } from '@wordpress/element';
+import { useState, useEffect, useMemo, useCallback } from '@wordpress/element';
 import {
-    Card,
-    CardHeader,
-    CardBody,
-    TabPanel,
-    Button,
-    Notice,
-    Spinner
+	Card,
+	CardBody,
+	TabPanel,
+	Button,
+	Notice,
+	Spinner,
+	DropdownMenu,
+	MenuGroup,
+	MenuItem,
 } from '@wordpress/components';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { ContentBrowser } from '../components/ContentBrowser/ContentBrowser';
 import { Progress } from '../components/Progress/Progress';
 
 export function Content() {
-    const [status, setStatus] = useState({ loading: true, mode: 'static', connected: false });
-    const [contentTypes, setContentTypes] = useState([]);
-    const [selectedItems, setSelectedItems] = useState([]);
-    const [notice, setNotice] = useState(null);
-    const [isSeeding, setIsSeeding] = useState(false);
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [showProgress, setShowProgress] = useState(false);
-    const [autoProcessing, setAutoProcessing] = useState(false);
-    const [activeTab, setActiveTab] = useState('post');
+	const [ status, setStatus ] = useState( {
+		loading: true,
+		mode: 'static',
+		connected: false,
+	} );
+	const [ contentTypes, setContentTypes ] = useState( [] );
+	const [ selectedItems, setSelectedItems ] = useState( [] );
+	const [ notice, setNotice ] = useState( null );
+	const [ busy, setBusy ] = useState( false );
+	const [ showProgress, setShowProgress ] = useState( false );
+	const [ autoProcessing, setAutoProcessing ] = useState( false );
 
-    // Load status and content types on mount
-    useEffect(() => {
-        Promise.all([
-            apiFetch({ path: '/quant/v1/status' }),
-            apiFetch({ path: '/quant/v1/content-types' })
-        ])
-            .then(([statusData, typesData]) => {
-                setStatus({ loading: false, ...statusData });
-                setContentTypes(typesData);
-            })
-            .catch(() => {
-                setStatus({ loading: false, mode: 'cdn_only', connected: false });
-            });
-    }, []);
+	useEffect( () => {
+		Promise.all( [
+			apiFetch( { path: '/quant/v1/status' } ),
+			apiFetch( { path: '/quant/v1/content-types' } ),
+		] )
+			.then( ( [ statusData, typesData ] ) => {
+				setStatus( { loading: false, ...statusData } );
+				setContentTypes( typesData );
+			} )
+			.catch( () =>
+				setStatus( {
+					loading: false,
+					mode: 'cdn_only',
+					connected: false,
+				} )
+			);
+	}, [] );
 
-    // Handle seed all - includes all content types
-    const handleSeedAll = async () => {
-        if (!confirm(__('This will queue ALL content for syncing to QuantCDN (posts, pages, CPTs, taxonomies, media, archives, home, theme assets). Continue?', 'quant'))) {
-            return;
-        }
+	const startProcessing = ( message ) => {
+		setNotice( { status: 'success', message } );
+		setAutoProcessing( true );
+		setShowProgress( true );
+	};
 
-        setIsSeeding(true);
-        setNotice(null);
+	const seed = async ( types, confirmMessage ) => {
+		// eslint-disable-next-line no-alert
+		if ( confirmMessage && ! window.confirm( confirmMessage ) ) {
+			return;
+		}
+		setBusy( true );
+		setNotice( null );
+		try {
+			const response = await apiFetch( {
+				path: '/quant/v1/seed',
+				method: 'POST',
+				data: { types },
+			} );
+			startProcessing(
+				sprintf(
+					/* translators: %d: number of queued items */
+					__( 'Queued %d items. Processing…', 'quant' ),
+					response.queued
+				)
+			);
+		} catch ( error ) {
+			setNotice( {
+				status: 'error',
+				message:
+					error.message || __( 'Failed to queue content', 'quant' ),
+			} );
+		} finally {
+			setBusy( false );
+		}
+	};
 
-        try {
-            // Get all CPT names to include them
-            const cptTypes = contentTypes
-                .filter(t => t.type === 'cpt')
-                .map(t => t.subtype);
+	const syncSelected = async ( action ) => {
+		if ( selectedItems.length === 0 ) {
+			return;
+		}
+		setBusy( true );
+		setNotice( null );
+		try {
+			const response = await apiFetch( {
+				path: '/quant/v1/sync',
+				method: 'POST',
+				data: { items: selectedItems, action },
+			} );
+			setSelectedItems( [] );
+			const template =
+				action === 'unpublish'
+					? /* translators: %d: number of items */ __(
+							'Queued %d items to unpublish. Processing…',
+							'quant'
+					  )
+					: /* translators: %d: number of items */ __(
+							'Queued %d items. Processing…',
+							'quant'
+					  );
+			startProcessing( sprintf( template, response.queued ) );
+		} catch ( error ) {
+			setNotice( {
+				status: 'error',
+				message:
+					error.message || __( 'Failed to queue items', 'quant' ),
+			} );
+		} finally {
+			setBusy( false );
+		}
+	};
 
-            // Check if redirects are available
-            const hasRedirects = contentTypes.find(t => t.type === 'redirects' && t.count > 0);
+	const processQueue = async () => {
+		try {
+			const queue = await apiFetch( { path: '/quant/v1/queue/status' } );
+			if ( queue.pending === 0 && queue.processing === 0 ) {
+				setNotice( {
+					status: 'info',
+					message: __(
+						'The queue is empty. Use "Push everything" or select items to push.',
+						'quant'
+					),
+				} );
+				return;
+			}
+			startProcessing(
+				sprintf(
+					/* translators: %d: number of pending items */
+					__( 'Processing %d pending items…', 'quant' ),
+					queue.pending
+				)
+			);
+		} catch ( error ) {
+			setNotice( {
+				status: 'error',
+				message:
+					error.message || __( 'Failed to read the queue', 'quant' ),
+			} );
+		}
+	};
 
-            const types = [
-                'post', 'page', 'media', 'taxonomy',
-                'home', 'archives', 'theme_assets',
-                ...cptTypes,
-                ...(hasRedirects ? ['redirects'] : [])
-            ];
+	const handleSelectionChange = useCallback(
+		( items ) => setSelectedItems( items ),
+		[]
+	);
 
-            const response = await apiFetch({
-                path: '/quant/v1/seed',
-                method: 'POST',
-                data: { types }
-            });
+	const tabs = useMemo( () => {
+		const result = [];
+		const byType = ( type ) =>
+			contentTypes.find( ( t ) => t.type === type );
 
-            setNotice({
-                status: 'success',
-                message: __(`Queued ${response.queued} items for sync. Processing...`, 'quant')
-            });
-            setAutoProcessing(true);
-            setShowProgress(true);
-        } catch (error) {
-            setNotice({
-                status: 'error',
-                message: error.message || __('Failed to seed content', 'quant')
-            });
-        } finally {
-            setIsSeeding(false);
-        }
-    };
+		for ( const type of [ 'post', 'page' ] ) {
+			const entry = byType( type );
+			if ( entry ) {
+				result.push( {
+					name: type,
+					title: `${ entry.label } (${ entry.count })`,
+					contentType: entry,
+				} );
+			}
+		}
+		for ( const cpt of contentTypes.filter( ( t ) => t.type === 'cpt' ) ) {
+			result.push( {
+				name: `cpt_${ cpt.subtype }`,
+				title: `${ cpt.label } (${ cpt.count })`,
+				contentType: cpt,
+			} );
+		}
+		const taxonomies = contentTypes.filter(
+			( t ) => t.type === 'taxonomy'
+		);
+		if ( taxonomies.length > 0 ) {
+			result.push( {
+				name: 'taxonomies',
+				title: `${ __( 'Taxonomies', 'quant' ) } (${ taxonomies.reduce(
+					( s, t ) => s + t.count,
+					0
+				) })`,
+				contentTypes: taxonomies,
+			} );
+		}
+		const media = byType( 'media' );
+		if ( media ) {
+			result.push( {
+				name: 'media',
+				title: `${ media.label } (${ media.count })`,
+				contentType: media,
+			} );
+		}
+		const themeAssets = byType( 'theme_assets' );
+		if ( themeAssets ) {
+			result.push( {
+				name: 'theme_assets',
+				title: `${ themeAssets.label } (${ themeAssets.count })`,
+				contentType: themeAssets,
+				specialType: 'theme_assets',
+			} );
+		}
+		const redirects = byType( 'redirects' );
+		if ( redirects && redirects.count > 0 ) {
+			result.push( {
+				name: 'redirects',
+				title: `${ redirects.label } (${ redirects.count })`,
+				contentType: redirects,
+				specialType: 'redirects',
+			} );
+		}
+		return result;
+	}, [ contentTypes ] );
 
-    // Handle sync selected
-    const handleSyncSelected = async () => {
-        if (selectedItems.length === 0) {
-            setNotice({
-                status: 'warning',
-                message: __('No items selected', 'quant')
-            });
-            return;
-        }
+	const specialTypes = contentTypes.filter(
+		( t ) => t.category === 'special'
+	);
 
-        setIsSyncing(true);
-        setNotice(null);
+	if ( status.loading ) {
+		return (
+			<div className="quant-content">
+				<h1>{ __( 'Content', 'quant' ) }</h1>
+				<Spinner />
+			</div>
+		);
+	}
 
-        try {
-            const response = await apiFetch({
-                path: '/quant/v1/sync',
-                method: 'POST',
-                data: {
-                    items: selectedItems,
-                    action: 'sync'
-                }
-            });
+	if ( status.mode !== 'static' ) {
+		return (
+			<div className="quant-content">
+				<h1>{ __( 'Content', 'quant' ) }</h1>
+				<Notice status="info" isDismissible={ false }>
+					{ __(
+						'Content publishing is available in Static Site mode. In CDN Only mode the plugin purges the Quant cache when content changes.',
+						'quant'
+					) }
+				</Notice>
+			</div>
+		);
+	}
 
-            setNotice({
-                status: 'success',
-                message: __(`Queued ${response.queued} items for sync.`, 'quant')
-            });
-            setSelectedItems([]);
-            setShowProgress(true);
-        } catch (error) {
-            setNotice({
-                status: 'error',
-                message: error.message || __('Failed to sync items', 'quant')
-            });
-        } finally {
-            setIsSyncing(false);
-        }
-    };
+	return (
+		<div className="quant-content">
+			<h1>{ __( 'Content', 'quant' ) }</h1>
 
-    // Handle process queue - starts auto-processing with progress display
-    const handleProcessQueue = async () => {
-        setIsProcessing(true);
-        setNotice(null);
+			{ ! status.connected && (
+				<Notice status="warning" isDismissible={ false }>
+					{ __(
+						'Not connected to the Quant API. Check the settings before you push content.',
+						'quant'
+					) }
+				</Notice>
+			) }
 
-        try {
-            // Check if there are pending items first
-            const statusResponse = await apiFetch({
-                path: '/quant/v1/queue/status'
-            });
+			{ notice && (
+				<Notice
+					status={ notice.status }
+					onRemove={ () => setNotice( null ) }
+					isDismissible
+				>
+					{ notice.message }
+				</Notice>
+			) }
 
-            if (statusResponse.pending === 0 && statusResponse.processing === 0) {
-                setNotice({
-                    status: 'info',
-                    message: __('No pending items in queue. Use "Seed All Content" or select items to sync.', 'quant')
-                });
-                setIsProcessing(false);
-                return;
-            }
+			{ showProgress && (
+				<Progress
+					onComplete={ () => {
+						setShowProgress( false );
+						setAutoProcessing( false );
+					} }
+					autoProcess={ autoProcessing }
+				/>
+			) }
 
-            // Start auto-processing with progress display
-            setAutoProcessing(true);
-            setShowProgress(true);
-            setNotice({
-                status: 'info',
-                message: __(`Processing ${statusResponse.pending} pending items...`, 'quant')
-            });
-        } catch (error) {
-            setNotice({
-                status: 'error',
-                message: error.message || __('Failed to check queue status', 'quant')
-            });
-        } finally {
-            setIsProcessing(false);
-        }
-    };
+			<Card className="quant-content__header-card">
+				<CardBody>
+					<div className="quant-content__actions">
+						<div className="quant-content__mode-indicator">
+							<span className="quant-content__mode-badge quant-content__mode-badge--static">
+								{ __( 'Static Mode', 'quant' ) }
+							</span>
+							<span className="quant-content__mode-description">
+								{ __(
+									'Pages, files and redirects are published to the Quant edge.',
+									'quant'
+								) }
+							</span>
+						</div>
+						<div className="quant-content__batch-actions">
+							<Button
+								variant="primary"
+								onClick={ () =>
+									seed(
+										[ 'all' ],
+										__(
+											'Queue the whole site for publishing: posts, pages, custom post types, terms, media, home, archives, author pages, theme assets, custom routes, sitemaps and redirects. Continue?',
+											'quant'
+										)
+									)
+								}
+								disabled={ busy || autoProcessing }
+								isBusy={ busy }
+							>
+								{ __( 'Push everything', 'quant' ) }
+							</Button>
+							<DropdownMenu
+								icon="arrow-down-alt2"
+								label={ __( 'Push one type', 'quant' ) }
+								toggleProps={ {
+									variant: 'secondary',
+									children: __( 'Push…', 'quant' ),
+								} }
+							>
+								{ () => (
+									<MenuGroup>
+										{ specialTypes.map( ( type ) => (
+											<MenuItem
+												key={ type.type }
+												onClick={ () =>
+													seed( [ type.type ] )
+												}
+											>{ `${ type.label } (${ type.count })` }</MenuItem>
+										) ) }
+										<MenuItem
+											onClick={ () =>
+												seed( [ 'taxonomy' ] )
+											}
+										>
+											{ __(
+												'All taxonomy terms',
+												'quant'
+											) }
+										</MenuItem>
+										<MenuItem
+											onClick={ () =>
+												seed( [ 'media' ] )
+											}
+										>
+											{ __( 'All media', 'quant' ) }
+										</MenuItem>
+									</MenuGroup>
+								) }
+							</DropdownMenu>
+							<Button
+								variant="secondary"
+								onClick={ () => syncSelected( 'sync' ) }
+								disabled={
+									busy ||
+									selectedItems.length === 0 ||
+									autoProcessing
+								}
+							>
+								{ __( 'Push selected', 'quant' ) }
+								{ selectedItems.length > 0 &&
+									` (${ selectedItems.length })` }
+							</Button>
+							<Button
+								variant="tertiary"
+								isDestructive
+								onClick={ () => syncSelected( 'unpublish' ) }
+								disabled={
+									busy ||
+									selectedItems.length === 0 ||
+									autoProcessing
+								}
+							>
+								{ __( 'Unpublish selected', 'quant' ) }
+							</Button>
+							<Button
+								variant="tertiary"
+								onClick={ processQueue }
+								disabled={ autoProcessing }
+								isBusy={ autoProcessing }
+							>
+								{ autoProcessing
+									? __( 'Processing…', 'quant' )
+									: __( 'Process queue', 'quant' ) }
+							</Button>
+						</div>
+					</div>
+				</CardBody>
+			</Card>
 
-    // Handle selection change from ContentBrowser
-    const handleSelectionChange = useCallback((items) => {
-        setSelectedItems(items);
-    }, []);
-
-    // Handle progress complete
-    const handleProgressComplete = () => {
-        setShowProgress(false);
-        setAutoProcessing(false);
-    };
-
-    // Build tabs from content types - memoized to prevent infinite loops in child components
-    const tabs = useMemo(() => {
-        const result = [];
-
-        // Add standard tabs
-        const postType = contentTypes.find(t => t.type === 'post');
-        if (postType) {
-            result.push({
-                name: 'post',
-                title: `${postType.label} (${postType.count})`,
-                contentType: postType
-            });
-        }
-
-        const pageType = contentTypes.find(t => t.type === 'page');
-        if (pageType) {
-            result.push({
-                name: 'page',
-                title: `${pageType.label} (${pageType.count})`,
-                contentType: pageType
-            });
-        }
-
-        // Add custom post types
-        const cpts = contentTypes.filter(t => t.type === 'cpt');
-        cpts.forEach(cpt => {
-            result.push({
-                name: `cpt_${cpt.subtype}`,
-                title: `${cpt.label} (${cpt.count})`,
-                contentType: cpt
-            });
-        });
-
-        // Add taxonomies tab
-        const taxonomies = contentTypes.filter(t => t.type === 'taxonomy');
-        if (taxonomies.length > 0) {
-            const totalTaxCount = taxonomies.reduce((sum, t) => sum + t.count, 0);
-            result.push({
-                name: 'taxonomies',
-                title: `${__('Taxonomies', 'quant')} (${totalTaxCount})`,
-                contentTypes: taxonomies
-            });
-        }
-
-        // Add media tab
-        const media = contentTypes.find(t => t.type === 'media');
-        if (media) {
-            result.push({
-                name: 'media',
-                title: `${media.label} (${media.count})`,
-                contentType: media
-            });
-        }
-
-        // Add theme assets tab
-        const themeAssets = contentTypes.find(t => t.type === 'theme_assets');
-        if (themeAssets) {
-            result.push({
-                name: 'theme_assets',
-                title: `${themeAssets.label} (${themeAssets.count})`,
-                contentType: themeAssets,
-                specialType: 'theme_assets'
-            });
-        }
-
-        // Add redirects tab (if Redirection plugin is active)
-        const redirects = contentTypes.find(t => t.type === 'redirects');
-        if (redirects && redirects.count > 0) {
-            result.push({
-                name: 'redirects',
-                title: `${redirects.label} (${redirects.count})`,
-                contentType: redirects,
-                specialType: 'redirects'
-            });
-        }
-
-        return result;
-    }, [contentTypes]);
-
-    // Loading state
-    if (status.loading) {
-        return (
-            <div className="quant-content">
-                <h1>{__('Content', 'quant')}</h1>
-                <Spinner />
-            </div>
-        );
-    }
-
-    // Not connected - show warning
-    if (!status.connected) {
-        return (
-            <div className="quant-content">
-                <h1>{__('Content', 'quant')}</h1>
-                <Notice status="warning" isDismissible={false}>
-                    {__('Not connected to QuantCDN. Please configure your API credentials in Settings before syncing content.', 'quant')}
-                </Notice>
-            </div>
-        );
-    }
-
-    // CDN-only mode - show message
-    if (status.mode !== 'static') {
-        return (
-            <div className="quant-content">
-                <h1>{__('Content', 'quant')}</h1>
-                <Notice status="info" isDismissible={false}>
-                    {__('Content sync is only available in Static mode. Change your mode in Settings to enable content syncing.', 'quant')}
-                </Notice>
-            </div>
-        );
-    }
-
-    return (
-        <div className="quant-content">
-            <h1>{__('Content', 'quant')}</h1>
-
-            {notice && (
-                <Notice
-                    status={notice.status}
-                    onRemove={() => setNotice(null)}
-                    isDismissible
-                >
-                    {notice.message}
-                </Notice>
-            )}
-
-            {showProgress && (
-                <Progress
-                    onComplete={handleProgressComplete}
-                    autoProcess={autoProcessing}
-                />
-            )}
-
-            <Card className="quant-content__header-card">
-                <CardBody>
-                    <div className="quant-content__actions">
-                        <div className="quant-content__mode-indicator">
-                            <span className="quant-content__mode-badge quant-content__mode-badge--static">
-                                {__('Static Mode', 'quant')}
-                            </span>
-                            <span className="quant-content__mode-description">
-                                {__('Content is synced to QuantCDN edge servers.', 'quant')}
-                            </span>
-                        </div>
-                        <div className="quant-content__batch-actions">
-                            <Button
-                                variant="primary"
-                                onClick={handleSeedAll}
-                                disabled={isSeeding || showProgress}
-                                isBusy={isSeeding}
-                            >
-                                {__('Seed All Content', 'quant')}
-                            </Button>
-                            <Button
-                                variant="secondary"
-                                onClick={handleSyncSelected}
-                                disabled={isSyncing || selectedItems.length === 0 || showProgress}
-                                isBusy={isSyncing}
-                            >
-                                {__('Sync Selected', 'quant')}
-                                {selectedItems.length > 0 && ` (${selectedItems.length})`}
-                            </Button>
-                            <Button
-                                variant="tertiary"
-                                onClick={handleProcessQueue}
-                                disabled={isProcessing || autoProcessing}
-                                isBusy={isProcessing || autoProcessing}
-                            >
-                                {autoProcessing ? __('Processing...', 'quant') : __('Process Queue', 'quant')}
-                            </Button>
-                        </div>
-                    </div>
-                </CardBody>
-            </Card>
-
-            {tabs.length > 0 && (
-                <Card className="quant-content__browser-card">
-                    <TabPanel
-                        tabs={tabs}
-                        onSelect={(tabName) => {
-                            setActiveTab(tabName);
-                            setSelectedItems([]);
-                        }}
-                    >
-                        {(tab) => (
-                            <ContentBrowser
-                                contentType={tab.contentType}
-                                contentTypes={tab.contentTypes}
-                                specialType={tab.specialType}
-                                onSelectionChange={handleSelectionChange}
-                                key={tab.name}
-                            />
-                        )}
-                    </TabPanel>
-                </Card>
-            )}
-        </div>
-    );
+			{ tabs.length > 0 && (
+				<Card className="quant-content__browser-card">
+					<TabPanel
+						tabs={ tabs }
+						onSelect={ () => setSelectedItems( [] ) }
+					>
+						{ ( tab ) => (
+							<ContentBrowser
+								contentType={ tab.contentType }
+								contentTypes={ tab.contentTypes }
+								specialType={ tab.specialType }
+								onSelectionChange={ handleSelectionChange }
+								key={ tab.name }
+							/>
+						) }
+					</TabPanel>
+				</Card>
+			) }
+		</div>
+	);
 }

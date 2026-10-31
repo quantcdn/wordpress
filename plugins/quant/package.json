@@ -1,23 +1,25 @@
 {
-    "name": "quant-wordpress-admin",
-    "version": "2.0.0",
-    "description": "QuantCDN WordPress Admin UI",
-    "scripts": {
-        "build": "wp-scripts build",
-        "start": "wp-scripts start",
-        "lint:js": "wp-scripts lint-js",
-        "lint:css": "wp-scripts lint-style",
-        "format": "wp-scripts format"
-    },
-    "devDependencies": {
-        "@wordpress/scripts": "^27.0.0"
-    },
-    "dependencies": {
-        "@wordpress/api-fetch": "^6.0.0",
-        "@wordpress/components": "^27.0.0",
-        "@wordpress/data": "^9.0.0",
-        "@wordpress/element": "^5.0.0",
-        "@wordpress/i18n": "^4.0.0",
-        "react-router-dom": "^6.0.0"
-    }
+  "name": "quant-wordpress-admin",
+  "version": "2.0.0",
+  "description": "QuantCDN WordPress Admin UI",
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start",
+    "lint:js": "wp-scripts lint-js assets/src",
+    "lint:js:fix": "wp-scripts lint-js assets/src --fix",
+    "lint:css": "wp-scripts lint-style 'assets/src/**/*.scss'",
+    "format": "wp-scripts format assets/src",
+    "test": "npm run lint:js"
+  },
+  "devDependencies": {
+    "@wordpress/scripts": "^27.0.0"
+  },
+  "dependencies": {
+    "@wordpress/api-fetch": "^6.0.0",
+    "@wordpress/components": "^27.0.0",
+    "@wordpress/data": "^9.0.0",
+    "@wordpress/element": "^5.0.0",
+    "@wordpress/i18n": "^4.0.0",
+    "react-router-dom": "^6.0.0"
+  }
 }
