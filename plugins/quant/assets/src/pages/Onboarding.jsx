@@ -67,6 +67,11 @@ function TestResult( { result } ) {
 	);
 }
 
+const PLATFORMS = [
+	{ label: 'QuantCDN', value: 'https://api.quantcdn.io' },
+	{ label: 'QuantGov', value: 'https://api.quantgov.cloud' },
+];
+
 export function Onboarding() {
 	const navigate = useNavigate();
 	const [ step, setStep ] = useState( 1 ); // 1: welcome, 2: credentials, 3: mode, 4: test, 5: success
@@ -133,6 +138,37 @@ export function Onboarding() {
 			setSaving( false );
 		}
 	};
+
+	const handleOAuthLogin = async () => {
+		setSaving( true );
+		setError( null );
+		try {
+			// Save the platform first: the login uses the dashboard that
+			// belongs to the saved endpoint (QuantCDN or QuantGov).
+			await apiFetch( {
+				path: '/quant/v1/settings',
+				method: 'POST',
+				data: { endpoint: settings.endpoint, mode: settings.mode },
+			} );
+			const response = await apiFetch( {
+				path: '/quant/v1/oauth/connect',
+			} );
+			if ( response.redirect_url ) {
+				window.location.href = response.redirect_url;
+				return;
+			}
+			setError( __( 'The login could not be started.', 'quant' ) );
+		} catch ( err ) {
+			setError(
+				err.message || __( 'The login could not be started.', 'quant' )
+			);
+		}
+		setSaving( false );
+	};
+
+	const platform = PLATFORMS.find( ( p ) => p.value === settings.endpoint )
+		? settings.endpoint
+		: 'custom';
 
 	const handleSaveMode = async () => {
 		setSaving( true );
@@ -275,20 +311,63 @@ export function Onboarding() {
 								</Notice>
 							) }
 
+							<SelectControl
+								label={ __( 'Platform', 'quant' ) }
+								value={ platform }
+								options={ PLATFORMS.concat( [
+									{
+										label: __( 'Other endpoint', 'quant' ),
+										value: 'custom',
+									},
+								] ) }
+								onChange={ ( v ) => {
+									if ( v !== 'custom' ) {
+										updateSetting( 'endpoint', v );
+									}
+								} }
+								help={ __(
+									'Choose the dashboard you sign in to.',
+									'quant'
+								) }
+							/>
+
+							<div className="quant-onboarding__oauth">
+								<Button
+									variant="primary"
+									icon="admin-users"
+									onClick={ handleOAuthLogin }
+									disabled={ saving }
+									isBusy={ saving }
+								>
+									{ __( 'Login to Quant', 'quant' ) }
+								</Button>
+								<p style={ { color: '#666' } }>
+									{ __(
+										'Sign in and pick the project, or enter the project credentials below.',
+										'quant'
+									) }
+								</p>
+							</div>
+
 							<p style={ { color: '#666', marginTop: 0 } }>
 								{ __(
-									'Enter your QuantCDN API credentials. You can find these in your',
+									'Or enter the project credentials. You can find them in the',
 									'quant'
 								) }{ ' ' }
 								<a
-									href="https://dashboard.quantcdn.io"
+									href={
+										platform ===
+										'https://api.quantgov.cloud'
+											? 'https://dash.quantgov.cloud'
+											: 'https://dashboard.quantcdn.io'
+									}
 									target="_blank"
 									rel="noopener noreferrer"
 								>
-									{ __( 'QuantCDN Dashboard', 'quant' ) }
+									{ __( 'Quant dashboard', 'quant' ) }
 								</a>{ ' ' }
 								{ __(
-									'under Project Settings > API Keys.',
+									'on the Integrations page of the project.',
 									'quant'
 								) }
 							</p>
@@ -331,7 +410,7 @@ export function Onboarding() {
 									updateSetting( 'endpoint', v )
 								}
 								help={ __(
-									'Default: https://api.quantcdn.io',
+									'https://api.quantcdn.io for QuantCDN, https://api.quantgov.cloud for QuantGov. Without /v1.',
 									'quant'
 								) }
 							/>

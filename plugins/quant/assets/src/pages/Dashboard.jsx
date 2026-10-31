@@ -25,6 +25,8 @@ export function Dashboard() {
 	const [ status, setStatus ] = useState( null );
 	const [ errors, setErrors ] = useState( [] );
 	const [ processing, setProcessing ] = useState( false );
+	const [ notice, setNotice ] = useState( null );
+	const [ loadError, setLoadError ] = useState( null );
 
 	const load = useCallback( async () => {
 		try {
@@ -34,7 +36,11 @@ export function Dashboard() {
 			] );
 			setStatus( data );
 			setErrors( recent );
+			setLoadError( null );
 		} catch ( e ) {
+			setLoadError(
+				e.message || __( 'Failed to load the plugin status.', 'quant' )
+			);
 			setStatus( {
 				connected: false,
 				configured: false,
@@ -64,20 +70,59 @@ export function Dashboard() {
 
 	const processNow = async () => {
 		setProcessing( true );
+		setNotice( null );
 		try {
-			await apiFetch( {
+			const result = await apiFetch( {
 				path: '/quant/v1/queue/process',
 				method: 'POST',
 				data: { limit: 20 },
 			} );
-			await load();
+			setNotice( {
+				status: result.failed > 0 ? 'warning' : 'success',
+				message: sprintf(
+					/* translators: 1: processed items, 2: failed items, 3: items still pending */
+					__(
+						'Processed %1$d items, %2$d failed, %3$d still pending.',
+						'quant'
+					),
+					result.processed || 0,
+					result.failed || 0,
+					result.remaining || 0
+				),
+			} );
+		} catch ( e ) {
+			setNotice( {
+				status: 'error',
+				message:
+					e.message || __( 'Failed to process the queue.', 'quant' ),
+			} );
 		} finally {
 			setProcessing( false );
+			await load();
 		}
 	};
 
 	const retryFailed = async () => {
-		await apiFetch( { path: '/quant/v1/queue/retry', method: 'POST' } );
+		setNotice( null );
+		try {
+			const result = await apiFetch( {
+				path: '/quant/v1/queue/retry',
+				method: 'POST',
+			} );
+			setNotice( {
+				status: 'info',
+				message: sprintf(
+					/* translators: %d: number of items */
+					__( '%d failed items were queued again.', 'quant' ),
+					result.queued || 0
+				),
+			} );
+		} catch ( e ) {
+			setNotice( {
+				status: 'error',
+				message: e.message || __( 'Failed to retry.', 'quant' ),
+			} );
+		}
 		await load();
 	};
 
@@ -96,6 +141,22 @@ export function Dashboard() {
 	return (
 		<div className="quant-dashboard">
 			<h1>{ __( 'Dashboard', 'quant' ) }</h1>
+
+			{ loadError && (
+				<Notice status="error" isDismissible={ false }>
+					{ loadError }
+				</Notice>
+			) }
+
+			{ notice && (
+				<Notice
+					status={ notice.status }
+					onRemove={ () => setNotice( null ) }
+					isDismissible
+				>
+					{ notice.message }
+				</Notice>
+			) }
 
 			{ status.cron_disabled && queue.pending > 0 && (
 				<Notice status="warning" isDismissible={ false }>

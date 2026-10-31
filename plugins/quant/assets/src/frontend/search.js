@@ -1,4 +1,3 @@
-/* global instantsearch, algoliasearch */
 /**
  * Quant Search page.
  *
@@ -7,26 +6,43 @@
  * are loaded from jsDelivr by the plugin, so the static copy of the page
  * works without WordPress.
  */
+import algoliasearch from 'algoliasearch/lite';
+import instantsearch from 'instantsearch.js';
+import * as isWidgets from 'instantsearch.js/es/widgets';
+import 'instantsearch.css/themes/algolia-min.css';
 import './search.scss';
 
-const escapeHtml = ( value ) =>
-	String( value ?? '' ).replace(
-		/[&<>"']/g,
-		( c ) =>
-			( {
-				'&': '&amp;',
-				'<': '&lt;',
-				'>': '&gt;',
-				'"': '&quot;',
-				"'": '&#39;',
-			} )[ c ]
-	);
-
+/**
+ * The value of a query parameter, or '' when it is missing or malformed.
+ *
+ * @param {string} param Parameter name.
+ * @return {string} The decoded value.
+ */
 function queryFromUrl( param ) {
-	const match = new RegExp( '[?&]' + param + '=([^&]*)' ).exec(
-		window.location.search
-	);
-	return match ? decodeURIComponent( match[ 1 ].replace( /\+/g, ' ' ) ) : '';
+	try {
+		return (
+			new window.URLSearchParams( window.location.search ).get( param ) ||
+			''
+		);
+	} catch ( e ) {
+		return '';
+	}
+}
+
+/**
+ * Only same-site paths and http(s) URLs are rendered as links or images.
+ *
+ * @param {*} value A URL from a search record.
+ * @return {string|undefined} The URL, or undefined to omit the attribute.
+ */
+function safeUrl( value ) {
+	if ( typeof value !== 'string' ) {
+		return undefined;
+	}
+	if ( /^(https?:)?\/\//i.test( value ) || /^\/(?!\/)/.test( value ) ) {
+		return value;
+	}
+	return undefined;
 }
 
 function hitTemplate( hit, { html, components } ) {
@@ -37,14 +53,16 @@ function hitTemplate( hit, { html, components } ) {
 				Array.isArray( hit[ key ] )
 		)
 		.flatMap( ( key ) => hit[ key ] );
+	const url = safeUrl( hit.url );
+	const image = safeUrl( hit.image );
 
 	return html`
 		<article class="quant-search__hit">
-			<a href="${ hit.url }">
-				${ hit.image
+			<a href=${ url }>
+				${ image
 					? html`<img
-							src="${ hit.image }"
-							alt="${ escapeHtml( hit.title ) }"
+							src=${ image }
+							alt=${ String( hit.title ?? '' ) }
 							loading="lazy"
 					  />`
 					: '' }
@@ -81,11 +99,11 @@ function facetWidget( root, facet ) {
 
 	switch ( facet.display ) {
 		case 'menu':
-			return instantsearch.widgets.menu( options );
+			return isWidgets.menu( options );
 		case 'select':
-			return instantsearch.widgets.menuSelect( options );
+			return isWidgets.menuSelect( options );
 		default:
-			return instantsearch.widgets.refinementList( options );
+			return isWidgets.refinementList( options );
 	}
 }
 
@@ -97,11 +115,7 @@ function mount( root ) {
 		return;
 	}
 
-	if (
-		! config.index ||
-		typeof instantsearch === 'undefined' ||
-		typeof algoliasearch === 'undefined'
-	) {
+	if ( ! config.index ) {
 		return;
 	}
 
@@ -120,7 +134,7 @@ function mount( root ) {
 	} );
 
 	const widgets = [
-		instantsearch.widgets.configure( {
+		isWidgets.configure( {
 			attributesToSnippet: [ 'summary:40' ],
 			snippetEllipsisText: '…',
 			filters: config.filters || '',
@@ -131,15 +145,17 @@ function mount( root ) {
 	const add = ( selector, factory ) => {
 		const container = root.querySelector( selector );
 		if ( container ) {
+			// Replace the no-JavaScript fallback form.
+			container.innerHTML = '';
 			widgets.push( factory( container ) );
 		}
 	};
 
 	add( '[data-quant-searchbox]', ( container ) =>
-		instantsearch.widgets.searchBox( { container, placeholder: 'Search…' } )
+		isWidgets.searchBox( { container, placeholder: 'Search…' } )
 	);
 	add( '[data-quant-stats]', ( container ) =>
-		instantsearch.widgets.stats( {
+		isWidgets.stats( {
 			container,
 			templates: {
 				text: ( { nbHits, hasOneResult } ) =>
@@ -150,10 +166,10 @@ function mount( root ) {
 		} )
 	);
 	add( '[data-quant-clear]', ( container ) =>
-		instantsearch.widgets.clearRefinements( { container } )
+		isWidgets.clearRefinements( { container } )
 	);
 	add( '[data-quant-hits]', ( container ) =>
-		instantsearch.widgets.hits( {
+		isWidgets.hits( {
 			container,
 			templates: {
 				empty: () =>
@@ -163,7 +179,7 @@ function mount( root ) {
 		} )
 	);
 	add( '[data-quant-pagination]', ( container ) =>
-		instantsearch.widgets.pagination( { container } )
+		isWidgets.pagination( { container } )
 	);
 
 	( config.facets || [] ).forEach( ( facet ) => {

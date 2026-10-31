@@ -25,8 +25,11 @@ export function Content() {
 	const [ selectedItems, setSelectedItems ] = useState( [] );
 	const [ notice, setNotice ] = useState( null );
 	const [ busy, setBusy ] = useState( false );
-	const [ showProgress, setShowProgress ] = useState( false );
+	const [ loadError, setLoadError ] = useState( null );
+	// One Progress card per run; `running` is true until the run ends.
+	const [ progressRun, setProgressRun ] = useState( null );
 	const [ autoProcessing, setAutoProcessing ] = useState( false );
+	const [ refreshToken, setRefreshToken ] = useState( 0 );
 
 	useEffect( () => {
 		Promise.all( [
@@ -37,20 +40,34 @@ export function Content() {
 				setStatus( { loading: false, ...statusData } );
 				setContentTypes( typesData );
 			} )
-			.catch( () =>
+			.catch( ( error ) => {
+				setLoadError(
+					error.message ||
+						__( 'Failed to load the content overview.', 'quant' )
+				);
 				setStatus( {
 					loading: false,
-					mode: 'cdn_only',
+					mode: 'static',
 					connected: false,
-				} )
-			);
+				} );
+			} );
 	}, [] );
 
 	const startProcessing = ( message ) => {
 		setNotice( { status: 'success', message } );
 		setAutoProcessing( true );
-		setShowProgress( true );
+		setProgressRun( ( prev ) => ( prev ? prev + 1 : 1 ) );
 	};
+
+	const handleRunFinished = useCallback( () => {
+		setAutoProcessing( false );
+		setRefreshToken( ( n ) => n + 1 );
+	}, [] );
+
+	const handleProgressDismiss = useCallback( () => {
+		setProgressRun( null );
+		setNotice( null );
+	}, [] );
 
 	const seed = async ( types, confirmMessage ) => {
 		// eslint-disable-next-line no-alert
@@ -229,6 +246,17 @@ export function Content() {
 		);
 	}
 
+	if ( loadError ) {
+		return (
+			<div className="quant-content">
+				<h1>{ __( 'Content', 'quant' ) }</h1>
+				<Notice status="error" isDismissible={ false }>
+					{ loadError }
+				</Notice>
+			</div>
+		);
+	}
+
 	if ( status.mode !== 'static' ) {
 		return (
 			<div className="quant-content">
@@ -266,13 +294,12 @@ export function Content() {
 				</Notice>
 			) }
 
-			{ showProgress && (
+			{ progressRun && (
 				<Progress
-					onComplete={ () => {
-						setShowProgress( false );
-						setAutoProcessing( false );
-					} }
-					autoProcess={ autoProcessing }
+					key={ progressRun }
+					autoProcess
+					onFinished={ handleRunFinished }
+					onComplete={ handleProgressDismiss }
 				/>
 			) }
 
@@ -397,6 +424,7 @@ export function Content() {
 								contentTypes={ tab.contentTypes }
 								specialType={ tab.specialType }
 								onSelectionChange={ handleSelectionChange }
+								refreshToken={ refreshToken }
 								key={ tab.name }
 							/>
 						) }

@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from '@wordpress/element';
+import { useState, useEffect } from '@wordpress/element';
 import {
 	Button,
 	CheckboxControl,
 	Spinner,
 	SelectControl,
 } from '@wordpress/components';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import './ContentBrowser.scss';
 
@@ -76,144 +76,100 @@ function Pagination( { page, pages, onPageChange } ) {
  * @param {Array}    props.contentTypes      contentTypes.
  * @param {string}   props.specialType       specialType.
  * @param {Function} props.onSelectionChange onSelectionChange.
+ * @param {number}   props.refreshToken      Bump to reload the list.
  */
 export function ContentBrowser( {
 	contentType,
 	contentTypes,
 	specialType,
 	onSelectionChange,
+	refreshToken = 0,
 } ) {
 	const [ items, setItems ] = useState( [] );
 	const [ loading, setLoading ] = useState( true );
+	const [ loadError, setLoadError ] = useState( null );
 	const [ page, setPage ] = useState( 1 );
 	const [ totalPages, setTotalPages ] = useState( 1 );
 	const [ totalItems, setTotalItems ] = useState( 0 );
 	const [ selectedIds, setSelectedIds ] = useState( new Set() );
 	const [ selectAll, setSelectAll ] = useState( false );
 
-	// For taxonomies, track which one is selected
-	// Initialize with the first taxonomy's subtype if available
-	const getInitialTaxonomy = () => {
-		if (
-			contentTypes &&
-			Array.isArray( contentTypes ) &&
-			contentTypes.length > 0
-		) {
-			return contentTypes[ 0 ].subtype || 'category';
-		}
-		return '';
-	};
-	const [ selectedTaxonomy, setSelectedTaxonomy ] =
-		useState( getInitialTaxonomy );
+	const hasTaxonomies =
+		Array.isArray( contentTypes ) && contentTypes.length > 0;
+	const [ selectedTaxonomy, setSelectedTaxonomy ] = useState( () =>
+		hasTaxonomies ? contentTypes[ 0 ].subtype || 'category' : ''
+	);
 
-	// Track the last fetched params to avoid duplicate fetches
-	const lastFetchRef = useRef( null );
+	const contentKind = contentType && contentType.type;
+	const contentSubtype = ( contentType && contentType.subtype ) || '';
 
-	// Get content params for the current view
-	const getContentParams = () => {
-		// If we have multiple content types (taxonomies), use the selected one
-		if (
-			contentTypes &&
-			Array.isArray( contentTypes ) &&
-			contentTypes.length > 0
-		) {
-			const taxonomy =
-				selectedTaxonomy || contentTypes[ 0 ]?.subtype || 'category';
-			return { type: 'taxonomy', subtype: taxonomy };
-		}
+	// One fetch per (page, taxonomy, refresh); responses from superseded
+	// requests are ignored so a fast tab or taxonomy switch cannot show
+	// the wrong rows.
+	useEffect( () => {
+		let ignore = false;
 
-		// Single content type
-		if ( contentType && contentType.type ) {
-			return {
-				type: contentType.type,
-				subtype: contentType.subtype || '',
-			};
-		}
-
-		return { type: 'post', subtype: '' };
-	};
-
-	// Fetch content - now a regular async function, not memoized
-	const fetchContent = async ( fetchPage = page ) => {
-		const params = getContentParams();
-		const fetchKey = `${ specialType || params.type }-${
-			params.subtype
-		}-${ fetchPage }`;
-
-		// Skip if we already fetched this exact data
-		if ( lastFetchRef.current === fetchKey && ! loading ) {
-			return;
-		}
+		const buildPath = () => {
+			if ( specialType === 'theme_assets' ) {
+				return `/quant/v1/theme-assets?page=${ page }&per_page=50`;
+			}
+			if ( specialType === 'redirects' ) {
+				return `/quant/v1/redirects?page=${ page }&per_page=50`;
+			}
+			const type = hasTaxonomies ? 'taxonomy' : contentKind || 'post';
+			const subtype = hasTaxonomies ? selectedTaxonomy : contentSubtype;
+			return `/quant/v1/content?type=${ type }&subtype=${ encodeURIComponent(
+				subtype
+			) }&page=${ page }&per_page=20`;
+		};
 
 		setLoading( true );
-		lastFetchRef.current = fetchKey;
-
-		try {
-			let response;
-
-			// Handle special types with their own endpoints
-			if ( specialType === 'theme_assets' ) {
-				response = await apiFetch( {
-					path: `/quant/v1/theme-assets?page=${ fetchPage }&per_page=50`,
-				} );
-			} else if ( specialType === 'redirects' ) {
-				response = await apiFetch( {
-					path: `/quant/v1/redirects?page=${ fetchPage }&per_page=50`,
-				} );
-			} else {
-				// Don't fetch if we don't have valid params
-				if ( ! params.type ) {
-					setLoading( false );
-					setItems( [] );
+		setLoadError( null );
+		apiFetch( { path: buildPath() } )
+			.then( ( response ) => {
+				if ( ignore ) {
 					return;
 				}
+				setItems( response.items || [] );
+				setTotalPages( response.pages || 1 );
+				setTotalItems( response.total || 0 );
+			} )
+			.catch( ( error ) => {
+				if ( ignore ) {
+					return;
+				}
+				setItems( [] );
+				setTotalPages( 1 );
+				setTotalItems( 0 );
+				setLoadError(
+					error.message || __( 'Failed to load content.', 'quant' )
+				);
+			} )
+			.finally( () => {
+				if ( ! ignore ) {
+					setLoading( false );
+				}
+			} );
 
-				response = await apiFetch( {
-					path: `/quant/v1/content?type=${
-						params.type
-					}&subtype=${ encodeURIComponent(
-						params.subtype
-					) }&page=${ fetchPage }&per_page=20`,
-				} );
-			}
+		return () => {
+			ignore = true;
+		};
+	}, [
+		page,
+		selectedTaxonomy,
+		refreshToken,
+		specialType,
+		hasTaxonomies,
+		contentKind,
+		contentSubtype,
+	] );
 
-			setItems( response.items || [] );
-			setTotalPages( response.pages || 1 );
-			setTotalItems( response.total || 0 );
-		} catch ( error ) {
-			// eslint-disable-next-line no-console
-			console.error( 'Failed to fetch content:', error );
-			setItems( [] );
-			setTotalPages( 1 );
-			setTotalItems( 0 );
-		} finally {
-			setLoading( false );
-		}
+	const handleTaxonomyChange = ( taxonomy ) => {
+		setSelectedTaxonomy( taxonomy );
+		setPage( 1 );
+		setSelectedIds( new Set() );
+		setSelectAll( false );
 	};
-
-	// Load content on mount
-	useEffect( () => {
-		fetchContent();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [] );
-
-	// Refetch when page changes
-	useEffect( () => {
-		if ( page > 0 ) {
-			fetchContent( page );
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [ page ] );
-
-	// Refetch when taxonomy selection changes
-	useEffect( () => {
-		if ( selectedTaxonomy ) {
-			lastFetchRef.current = null; // Reset to force refetch
-			setPage( 1 );
-			fetchContent( 1 );
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [ selectedTaxonomy ] );
 
 	// Reset state when switching content types (via key prop on parent)
 	useEffect( () => {
@@ -303,14 +259,14 @@ export function ContentBrowser( {
 					label={ __( 'Taxonomy', 'quant' ) }
 					value={ selectedTaxonomy }
 					options={ options }
-					onChange={ setSelectedTaxonomy }
+					onChange={ handleTaxonomyChange }
 					__nextHasNoMarginBottom
 				/>
 			</div>
 		);
 	};
 
-	if ( loading ) {
+	if ( loading && items.length === 0 ) {
 		return (
 			<div className="quant-content-browser quant-content-browser--loading">
 				<Spinner />
@@ -339,16 +295,29 @@ export function ContentBrowser( {
 				/>
 			</div>
 
-			{ items.length === 0 ? (
+			{ loadError && (
+				<div className="quant-content-browser__empty">
+					<p className="quant-status--error">{ loadError }</p>
+				</div>
+			) }
+
+			{ ! loadError && items.length === 0 && (
 				<div className="quant-content-browser__empty">
 					<p>{ __( 'No content found.', 'quant' ) }</p>
 				</div>
-			) : (
+			) }
+
+			{ items.length > 0 && (
 				<table className="quant-content-browser__table">
 					<thead>
 						<tr>
 							<th className="quant-content-browser__col-checkbox">
 								<CheckboxControl
+									label={
+										<span className="screen-reader-text">
+											{ __( 'Select all', 'quant' ) }
+										</span>
+									}
 									checked={ selectAll }
 									onChange={ handleSelectAll }
 									__nextHasNoMarginBottom
@@ -399,6 +368,15 @@ export function ContentBrowser( {
 							>
 								<td className="quant-content-browser__col-checkbox">
 									<CheckboxControl
+										label={
+											<span className="screen-reader-text">
+												{ sprintf(
+													/* translators: %s: item title or URL */
+													__( 'Select %s', 'quant' ),
+													item.title || item.url
+												) }
+											</span>
+										}
 										checked={ selectedIds.has( item.id ) }
 										onChange={ ( checked ) =>
 											handleItemSelect( item.id, checked )

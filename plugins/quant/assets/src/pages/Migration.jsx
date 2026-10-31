@@ -17,6 +17,7 @@ export function Migration() {
 	const [ status, setStatus ] = useState( null );
 	const [ loading, setLoading ] = useState( true );
 	const [ migrating, setMigrating ] = useState( false );
+	const [ cleanupNotice, setCleanupNotice ] = useState( null );
 	const [ cleaning, setCleaning ] = useState( false );
 	const [ cleanupAfter, setCleanupAfter ] = useState( false );
 	const [ result, setResult ] = useState( null );
@@ -76,15 +77,27 @@ export function Migration() {
 
 	const cleanupV1Data = async () => {
 		setCleaning( true );
+		setCleanupNotice( null );
 		try {
 			await apiFetch( {
 				path: '/quant/v1/migration/cleanup',
 				method: 'POST',
 			} );
+			setCleanupNotice( {
+				status: 'success',
+				message: __( 'The 1.x settings were removed.', 'quant' ),
+			} );
+			const refreshed = await apiFetch( {
+				path: '/quant/v1/migration/status',
+			} );
+			setStatus( refreshed );
 		} catch ( err ) {
-			// Non-fatal error for cleanup
-			// eslint-disable-next-line no-console
-			console.error( 'Cleanup error:', err );
+			setCleanupNotice( {
+				status: 'error',
+				message:
+					err.message ||
+					__( 'The 1.x settings could not be removed.', 'quant' ),
+			} );
 		} finally {
 			setCleaning( false );
 		}
@@ -140,6 +153,15 @@ export function Migration() {
 		return (
 			<div className="quant-migration">
 				<h1>{ __( 'Migration Complete', 'quant' ) }</h1>
+				{ cleanupNotice && (
+					<Notice
+						status={ cleanupNotice.status }
+						onRemove={ () => setCleanupNotice( null ) }
+						isDismissible
+					>
+						{ cleanupNotice.message }
+					</Notice>
+				) }
 				<Notice status="success" isDismissible={ false }>
 					{ __(
 						'Your settings have been successfully migrated to v2!',

@@ -119,10 +119,16 @@ function AutocompleteEdit( { attributes, setAttributes } ) {
 					}
 				/>
 			</PagePanel>
-			<Preview
-				block="quant/search-autocomplete"
-				attributes={ attributes }
-			/>
+			<div className="quant-search-autocomplete quant-search-autocomplete--editor">
+				<input
+					type="search"
+					disabled
+					aria-label={ __( 'Search preview', 'quant' ) }
+					placeholder={
+						attributes.placeholder || __( 'Search', 'quant' )
+					}
+				/>
+			</div>
 		</div>
 	);
 }

@@ -81,6 +81,7 @@ function OverrideHint( { overridden, group, field } ) {
  * @param {Function} props.onProjectSelected Called after a project change.
  * @param {Function} props.notify            Notice helper.
  * @param {boolean}  props.showManual        Whether manual credentials show.
+ * @param {boolean}  props.manualConfigured  Manual credentials are already saved.
  * @param {Function} props.setShowManual     Toggle for manual credentials.
  */
 function ConnectionCard( {
@@ -89,10 +90,12 @@ function ConnectionCard( {
 	onProjectSelected,
 	notify,
 	showManual,
+	manualConfigured,
 	setShowManual,
 } ) {
 	const [ projects, setProjects ] = useState( [] );
 	const [ projectsLoading, setProjectsLoading ] = useState( false );
+	const [ projectsError, setProjectsError ] = useState( null );
 	const [ selectedOrg, setSelectedOrg ] = useState( '' );
 	const [ selectedProject, setSelectedProject ] = useState( '' );
 	const [ busy, setBusy ] = useState( false );
@@ -100,19 +103,21 @@ function ConnectionCard( {
 
 	const fetchProjects = useCallback( async () => {
 		setProjectsLoading( true );
+		setProjectsError( null );
 		try {
-			setProjects(
-				await apiFetch( { path: '/quant/v1/oauth/projects' } )
-			);
+			const result = await apiFetch( {
+				path: '/quant/v1/oauth/projects',
+			} );
+			setProjects( Array.isArray( result ) ? result : [] );
 		} catch ( error ) {
-			notify(
-				'error',
+			setProjects( [] );
+			setProjectsError(
 				error.message || __( 'Failed to load projects', 'quant' )
 			);
 		} finally {
 			setProjectsLoading( false );
 		}
-	}, [ notify ] );
+	}, [] );
 
 	useEffect( () => {
 		if ( oauthStatus?.connected && ! oauthStatus.has_project ) {
@@ -219,19 +224,21 @@ function ConnectionCard( {
 							{ __( 'Login to Quant', 'quant' ) }
 						</Button>
 					</FlexItem>
-					<FlexItem>
-						<Button
-							variant="link"
-							onClick={ () => setShowManual( ! showManual ) }
-						>
-							{ showManual
-								? __( 'Hide manual credentials', 'quant' )
-								: __(
-										'Use manual credentials instead',
-										'quant'
-								  ) }
-						</Button>
-					</FlexItem>
+					{ ! manualConfigured && (
+						<FlexItem>
+							<Button
+								variant="link"
+								onClick={ () => setShowManual( ! showManual ) }
+							>
+								{ showManual
+									? __( 'Hide manual credentials', 'quant' )
+									: __(
+											'Use manual credentials instead',
+											'quant'
+									  ) }
+							</Button>
+						</FlexItem>
+					) }
 				</Flex>
 			</SectionCard>
 		);
@@ -280,6 +287,64 @@ function ConnectionCard( {
 						>
 							{ __( 'Disconnect', 'quant' ) }
 						</Button>
+					</FlexItem>
+					<FlexItem>
+						<Button
+							variant="link"
+							onClick={ () => setShowManual( ! showManual ) }
+						>
+							{ showManual
+								? __( 'Hide manual credentials', 'quant' )
+								: __( 'Show manual credentials', 'quant' ) }
+						</Button>
+					</FlexItem>
+				</Flex>
+			</SectionCard>
+		);
+	}
+
+	if ( ! projectsLoading && ( projectsError || projects.length === 0 ) ) {
+		return (
+			<SectionCard title={ __( 'Connect to Quant', 'quant' ) }>
+				<Notice status="warning" isDismissible={ false }>
+					{ projectsError ||
+						__(
+							'No organizations or projects are available to this Quant account. Check the account in the Quant dashboard, or log in again.',
+							'quant'
+						) }
+				</Notice>
+				<Flex
+					justify="flex-start"
+					gap={ 2 }
+					style={ { marginTop: '16px' } }
+				>
+					<FlexItem>
+						<Button variant="primary" onClick={ connect }>
+							{ __( 'Reconnect', 'quant' ) }
+						</Button>
+					</FlexItem>
+					<FlexItem>
+						<Button variant="secondary" onClick={ fetchProjects }>
+							{ __( 'Try again', 'quant' ) }
+						</Button>
+					</FlexItem>
+					<FlexItem>
+						{ changing ? (
+							<Button
+								variant="tertiary"
+								onClick={ () => setChanging( false ) }
+							>
+								{ __( 'Cancel', 'quant' ) }
+							</Button>
+						) : (
+							<Button
+								variant="tertiary"
+								isDestructive
+								onClick={ disconnect }
+							>
+								{ __( 'Disconnect', 'quant' ) }
+							</Button>
+						) }
 					</FlexItem>
 				</Flex>
 			</SectionCard>
@@ -515,6 +580,11 @@ export function Settings() {
 	}
 
 	const overridden = settings.overridden || {};
+	const manualConfigured = !! (
+		settings.organization &&
+		settings.project &&
+		settings.has_token
+	);
 	const isOverridden = ( group, field ) =>
 		!! ( overridden[ group ] && overridden[ group ].includes( field ) );
 	const scheduleOptions = Object.entries( settings.schedules || {} ).map(
@@ -541,10 +611,12 @@ export function Settings() {
 				onProjectSelected={ () => load().catch( () => {} ) }
 				notify={ notify }
 				showManual={ showManual }
+				manualConfigured={ manualConfigured }
 				setShowManual={ setShowManual }
 			/>
 
-			{ ( ! oauthStatus?.connected || showManual ) && (
+			{ ( showManual ||
+				( ! oauthStatus?.connected && manualConfigured ) ) && (
 				<SectionCard
 					title={ __( 'Project Credentials', 'quant' ) }
 					description={ __(
@@ -640,6 +712,43 @@ export function Settings() {
 					</Flex>
 				</SectionCard>
 			) }
+
+			<SectionCard
+				title={ __( 'API Connection', 'quant' ) }
+				description={ __(
+					'Applies to every request the plugin makes, in both modes.',
+					'quant'
+				) }
+			>
+				<TextControl
+					label={ __( 'HTTP request timeout (seconds)', 'quant' ) }
+					type="number"
+					value={ settings.http_request_timeout }
+					onChange={ ( v ) =>
+						update(
+							'http_request_timeout',
+							parseInt( v, 10 ) || 30
+						)
+					}
+					disabled={ isOverridden(
+						'credentials',
+						'http_request_timeout'
+					) }
+				/>
+				<ToggleControl
+					label={ __( 'Disable SSL verification', 'quant' ) }
+					checked={ !! settings.disable_tls_verify }
+					onChange={ ( v ) => update( 'disable_tls_verify', v ) }
+					disabled={ isOverridden(
+						'credentials',
+						'disable_tls_verify'
+					) }
+					help={ __(
+						'Only for local servers with self-signed certificates.',
+						'quant'
+					) }
+				/>
+			</SectionCard>
 
 			<SectionCard title={ __( 'Mode', 'quant' ) }>
 				<SelectControl
@@ -821,37 +930,6 @@ export function Settings() {
 						onChange={ ( v ) => update( 'proxy_override', v ) }
 						help={ __(
 							'Tell Quant that pushed pages replace proxy rules at the same path.',
-							'quant'
-						) }
-					/>
-					<TextControl
-						label={ __(
-							'HTTP request timeout (seconds)',
-							'quant'
-						) }
-						type="number"
-						value={ settings.http_request_timeout }
-						onChange={ ( v ) =>
-							update(
-								'http_request_timeout',
-								parseInt( v, 10 ) || 30
-							)
-						}
-						disabled={ isOverridden(
-							'credentials',
-							'http_request_timeout'
-						) }
-					/>
-					<ToggleControl
-						label={ __( 'Disable SSL verification', 'quant' ) }
-						checked={ !! settings.disable_tls_verify }
-						onChange={ ( v ) => update( 'disable_tls_verify', v ) }
-						disabled={ isOverridden(
-							'credentials',
-							'disable_tls_verify'
-						) }
-						help={ __(
-							'Only for local servers with self-signed certificates.',
 							'quant'
 						) }
 					/>

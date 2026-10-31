@@ -1,165 +1,174 @@
 import { useState, useEffect, useRef, useCallback } from '@wordpress/element';
 import { Button, Card, CardBody } from '@wordpress/components';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import './Progress.scss';
 
+const DEFAULT_INTERVAL = 2000;
+
 /**
- * Progress component - shows sync queue progress with polling
+ * Progress of one processing run.
  *
- * @param {Object}   props
- * @param {Function} props.onComplete   - Called when processing completes
- * @param {number}   props.pollInterval - Polling interval in ms (default: 2000)
- * @param {boolean}  props.autoProcess  - Whether to auto-process pending items (default: false)
+ * Polls the queue with a self-scheduling loop, so requests never overlap.
+ * Progress and failures are counted for this run only, not for the whole
+ * queue history. The card stays visible after the run until it is dismissed.
+ *
+ * @param {Object}   props              Component props.
+ * @param {Function} props.onComplete   Called when the user dismisses the card.
+ * @param {Function} props.onFinished   Called once when the run ends (refresh lists).
+ * @param {number}   props.pollInterval Delay between polls in ms.
+ * @param {boolean}  props.autoProcess  Process batches (true) or only watch the status.
  */
 export function Progress( {
 	onComplete,
-	pollInterval = 2000,
+	onFinished,
+	pollInterval = DEFAULT_INTERVAL,
 	autoProcess = false,
 } ) {
-	const [ status, setStatus ] = useState( {
-		pending: 0,
-		processing: 0,
-		completed: 0,
-		failed: 0,
-		total: 0,
-	} );
-	const [ isActive, setIsActive ] = useState( true );
+	const [ status, setStatus ] = useState( null );
+	const [ startPending, setStartPending ] = useState( null );
+	const [ processedRun, setProcessedRun ] = useState( 0 );
+	const [ failedRun, setFailedRun ] = useState( 0 );
+	const [ runErrors, setRunErrors ] = useState( [] );
+	const [ state, setState ] = useState( 'active' ); // active | done | stopped | error
 	const [ error, setError ] = useState( null );
-	const pollRef = useRef( null );
-	const initialTotalRef = useRef( null );
+	const [ runId, setRunId ] = useState( 0 );
 
-	// Fetch status and optionally process pending items
-	const fetchStatus = useCallback( async () => {
-		try {
-			// Optionally process a batch of pending items
-			if ( autoProcess ) {
-				await apiFetch( {
-					path: '/quant/v1/queue/process',
-					method: 'POST',
-					data: { limit: 5 },
-				} );
-			}
-
-			// Fetch the current status
-			const response = await apiFetch( {
-				path: '/quant/v1/queue/status',
-			} );
-
-			setStatus( response );
-			setError( null );
-
-			// Store initial total for progress calculation
-			if ( initialTotalRef.current === null && response.total > 0 ) {
-				initialTotalRef.current = response.total;
-			}
-
-			// Check if complete (no more pending or processing)
-			if ( response.pending === 0 && response.processing === 0 ) {
-				setIsActive( false );
-				if ( onComplete ) {
-					onComplete();
-				}
-			}
-		} catch ( err ) {
-			setError(
-				err.message || __( 'Failed to fetch queue status', 'quant' )
-			);
-		}
-	}, [ onComplete, autoProcess ] );
-
-	// Set up polling
+	const stopRef = useRef( false );
+	const onCompleteRef = useRef( onComplete );
+	const onFinishedRef = useRef( onFinished );
 	useEffect( () => {
-		if ( isActive ) {
-			// Initial fetch
-			fetchStatus();
+		onCompleteRef.current = onComplete;
+		onFinishedRef.current = onFinished;
+	}, [ onComplete, onFinished ] );
 
-			// Start polling
-			pollRef.current = setInterval( fetchStatus, pollInterval );
-
-			return () => {
-				if ( pollRef.current ) {
-					clearInterval( pollRef.current );
-				}
-			};
+	const finish = useCallback( ( nextState ) => {
+		setState( nextState );
+		if ( onFinishedRef.current ) {
+			onFinishedRef.current();
 		}
-	}, [ isActive, fetchStatus, pollInterval ] );
+	}, [] );
 
-	// Handle cancel
-	const handleCancel = async () => {
-		try {
-			await apiFetch( {
-				path: '/quant/v1/queue/clear',
-				method: 'POST',
-			} );
+	useEffect( () => {
+		let cancelled = false;
+		let timer = null;
+		let started = false;
 
-			setIsActive( false );
-			if ( onComplete ) {
-				onComplete();
+		const tick = async () => {
+			if ( stopRef.current ) {
+				return;
 			}
-		} catch ( err ) {
-			setError( err.message || __( 'Failed to cancel', 'quant' ) );
-		}
+			try {
+				if ( autoProcess ) {
+					const result = await apiFetch( {
+						path: '/quant/v1/queue/process',
+						method: 'POST',
+						data: { limit: 5 },
+					} );
+					if ( cancelled ) {
+						return;
+					}
+					setProcessedRun( ( n ) => n + ( result.processed || 0 ) );
+					setFailedRun( ( n ) => n + ( result.failed || 0 ) );
+					if ( result.errors && result.errors.length ) {
+						setRunErrors( ( prev ) =>
+							prev.concat( result.errors ).slice( -10 )
+						);
+					}
+				}
+
+				const response = await apiFetch( {
+					path: '/quant/v1/queue/status',
+				} );
+				if ( cancelled || stopRef.current ) {
+					return;
+				}
+
+				setStatus( response );
+				if ( ! started ) {
+					started = true;
+					setStartPending(
+						( response.pending || 0 ) + ( response.processing || 0 )
+					);
+				}
+
+				if ( response.pending === 0 && response.processing === 0 ) {
+					finish( 'done' );
+					return;
+				}
+
+				timer = setTimeout( tick, pollInterval );
+			} catch ( err ) {
+				if ( cancelled ) {
+					return;
+				}
+				setError(
+					err.message || __( 'Failed to process the queue', 'quant' )
+				);
+				finish( 'error' );
+			}
+		};
+
+		stopRef.current = false;
+		setState( 'active' );
+		setError( null );
+		tick();
+
+		return () => {
+			cancelled = true;
+			if ( timer ) {
+				clearTimeout( timer );
+			}
+		};
+	}, [ autoProcess, pollInterval, runId, finish ] );
+
+	const handleStop = () => {
+		stopRef.current = true;
+		finish( 'stopped' );
 	};
 
-	// Handle retry failed
 	const handleRetry = async () => {
 		try {
-			await apiFetch( {
-				path: '/quant/v1/queue/retry',
-				method: 'POST',
-			} );
-
-			setIsActive( true );
-			initialTotalRef.current = null;
+			await apiFetch( { path: '/quant/v1/queue/retry', method: 'POST' } );
+			setStatus( null );
+			setStartPending( null );
+			setProcessedRun( 0 );
+			setFailedRun( 0 );
+			setRunErrors( [] );
+			setRunId( ( id ) => id + 1 );
 		} catch ( err ) {
 			setError( err.message || __( 'Failed to retry', 'quant' ) );
 		}
 	};
 
-	// Handle dismiss
 	const handleDismiss = () => {
-		setIsActive( false );
-		if ( onComplete ) {
-			onComplete();
+		if ( onCompleteRef.current ) {
+			onCompleteRef.current();
 		}
 	};
 
-	// Calculate progress percentage
-	const calculateProgress = () => {
-		const total = initialTotalRef.current || status.total;
-		if ( total === 0 ) {
-			return 0;
-		}
+	const pending = status ? status.pending + status.processing : 0;
+	const total = startPending || 0;
+	const done = Math.max( 0, Math.min( total, total - pending ) );
+	const percent =
+		state === 'done' || total === 0
+			? 100
+			: Math.round( ( done / total ) * 100 );
 
-		const done = status.completed + status.failed;
-		return Math.round( ( done / total ) * 100 );
-	};
-
-	// Determine current state
-	const getProgressState = () => {
-		if ( error ) {
-			return 'error';
-		}
-		if ( status.pending > 0 || status.processing > 0 ) {
-			return 'active';
-		}
-		if ( status.failed > 0 && status.pending === 0 ) {
-			return 'failed';
-		}
-		if ( status.completed > 0 ) {
-			return 'complete';
-		}
-		return 'idle';
-	};
-
-	// Don't render if not active and no status to show
-	if ( ! isActive && status.total === 0 ) {
-		return null;
+	let barState = state;
+	if ( state === 'done' && failedRun > 0 ) {
+		barState = 'failed';
+	} else if ( state === 'done' ) {
+		barState = 'complete';
 	}
 
-	const progressState = getProgressState();
-	const progressPercent = calculateProgress();
+	const titles = {
+		active: __( 'Syncing content…', 'quant' ),
+		complete: __( 'Sync complete', 'quant' ),
+		failed: __( 'Sync completed with errors', 'quant' ),
+		stopped: __( 'Stopped. Pending items stay in the queue.', 'quant' ),
+		error: __( 'Processing stopped', 'quant' ),
+	};
 
 	return (
 		<Card className="quant-progress">
@@ -167,42 +176,56 @@ export function Progress( {
 				<div className="quant-progress__content">
 					<div className="quant-progress__header">
 						<h3 className="quant-progress__title">
-							{ progressState === 'active' &&
-								__( 'Syncing content…', 'quant' ) }
-							{ progressState === 'complete' &&
-								__( 'Sync complete', 'quant' ) }
-							{ progressState === 'failed' &&
-								__( 'Sync completed with errors', 'quant' ) }
-							{ progressState === 'error' &&
-								__( 'Error', 'quant' ) }
+							{ titles[ barState ] }
 						</h3>
-						{ progressState === 'active' && (
+						{ state === 'active' && status && (
 							<span className="quant-progress__processing">
-								{ status.processing }{ ' ' }
-								{ __( 'processing', 'quant' ) }
+								{ sprintf(
+									/* translators: %d: number of pending items */
+									__( '%d remaining', 'quant' ),
+									pending
+								) }
 							</span>
 						) }
 					</div>
 
-					<div className="quant-progress__bar-container">
+					<div
+						className="quant-progress__bar-container"
+						role="progressbar"
+						aria-valuemin={ 0 }
+						aria-valuemax={ 100 }
+						aria-valuenow={ percent }
+					>
 						<div
-							className={ `quant-progress__bar quant-progress__bar--${ progressState }` }
-							style={ { width: `${ progressPercent }%` } }
+							className={ `quant-progress__bar quant-progress__bar--${ barState }` }
+							style={ { width: `${ percent }%` } }
 						/>
 					</div>
 
 					<div className="quant-progress__stats">
 						<span className="quant-progress__stat quant-progress__stat--completed">
-							{ status.completed } { __( 'completed', 'quant' ) }
+							{ sprintf(
+								/* translators: %d: number of items */
+								__( '%d completed', 'quant' ),
+								autoProcess ? processedRun : done
+							) }
 						</span>
-						{ status.pending > 0 && (
+						{ pending > 0 && (
 							<span className="quant-progress__stat quant-progress__stat--pending">
-								{ status.pending } { __( 'pending', 'quant' ) }
+								{ sprintf(
+									/* translators: %d: number of items */
+									__( '%d pending', 'quant' ),
+									pending
+								) }
 							</span>
 						) }
-						{ status.failed > 0 && (
+						{ failedRun > 0 && (
 							<span className="quant-progress__stat quant-progress__stat--failed">
-								{ status.failed } { __( 'failed', 'quant' ) }
+								{ sprintf(
+									/* translators: %d: number of items */
+									__( '%d failed', 'quant' ),
+									failedRun
+								) }
 							</span>
 						) }
 					</div>
@@ -211,33 +234,27 @@ export function Progress( {
 						<p className="quant-progress__error">{ error }</p>
 					) }
 
+					{ runErrors.length > 0 && state !== 'active' && (
+						<ul className="quant-progress__errors">
+							{ runErrors.map( ( message, i ) => (
+								<li key={ i }>{ message }</li>
+							) ) }
+						</ul>
+					) }
+
 					<div className="quant-progress__actions">
-						{ progressState === 'active' && (
-							<Button
-								variant="secondary"
-								isDestructive
-								size="small"
-								onClick={ handleCancel }
-							>
-								{ __( 'Cancel', 'quant' ) }
+						{ state === 'active' && (
+							<Button variant="secondary" onClick={ handleStop }>
+								{ __( 'Stop', 'quant' ) }
 							</Button>
 						) }
-						{ progressState === 'failed' && status.failed > 0 && (
-							<Button
-								variant="secondary"
-								size="small"
-								onClick={ handleRetry }
-							>
+						{ state !== 'active' && failedRun > 0 && (
+							<Button variant="secondary" onClick={ handleRetry }>
 								{ __( 'Retry Failed', 'quant' ) }
 							</Button>
 						) }
-						{ ( progressState === 'complete' ||
-							progressState === 'failed' ) && (
-							<Button
-								variant="link"
-								size="small"
-								onClick={ handleDismiss }
-							>
+						{ state !== 'active' && (
+							<Button variant="link" onClick={ handleDismiss }>
 								{ __( 'Dismiss', 'quant' ) }
 							</Button>
 						) }

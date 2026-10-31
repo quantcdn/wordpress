@@ -1,4 +1,3 @@
-/* global algoliasearch */
 /**
  * Quant Search autocomplete box.
  *
@@ -6,7 +5,26 @@
  * Quant\Search\Frontend. Submitting the box goes to the search page with the
  * query in the `keys` parameter.
  */
+import algoliasearch from 'algoliasearch/lite';
+import { autocomplete, getAlgoliaResults } from '@algolia/autocomplete-js';
+import '@algolia/autocomplete-theme-classic/dist/theme.min.css';
 import './search.scss';
+
+/**
+ * Only same-site paths and http(s) URLs are followed.
+ *
+ * @param {*} value A URL from a search record.
+ * @return {string} The URL, or '' when it is not safe.
+ */
+function safeUrl( value ) {
+	if (
+		typeof value === 'string' &&
+		( /^(https?:)?\/\//i.test( value ) || /^\/(?!\/)/.test( value ) )
+	) {
+		return value;
+	}
+	return '';
+}
 
 function mount( root ) {
 	let config;
@@ -16,12 +34,10 @@ function mount( root ) {
 		return;
 	}
 
-	const lib = window[ '@algolia/autocomplete-js' ];
-	if ( ! config.index || ! lib || typeof algoliasearch === 'undefined' ) {
+	if ( ! config.index ) {
 		return;
 	}
 
-	const { autocomplete, getAlgoliaResults } = lib;
 	const searchClient = algoliasearch(
 		config.index.application_id,
 		config.index.read_key
@@ -31,13 +47,18 @@ function mount( root ) {
 			config.queryParam || 'keys'
 		}=${ encodeURIComponent( query ) }`;
 
+	// Replace the no-JavaScript fallback form.
+	root.innerHTML = '';
+
 	autocomplete( {
 		container: root,
 		placeholder: config.placeholder || 'Search',
 		detachedMediaQuery: 'none',
 		navigator: {
 			navigate( { itemUrl } ) {
-				window.location.assign( itemUrl );
+				if ( itemUrl ) {
+					window.location.assign( itemUrl );
+				}
 			},
 			navigateNewTab( { itemUrl } ) {
 				const w = window.open( itemUrl, '_blank', 'noopener' );
@@ -56,7 +77,7 @@ function mount( root ) {
 			return [
 				{
 					sourceId: config.index.index,
-					getItemUrl: ( { item } ) => item.url,
+					getItemUrl: ( { item } ) => safeUrl( item.url ),
 					getItems: ( { query } ) =>
 						getAlgoliaResults( {
 							searchClient,
@@ -72,7 +93,10 @@ function mount( root ) {
 							],
 						} ),
 					onSelect( { item } ) {
-						window.location.assign( item.url );
+						const target = safeUrl( item.url );
+						if ( target ) {
+							window.location.assign( target );
+						}
 					},
 					templates: {
 						item( { item, html } ) {

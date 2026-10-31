@@ -15,11 +15,16 @@
     "@wordpress/scripts": "^27.0.0"
   },
   "dependencies": {
+    "@algolia/autocomplete-js": "^1.17.7",
+    "@algolia/autocomplete-theme-classic": "^1.17.7",
     "@wordpress/api-fetch": "^6.0.0",
     "@wordpress/components": "^27.0.0",
     "@wordpress/data": "^9.0.0",
     "@wordpress/element": "^5.0.0",
     "@wordpress/i18n": "^4.0.0",
+    "algoliasearch": "^4.24.0",
+    "instantsearch.css": "^7.4.5",
+    "instantsearch.js": "^4.75.0",
     "react-router-dom": "^6.0.0"
   }
 }

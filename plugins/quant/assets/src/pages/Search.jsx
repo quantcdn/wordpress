@@ -189,9 +189,12 @@ export function Search() {
 	const [ notice, setNotice ] = useState( null );
 	const [ saving, setSaving ] = useState( false );
 	const [ busy, setBusy ] = useState( false );
-	const [ showProgress, setShowProgress ] = useState( false );
+	const [ progressRun, setProgressRun ] = useState( 0 );
+	// The server checks the saved value, so actions follow it, not the draft.
+	const [ savedEnabled, setSavedEnabled ] = useState( false );
 
 	const notify = ( st, message ) => setNotice( { status: st, message } );
+	const handleProgressDismiss = useCallback( () => setProgressRun( 0 ), [] );
 
 	const loadStatus = useCallback(
 		() =>
@@ -204,7 +207,10 @@ export function Search() {
 	useEffect( () => {
 		loadStatus();
 		apiFetch( { path: '/quant/v1/search/settings' } )
-			.then( setConfig )
+			.then( ( data ) => {
+				setConfig( data );
+				setSavedEnabled( !! data?.settings?.enabled );
+			} )
 			.catch( ( e ) => notify( 'error', e.message ) );
 		apiFetch( { path: '/quant/v1/search/pages' } )
 			.then( setPages )
@@ -230,6 +236,7 @@ export function Search() {
 				...prev,
 				settings: response.settings,
 			} ) );
+			setSavedEnabled( !! response.settings?.enabled );
 			notify( 'success', __( 'Search settings saved.', 'quant' ) );
 		} catch ( e ) {
 			notify( 'error', e.message || __( 'Failed to save', 'quant' ) );
@@ -253,7 +260,7 @@ export function Search() {
 					response.queued
 				)
 			);
-			setShowProgress( true );
+			setProgressRun( ( n ) => n + 1 );
 		} catch ( e ) {
 			notify( 'error', e.message || __( 'Reindex failed', 'quant' ) );
 		} finally {
@@ -361,13 +368,12 @@ export function Search() {
 					{ notice.message }
 				</Notice>
 			) }
-			{ showProgress && (
+			{ progressRun > 0 && (
 				<Progress
+					key={ progressRun }
 					autoProcess
-					onComplete={ () => {
-						setShowProgress( false );
-						loadStatus();
-					} }
+					onFinished={ loadStatus }
+					onComplete={ handleProgressDismiss }
 				/>
 			) }
 
@@ -505,7 +511,7 @@ export function Search() {
 									onClick={ reindex }
 									disabled={
 										busy ||
-										! settings.enabled ||
+										! savedEnabled ||
 										! status?.enabled
 									}
 								>
