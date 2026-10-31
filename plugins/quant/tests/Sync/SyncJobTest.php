@@ -101,4 +101,44 @@ final class SyncJobTest extends TestCase
         $this->assertFalse(SyncType::Post->isRoute());
         $this->assertFalse(SyncType::Redirect->isRoute());
     }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function it_shares_a_dedupe_key_between_publish_and_unpublish(): void
+    {
+        $publish = new SyncJob(SyncType::Post, '5', SyncAction::Publish);
+        $unpublish = new SyncJob(SyncType::Post, '5', SyncAction::Unpublish, ['url' => '/x']);
+
+        $this->assertSame($publish->dedupeKey(), $unpublish->dedupeKey());
+        $this->assertSame(32, strlen($publish->dedupeKey()));
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function it_gives_purges_and_other_objects_their_own_dedupe_key(): void
+    {
+        $publish = new SyncJob(SyncType::Post, '5', SyncAction::Publish);
+
+        $this->assertNotSame($publish->dedupeKey(), (new SyncJob(SyncType::Post, '5', SyncAction::Purge))->dedupeKey());
+        $this->assertNotSame($publish->dedupeKey(), (new SyncJob(SyncType::Post, '6', SyncAction::Publish))->dedupeKey());
+        $this->assertNotSame($publish->dedupeKey(), (new SyncJob(SyncType::Page, '5', SyncAction::Publish))->dedupeKey());
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function it_includes_the_listing_page_in_the_dedupe_key(): void
+    {
+        $page1 = new SyncJob(SyncType::Taxonomy, '7', SyncAction::Publish, ['taxonomy' => 'category', 'page' => 1]);
+        $page2 = new SyncJob(SyncType::Taxonomy, '7', SyncAction::Publish, ['taxonomy' => 'category', 'page' => 2]);
+        $noPage = new SyncJob(SyncType::Taxonomy, '7', SyncAction::Publish, ['taxonomy' => 'category']);
+
+        $this->assertNotSame($page1->dedupeKey(), $page2->dedupeKey());
+        $this->assertSame($page1->dedupeKey(), $noPage->dedupeKey());
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function it_ignores_other_meta_in_the_dedupe_key(): void
+    {
+        $a = new SyncJob(SyncType::Redirect, '/old', SyncAction::Publish, ['to' => '/a']);
+        $b = new SyncJob(SyncType::Redirect, '/old', SyncAction::Publish, ['to' => '/b']);
+
+        $this->assertSame($a->dedupeKey(), $b->dedupeKey());
+    }
 }

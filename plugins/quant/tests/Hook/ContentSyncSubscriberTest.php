@@ -63,6 +63,11 @@ final class ContentSyncSubscriberTest extends TestCase
         $this->queue->shouldReceive('push')->andReturnUsing(function (SyncJob $job): void {
             $this->pushed[] = $job;
         })->byDefault();
+        $this->queue->shouldReceive('pushBatch')->andReturnUsing(function (array $jobs): void {
+            foreach ($jobs as $job) {
+                $this->pushed[] = $job;
+            }
+        })->byDefault();
 
         $this->settings = $this->mockSettings();
         $this->subscriber = new ContentSyncSubscriber($this->queue, $this->settings);
@@ -75,6 +80,18 @@ final class ContentSyncSubscriberTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * Stub get_object_taxonomies() for both the 'names' and 'objects' forms.
+     *
+     * @param array<string> $names
+     */
+    private function taxonomies(array $names): void
+    {
+        Functions\when('get_object_taxonomies')->alias(static fn($post, string $output = 'names'): array => $output === 'names'
+            ? $names
+            : array_map(static fn(string $n): WP_Taxonomy => new WP_Taxonomy($n), $names));
+    }
+
     #[Test]
     public function it_registers_the_hooks_it_needs(): void
     {
@@ -85,7 +102,8 @@ final class ContentSyncSubscriberTest extends TestCase
 
         $this->subscriber->register();
 
-        $this->assertSame([1000, 3], $hooks['save_post']);
+        $this->assertSame([1000, 2], $hooks['wp_after_insert_post']);
+        $this->assertArrayNotHasKey('save_post', $hooks);
         $this->assertSame([10, 2], $hooks['pre_post_update']);
         $this->assertArrayHasKey('wp_trash_post', $hooks);
         $this->assertSame([10, 2], $hooks['delete_post']);
@@ -118,7 +136,7 @@ final class ContentSyncSubscriberTest extends TestCase
     public function it_queues_a_published_post_with_its_related_listing_pages(): void
     {
         Functions\when('get_permalink')->justReturn('https://example.com/blog/hello/');
-        Functions\when('get_object_taxonomies')->justReturn([new WP_Taxonomy('category'), new WP_Taxonomy('nav_menu')]);
+        $this->taxonomies(['category', 'nav_menu']);
         Functions\when('get_the_terms')->justReturn([$this->makeTerm(5, 'category')]);
         Functions\when('get_post_type_archive_link')->justReturn('https://example.com/blog/');
 
@@ -316,5 +334,53 @@ final class ContentSyncSubscriberTest extends TestCase
         $actual = array_map(static fn(SyncJob $j): array => [$j->type->value, $j->objectId, $j->action->value, $j->meta], $this->pushed);
 
         $this->assertSame($expected, $actual);
+    }
+
+    #[Test]
+    public function it_handles_wp_after_insert_post_like_a_save(): void
+    {
+        Functions\when('get_permalink')->justReturn('https://example.com/x/');
+
+        $this->subscriber->onAfterInsertPost(2, $this->makePost(2, 'page'));
+        Functions\when('get_post')->justReturn($this->makePost(3, 'page'));
+        $this->subscriber->onAfterInsertPost(3);
+
+        $types = array_map(static fn(SyncJob $j): string => $j->type->value . ':' . $j->objectId, $this->pushed);
+        $this->assertContains('page:2', $types);
+        $this->assertContains('page:3', $types);
+    }
+
+    #[Test]
+    public function it_refreshes_listings_of_terms_the_post_was_removed_from(): void
+    {
+        $post = $this->makePost(1);
+        Functions\when('get_post')->justReturn($post);
+        Functions\when('get_permalink')->justReturn('https://example.com/blog/hello/');
+        $this->taxonomies(['category']);
+
+        // Before the update the post is in category 5; afterwards in category 6.
+        Functions\when('get_the_terms')->justReturn([$this->makeTerm(5, 'category')]);
+        $this->subscriber->onPrePostUpdate(1, []);
+        Functions\when('get_the_terms')->justReturn([$this->makeTerm(6, 'category')]);
+        $this->subscriber->onPostSave(1, $post, true);
+
+        $terms = array_values(array_map(
+            static fn(SyncJob $j): string => $j->objectId,
+            array_filter($this->pushed, static fn(SyncJob $j): bool => $j->type === SyncType::Taxonomy)
+        ));
+        sort($terms);
+        $this->assertSame(['5', '6'], $terms);
+    }
+
+    #[Test]
+    public function it_does_not_queue_the_home_page_twice_as_the_post_archive(): void
+    {
+        Functions\when('get_permalink')->justReturn('https://example.com/hello/');
+        Functions\when('get_post_type_archive_link')->justReturn('https://example.com/');
+
+        $this->subscriber->onPostSave(1, $this->makePost(1), true);
+
+        $this->assertSame([], array_filter($this->pushed, static fn(SyncJob $j): bool => $j->type === SyncType::Archive));
+        $this->assertCount(1, array_filter($this->pushed, static fn(SyncJob $j): bool => $j->type === SyncType::Home));
     }
 }

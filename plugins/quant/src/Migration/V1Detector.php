@@ -100,12 +100,10 @@ final class V1Detector
      */
     public function getV1QueueCount(): int
     {
-        $count = $this->wpdb->get_var(
-            $this->wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->wpdb->options} WHERE option_name LIKE %s",
-                $this->wpdb->esc_like('batch_quant_') . '%'
-            )
-        );
+        $wpdb = $this->wpdb;
+        $like = $wpdb->esc_like('batch_quant_') . '%';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One-off count during migration.
+        $count = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s", $like));
 
         return (int) $count;
     }

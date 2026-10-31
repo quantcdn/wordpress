@@ -15,9 +15,21 @@ use WP_Post;
  * Applies in CDN-only mode, and in Static mode when automatic sync is off
  * (the same rule as v1). When Static mode syncs automatically, publishing
  * the page already refreshes the edge.
+ *
+ * Paths are collected during the request and purged once at shutdown, after
+ * the response has been sent where the server allows it, so a save is not
+ * slowed down by the API and the block editor's double save purges once.
  */
 class CachePurgeSubscriber
 {
+    /** @var array<string, true> */
+    private array $pending = [];
+
+    /** @var array<int, array<string>> Paths a post had before an update */
+    private array $previous = [];
+
+    private bool $flushRegistered = false;
+
     public function __construct(
         private readonly ContentApiInterface $api,
         private readonly Settings $settings
@@ -26,48 +38,76 @@ class CachePurgeSubscriber
 
     public function register(): void
     {
-        add_action('save_post', [$this, 'onPostSave'], 1000, 3);
-        add_action('wp_trash_post', [$this, 'onPostTrash'], 10, 1);
-        add_action('before_delete_post', [$this, 'onPostTrash'], 10, 1);
+        add_action('pre_post_update', [$this, 'onPrePostUpdate'], 10, 1);
+        add_action('wp_after_insert_post', [$this, 'onAfterInsertPost'], 1000, 2);
+        add_action('transition_post_status', [$this, 'onTransition'], 10, 3);
+        add_action('before_delete_post', [$this, 'onPostDelete'], 10, 1);
         add_action('edited_term', [$this, 'onTermEdit'], 10, 3);
         add_action('pre_delete_term', [$this, 'onTermDeletePre'], 10, 2);
     }
 
-    public function onPostSave(int $postId, WP_Post $post, bool $update): void
-    {
-        if (!$this->active() || $this->ignored($post) || $post->post_status !== 'publish') {
-            return;
-        }
-
-        $this->purge($this->pathsForPost($post));
-    }
-
-    public function onPostTrash(int $postId): void
+    /**
+     * Remember the paths of a published post before it changes (slug, terms).
+     */
+    public function onPrePostUpdate(int $postId): void
     {
         $post = get_post($postId);
         if (!$this->active() || !$post instanceof WP_Post || $this->ignored($post) || $post->post_status !== 'publish') {
             return;
         }
 
-        $this->purge($this->pathsForPost($post));
+        $this->previous[$postId] = $this->pathsForPost($post);
+    }
+
+    public function onAfterInsertPost(int $postId, ?WP_Post $post = null): void
+    {
+        $post = $post ?? get_post($postId);
+        if (!$this->active() || !$post instanceof WP_Post || $this->ignored($post) || $post->post_status !== 'publish') {
+            return;
+        }
+
+        if (wp_is_post_autosave($postId) || wp_is_post_revision($postId)) {
+            return;
+        }
+
+        $this->queue(array_merge($this->previous[$postId] ?? [], $this->pathsForPost($post)));
+        unset($this->previous[$postId]);
+    }
+
+    /**
+     * A published post became draft, private, pending or trash: purge its old paths.
+     */
+    public function onTransition(string $newStatus, string $oldStatus, WP_Post $post): void
+    {
+        if ($oldStatus !== 'publish' || $newStatus === 'publish' || !$this->active() || $this->ignored($post)) {
+            return;
+        }
+
+        $this->queue($this->previous[$post->ID] ?? $this->pathsForPost($post));
+    }
+
+    public function onPostDelete(int $postId): void
+    {
+        $post = get_post($postId);
+        if (!$this->active() || !$post instanceof WP_Post || $this->ignored($post) || $post->post_status !== 'publish') {
+            return;
+        }
+
+        $this->queue($this->pathsForPost($post));
     }
 
     public function onTermEdit(int $termId, int $ttId, string $taxonomy): void
     {
-        if (!$this->active()) {
-            return;
+        if ($this->active()) {
+            $this->queue($this->pathsForTerm($termId, $taxonomy));
         }
-
-        $this->purge($this->pathsForTerm($termId, $taxonomy));
     }
 
     public function onTermDeletePre(int $termId, string $taxonomy): void
     {
-        if (!$this->active()) {
-            return;
+        if ($this->active()) {
+            $this->queue($this->pathsForTerm($termId, $taxonomy));
         }
-
-        $this->purge($this->pathsForTerm($termId, $taxonomy));
     }
 
     /**
@@ -81,7 +121,7 @@ class CachePurgeSubscriber
 
         $permalink = get_permalink($post);
         if (is_string($permalink)) {
-            $paths[] = Paths::fromUrl($permalink);
+            $paths[] = preg_replace('/__trashed(-\d+)?\/?$/', '', Paths::fromUrl($permalink)) ?? Paths::fromUrl($permalink);
         }
 
         foreach (get_object_taxonomies($post, 'names') as $taxonomy) {
@@ -108,6 +148,28 @@ class CachePurgeSubscriber
 
         /** This filter is documented in v2.0.0; it adjusts the paths purged when a post changes. */
         return array_values(array_unique((array) apply_filters('quant_purge_paths', $paths, $post)));
+    }
+
+    /**
+     * Purge everything collected in this request. Runs at shutdown.
+     */
+    public function flush(): void
+    {
+        $paths = array_keys($this->pending);
+        $this->pending = [];
+
+        if ($paths === []) {
+            return;
+        }
+
+        if (function_exists('fastcgi_finish_request') && !(defined('WP_CLI') && WP_CLI)) {
+            fastcgi_finish_request();
+        }
+
+        $response = $this->api->purge($paths);
+
+        /** This action is documented in v2.0.0; it fires after an automatic purge. */
+        do_action('quant_purged', $paths, $response);
     }
 
     /**
@@ -139,16 +201,17 @@ class CachePurgeSubscriber
     /**
      * @param array<string> $paths
      */
-    private function purge(array $paths): void
+    private function queue(array $paths): void
     {
-        $paths = array_values(array_unique(array_filter($paths)));
-        if ($paths === []) {
-            return;
+        foreach ($paths as $path) {
+            if (is_string($path) && $path !== '') {
+                $this->pending[$path] = true;
+            }
         }
 
-        $response = $this->api->purge($paths);
-
-        /** This action is documented in v2.0.0; it fires after an automatic purge. */
-        do_action('quant_purged', $paths, $response);
+        if ($this->pending !== [] && !$this->flushRegistered) {
+            $this->flushRegistered = true;
+            add_action('shutdown', [$this, 'flush'], 5);
+        }
     }
 }

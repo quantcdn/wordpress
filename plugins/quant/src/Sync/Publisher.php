@@ -32,7 +32,7 @@ class Publisher
         $response = $this->api->publish($content->url, $content->markup, $content->info, $content->options);
 
         if (!$response->success) {
-            throw new RuntimeException("API error publishing {$content->url}: {$response->message}");
+            throw new RuntimeException(esc_html("API error publishing {$content->url}: {$response->message}"));
         }
 
         $attachments = $response->data['attachments'] ?? null;
@@ -40,7 +40,24 @@ class Publisher
             $this->attachments->upload($attachments);
         }
 
+        $this->purgeVariants([$content->url]);
         $this->followLinks($content);
+    }
+
+    /**
+     * Purge /path and /path/ so neither variant serves a stale copy (as 1.6.0 did).
+     * A failed purge does not fail the job: the content itself was published.
+     *
+     * @param array<string> $paths
+     */
+    private function purgeVariants(array $paths): void
+    {
+        /** This filter is documented in v2.0.0; return false to skip the purge after a publish or unpublish. */
+        if (!apply_filters('quant_purge_after_publish', true, $paths)) {
+            return;
+        }
+
+        $this->api->purge($paths);
     }
 
     /**
@@ -59,8 +76,10 @@ class Publisher
         }
 
         if ($errors !== []) {
-            throw new RuntimeException('API error unpublishing: ' . implode('; ', $errors));
+            throw new RuntimeException(esc_html('API error unpublishing: ' . implode('; ', $errors)));
         }
+
+        $this->purgeVariants(array_values(array_unique($paths)));
     }
 
     /**

@@ -465,7 +465,7 @@ class Commands
         $batches = 0;
 
         while ($batches < $maxBatches) {
-            $result = $this->processor->run($limit, 600);
+            $result = $this->processor->run($limit, 300);
             $processed += $result->processed;
             $failed += $result->failed;
             $batches++;
@@ -488,23 +488,22 @@ class Commands
      */
     private function runWorkers(int $threads): void
     {
-        $this->queue->recoverStale(0);
+        $this->queue->recoverStale();
         $command = $this->workerCommand();
         $procs = [];
 
+        // Workers write straight to this terminal, so a full pipe can never block them.
         for ($i = 0; $i < $threads; $i++) {
-            $proc = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+            // phpcs:ignore Generic.PHP.ForbiddenFunctions.Found -- WP-CLI only: runs this plugin's own `wp quant` workers in parallel, as 1.x did.
+            $proc = proc_open($command, [1 => STDOUT, 2 => STDERR], $pipes);
             if (is_resource($proc)) {
-                $procs[] = [$proc, $pipes];
+                $procs[] = $proc;
             }
         }
 
         WP_CLI::log(sprintf('Started %d worker(s).', count($procs)));
 
-        foreach ($procs as [$proc, $pipes]) {
-            WP_CLI::log(trim((string) stream_get_contents($pipes[1])));
-            fclose($pipes[1]);
-            fclose($pipes[2]);
+        foreach ($procs as $proc) {
             proc_close($proc);
         }
 
@@ -514,7 +513,7 @@ class Commands
 
     private function workerCommand(): string
     {
-        $parts = ['wp', 'quant', 'queue', 'process', '--all', '--path=' . escapeshellarg(ABSPATH)];
+        $parts = [$this->wpBinary(), 'quant', 'queue', 'process', '--all', '--path=' . escapeshellarg(ABSPATH)];
 
         foreach (['url', 'allow-root', 'skip-plugins', 'skip-themes'] as $flag) {
             if (WP_CLI::has_config($flag) && WP_CLI::get_config($flag)) {
@@ -524,6 +523,21 @@ class Commands
         }
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * The command that started this process (the wp-cli phar or script), run with the same PHP.
+     */
+    private function wpBinary(): string
+    {
+        $script = isset($GLOBALS['argv'][0]) ? realpath((string) $GLOBALS['argv'][0]) : false;
+        if ($script === false || !is_file($script)) {
+            return 'wp';
+        }
+
+        $php = function_exists('\\WP_CLI\\Utils\\get_php_binary') ? \WP_CLI\Utils\get_php_binary() : PHP_BINARY;
+
+        return escapeshellarg($php) . ' ' . escapeshellarg($script);
     }
 
     private function queueClear(): void

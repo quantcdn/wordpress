@@ -116,10 +116,27 @@ final class Paths
     /**
      * Absolute filesystem path for a local URL path, or null when it is not a file under ABSPATH.
      */
+    /**
+     * Extensions a local file may have to be uploaded. PHP, configuration
+     * and hidden files are never sent to the edge.
+     */
+    public const PUBLIC_FILE_EXTENSIONS = [
+        'css', 'js', 'mjs', 'map', 'json', 'xml', 'xsl', 'txt', 'html', 'htm', 'webmanifest',
+        'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'svg', 'ico', 'bmp', 'tif', 'tiff',
+        'woff', 'woff2', 'ttf', 'otf', 'eot',
+        'mp4', 'm4v', 'mov', 'webm', 'ogv', 'ogg', 'mp3', 'm4a', 'wav', 'flac',
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'csv',
+        'zip', 'gz', 'epub', 'vtt', 'srt',
+    ];
+
+    private const PRIVATE_FILE_NAMES = [
+        'composer.json', 'composer.lock', 'package.json', 'package-lock.json', 'auth.json', 'yarn.lock',
+    ];
+
     public static function localFile(string $urlPath): ?string
     {
         $path = self::cleanLocalPath($urlPath);
-        if ($path === null) {
+        if ($path === null || !self::isPublicFileName($path)) {
             return null;
         }
 
@@ -130,6 +147,29 @@ final class Paths
         }
 
         return null;
+    }
+
+    /**
+     * True when the file name may be published: a known static extension,
+     * no hidden path segment, not a WordPress or package manager file.
+     */
+    public static function isPublicFileName(string $path): bool
+    {
+        foreach (explode('/', trim($path, '/')) as $segment) {
+            if ($segment !== '' && $segment[0] === '.') {
+                return false;
+            }
+        }
+
+        $name = strtolower(basename($path));
+        if (str_starts_with($name, 'wp-config') || in_array($name, self::PRIVATE_FILE_NAMES, true)) {
+            return false;
+        }
+
+        /** This filter is documented in v2.0.0; it sets the file extensions that may be uploaded. */
+        $allowed = (array) apply_filters('quant_public_file_extensions', self::PUBLIC_FILE_EXTENSIONS);
+
+        return in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), $allowed, true);
     }
 
     /**

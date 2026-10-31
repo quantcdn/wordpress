@@ -18,6 +18,14 @@ final class RedirectResponseException extends RuntimeException
         public readonly string $to,
         public readonly int $statusCode
     ) {
-        parent::__construct("Redirect {$statusCode} from {$from} to {$to}");
+        parent::__construct(esc_html("Redirect {$statusCode} from {$from} to {$to}"));
+    }
+
+    /**
+     * The paths are data for the handler, not output.
+     */
+    public static function between(string $from, string $to, int $statusCode): self
+    {
+        return new self($from, $to, $statusCode);
     }
 }

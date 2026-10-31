@@ -47,16 +47,17 @@ final class TermRenderer
         $term = get_term($termId, $taxonomy);
 
         if (!$term instanceof WP_Term) {
-            throw new RuntimeException("Term #{$termId} not found in {$taxonomy}");
+            throw new RuntimeException(esc_html("Term #{$termId} not found in {$taxonomy}"));
         }
 
         $link = get_term_link($term);
         if (!is_string($link)) {
-            throw new RuntimeException("Cannot get link for term #{$termId}");
+            throw new RuntimeException(esc_html("Cannot get link for term #{$termId}"));
         }
 
         if (!$this->supports($term)) {
-            throw new UnpublishedContentException(Paths::fromUrl($link), "Taxonomy {$taxonomy} is not public");
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries paths to the job handler; the message is escaped in the factory.
+            throw UnpublishedContentException::forPath(Paths::fromUrl($link), "Taxonomy {$taxonomy} is not public");
         }
 
         $url = Paths::paginated($link, $page);

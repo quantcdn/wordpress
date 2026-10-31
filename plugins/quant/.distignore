@@ -17,3 +17,5 @@
 /phpmd.xml
 /webpack.config.js
 /bin
+/build
+/dist

@@ -44,7 +44,7 @@ class InternalRequestHandler
 
     public function isInternalRequest(): bool
     {
-        $header = $_SERVER['HTTP_QUANT_TOKEN'] ?? '';
+        $header = isset($_SERVER['HTTP_QUANT_TOKEN']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_QUANT_TOKEN'])) : '';
         $token = get_option(InternalFetcher::TOKEN_OPTION);
 
         return is_string($header) && is_string($token) && $token !== '' && hash_equals($token, $header);
@@ -61,7 +61,7 @@ class InternalRequestHandler
 
     private function isValidatePath(): bool
     {
-        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $uri = isset($_SERVER['REQUEST_URI']) ? esc_url_raw(wp_unslash($_SERVER['REQUEST_URI'])) : '';
         $path = wp_parse_url(is_string($uri) ? $uri : '', PHP_URL_PATH);
 
         return is_string($path) && rtrim($path, '/') !== '' && str_ends_with(rtrim($path, '/'), self::VALIDATE_PATH);

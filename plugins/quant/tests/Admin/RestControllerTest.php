@@ -32,6 +32,8 @@ final class RestControllerTest extends TestCase
     /** @var array<string, mixed> */
     private array $options = [];
     private RestController $controller;
+    private JobProcessor&Mockery\MockInterface $processor;
+    private \wpdb&Mockery\MockInterface $wpdb;
 
     protected function setUp(): void
     {
@@ -50,12 +52,14 @@ final class RestControllerTest extends TestCase
         $api = Mockery::mock(ContentApiInterface::class);
         $wpdb = Mockery::mock(\wpdb::class);
         $wpdb->prefix = 'wp_';
+        $this->wpdb = $wpdb;
+        $this->processor = Mockery::mock(JobProcessor::class);
 
         $this->controller = new RestController(
             $api,
             new Settings(),
             new DatabaseQueue($wpdb),
-            Mockery::mock(JobProcessor::class),
+            $this->processor,
             Mockery::mock(Seeder::class),
             new ThemeAssetSync($api),
             Mockery::mock(RedirectProvider::class),
@@ -128,5 +132,58 @@ final class RestControllerTest extends TestCase
 
         $this->assertSame('static', $result['mode']);
         $this->assertSame('daily', $result['schedule']['interval']);
+    }
+
+    #[Test]
+    public function processing_without_credentials_is_a_400_error(): void
+    {
+        $this->options[Settings::OPTION_CREDENTIALS] = ['organization' => '', 'project' => '', 'token' => ''];
+        $this->processor->shouldNotReceive('run');
+
+        $result = $this->controller->processQueue(new WP_REST_Request(['limit' => 5]));
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('not_configured', $result->get_error_code());
+        $this->assertSame(['status' => 400], $result->get_error_data());
+    }
+
+    #[Test]
+    public function processing_returns_the_batch_result_and_remaining_count(): void
+    {
+        $this->processor->shouldReceive('run')->once()->with(5, 25)->andReturn(new \Quant\Sync\SyncResult(4, 1, ['post 9: boom']));
+        $this->wpdb->shouldReceive('get_results')->once()->andReturn([['status' => 'pending', 'count' => '3']]);
+
+        $result = $this->controller->processQueue(new WP_REST_Request(['limit' => 5]));
+
+        $this->assertSame(['success' => true, 'processed' => 4, 'failed' => 1, 'remaining' => 3, 'errors' => ['post 9: boom']], $result);
+    }
+
+    #[Test]
+    public function site_admins_on_multisite_cannot_change_where_the_server_sends_requests(): void
+    {
+        Functions\when('is_multisite')->justReturn(true);
+        Functions\when('current_user_can')->alias(static fn(string $cap): bool => $cap !== 'manage_network_options');
+        $this->options[Settings::OPTION_STATIC_CONFIG] = ['webserver_url' => 'http://wordpress', 'webserver_host' => 'example.com'];
+
+        $this->controller->saveSettings(new WP_REST_Request([], [
+            'webserver_url' => 'http://169.254.169.254',
+            'webserver_host' => 'evil.test',
+            'route_404' => '/missing',
+        ]));
+
+        $this->assertSame('http://wordpress', $this->options[Settings::OPTION_STATIC_CONFIG]['webserver_url']);
+        $this->assertSame('example.com', $this->options[Settings::OPTION_STATIC_CONFIG]['webserver_host']);
+        $this->assertSame('/missing', $this->options[Settings::OPTION_STATIC_CONFIG]['route_404']);
+    }
+
+    #[Test]
+    public function network_admins_on_multisite_can_change_the_webserver_url(): void
+    {
+        Functions\when('is_multisite')->justReturn(true);
+        Functions\when('current_user_can')->justReturn(true);
+
+        $this->controller->saveSettings(new WP_REST_Request([], ['webserver_url' => 'http://localhost/']));
+
+        $this->assertSame('http://localhost', $this->options[Settings::OPTION_STATIC_CONFIG]['webserver_url']);
     }
 }

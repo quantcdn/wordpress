@@ -81,7 +81,7 @@ final class RouteRendererTest extends TestCase
 
         $content = $this->renderer->render('/wp-sitemap.xml');
 
-        $this->assertSame(['content_type' => 'application/xml'], $content->options['headers']);
+        $this->assertSame(['content-type' => 'application/xml'], $content->options['headers']);
     }
 
     #[Test]
@@ -123,13 +123,32 @@ final class RouteRendererTest extends TestCase
     }
 
     #[Test]
-    public function it_fails_on_a_404_unless_allowed(): void
+    public function it_reports_a_404_or_410_as_content_to_unpublish(): void
     {
-        $this->fetcher->shouldReceive('fetch')->once()->andReturn(new FetchResult(404, 'nope', 'text/html'));
+        foreach ([404, 410] as $status) {
+            $fetcher = Mockery::mock(\Quant\Sync\InternalFetcher::class);
+            $fetcher->shouldReceive('fetch')->once()->andReturn(new FetchResult($status, 'gone', 'text/html'));
+            $markup = Mockery::mock(MarkupProcessor::class);
+            $renderer = new RouteRenderer($fetcher, $markup, $this->mockSettings());
 
-        $this->expectException(RuntimeException::class);
+            try {
+                $renderer->render('/missing/');
+                $this->fail('Expected UnpublishedContentException');
+            } catch (\Quant\Sync\Exception\UnpublishedContentException $e) {
+                $this->assertSame('/missing', $e->path);
+                $this->assertStringContainsString((string) $status, $e->getMessage());
+            }
+        }
+    }
 
-        $this->renderer->render('/missing');
+    #[Test]
+    public function it_accepts_a_404_body_when_allowed(): void
+    {
+        $this->fetcher->shouldReceive('fetch')->once()->andReturn(new FetchResult(404, '<p>Not found</p>', 'text/html'));
+
+        $content = $this->renderer->render('/404', '/_quant404', true);
+
+        $this->assertSame('/_quant404', $content->url);
     }
 
     #[Test]

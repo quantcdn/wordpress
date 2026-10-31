@@ -43,6 +43,9 @@ class Upgrader
         Activator::maybeUpgrade();
         $this->migrateFromV1();
 
+        // 1.x scheduled its own cron event; 2.0 has no handler for it.
+        wp_clear_scheduled_hook('quant_cronjob');
+
         update_option(self::OPTION_VERSION, QUANT_VERSION);
     }
 

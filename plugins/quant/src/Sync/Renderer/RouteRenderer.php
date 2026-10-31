@@ -6,6 +6,7 @@ namespace Quant\Sync\Renderer;
 
 use Quant\Core\Settings;
 use Quant\Sync\Exception\RedirectResponseException;
+use Quant\Sync\Exception\UnpublishedContentException;
 use Quant\Sync\FetchResult;
 use Quant\Sync\InternalFetcher;
 use Quant\Sync\MarkupProcessor;
@@ -37,7 +38,8 @@ class RouteRenderer
         $result = $this->fetcher->fetch($path);
 
         if ($result->isRedirect()) {
-            throw new RedirectResponseException(Paths::normalise($path), Paths::normalise((string) $result->redirectLocation), $result->status);
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries paths to the job handler; the message is escaped in the factory.
+            throw RedirectResponseException::between(Paths::normalise($path), Paths::normalise((string) $result->redirectLocation), $result->status);
         }
 
         $this->assertRenderable($result, $path, $allow404);
@@ -71,7 +73,7 @@ class RouteRenderer
 
         $contentType = $this->contentTypeHeader($result->contentType);
         if ($contentType !== null) {
-            $options['headers'] = ['content_type' => $contentType];
+            $options['headers'] = ['content-type' => $contentType];
         }
 
         return $options;
@@ -93,18 +95,21 @@ class RouteRenderer
 
     private function assertRenderable(FetchResult $result, string $path, bool $allow404): void
     {
-        if ($result->status === 200 && $result->body !== '') {
-            return;
-        }
-
-        if ($allow404 && $result->status === 404 && $result->body !== '') {
+        $acceptable = $result->status === 200 || ($allow404 && $result->status === 404);
+        if ($acceptable && $result->body !== '') {
             return;
         }
 
         if ($result->body === '' && $result->status === 200) {
-            throw new RuntimeException("Empty response body for {$path} ({$result->requestedUrl})");
+            throw new RuntimeException(esc_html("Empty response body for {$path} ({$result->requestedUrl})"));
         }
 
-        throw new RuntimeException("HTTP {$result->status} response for {$path} ({$result->requestedUrl})");
+        // The page is gone: remove it from the edge, as 1.x did.
+        if (!$allow404 && in_array($result->status, [404, 410], true)) {
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries paths to the job handler; the message is escaped in the factory.
+            throw UnpublishedContentException::forPath(Paths::normalise($path), "HTTP {$result->status} response for {$path}");
+        }
+
+        throw new RuntimeException(esc_html("HTTP {$result->status} response for {$path} ({$result->requestedUrl})"));
     }
 }

@@ -11,6 +11,8 @@ mkdir -p "$OUT_DIR" "$STAGE"
 (cd "$PLUGIN_DIR" && npm run build >/dev/null)
 
 rsync -a --exclude-from="$PLUGIN_DIR/.distignore" "$PLUGIN_DIR/" "$STAGE/"
-(cd "$(dirname "$STAGE")" && zip -qr "$OUT_DIR/quant-$VERSION.zip" quant)
+ZIP="$OUT_DIR/quant-$VERSION.zip"
+rm -f "$ZIP"   # zip -r would otherwise keep files deleted since the last build
+(cd "$(dirname "$STAGE")" && zip -qr "$ZIP" quant)
 
 echo "Built $OUT_DIR/quant-$VERSION.zip"

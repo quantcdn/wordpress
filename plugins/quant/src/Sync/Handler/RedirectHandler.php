@@ -32,19 +32,19 @@ final class RedirectHandler implements HandlerInterface
         if ($job->action === SyncAction::Unpublish) {
             $response = $this->api->unpublish($from);
             if (!$response->success) {
-                throw new RuntimeException("API error removing redirect {$from}: {$response->message}");
+                throw new RuntimeException(esc_html("API error removing redirect {$from}: {$response->message}"));
             }
             return;
         }
 
         $to = (string) ($job->meta['to'] ?? $job->meta['destination'] ?? '');
         if ($to === '') {
-            throw new RuntimeException("Missing destination for redirect {$from}");
+            throw new RuntimeException(esc_html("Missing destination for redirect {$from}"));
         }
 
         $response = $this->api->createRedirect($from, $to, (int) ($job->meta['code'] ?? 301));
         if (!$response->success) {
-            throw new RuntimeException("API error publishing redirect {$from}: {$response->message}");
+            throw new RuntimeException(esc_html("API error publishing redirect {$from}: {$response->message}"));
         }
     }
 }

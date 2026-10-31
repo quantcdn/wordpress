@@ -6,6 +6,7 @@ namespace Quant\Sync\Handler;
 
 use Quant\Api\ContentApiInterface;
 use Quant\Sync\Exception\RedirectResponseException;
+use Quant\Sync\Exception\UnpublishedContentException;
 use Quant\Sync\Paths;
 use Quant\Sync\Publisher;
 use Quant\Sync\Renderer\RouteRenderer;
@@ -55,12 +56,18 @@ final class RoutePublishHandler implements HandlerInterface
             $rendered = $this->renderer->render($path, $publishAs, $job->type === SyncType::NotFound);
         } catch (RedirectResponseException $redirect) {
             if ($job->type === SyncType::Home || $job->type === SyncType::NotFound) {
-                throw new RuntimeException("Unexpected redirect while rendering {$path}: {$redirect->getMessage()}");
+                throw new RuntimeException(esc_html("Unexpected redirect while rendering {$path}: {$redirect->getMessage()}"));
             }
             $this->queue->push(new SyncJob(SyncType::Redirect, $redirect->from, SyncAction::Publish, [
                 'to' => $redirect->to,
                 'code' => $redirect->statusCode,
             ]));
+            return;
+        } catch (UnpublishedContentException $gone) {
+            if ($job->type === SyncType::Home) {
+                throw new RuntimeException(esc_html("The home page returned an error: {$gone->getMessage()}"));
+            }
+            $this->publisher->unpublish([$gone->path]);
             return;
         }
 
@@ -82,7 +89,7 @@ final class RoutePublishHandler implements HandlerInterface
     {
         $response = $this->api->uploadFile(Paths::normalise(strtok($path, '?') ?: $path), $file);
         if (!$response->success) {
-            throw new RuntimeException("API error uploading {$path}: {$response->message}");
+            throw new RuntimeException(esc_html("API error uploading {$path}: {$response->message}"));
         }
     }
 }

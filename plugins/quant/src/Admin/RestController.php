@@ -377,10 +377,10 @@ class RestController
     /**
      * @return array<string, mixed>
      */
-    public function processQueue(WP_REST_Request $request): array
+    public function processQueue(WP_REST_Request $request): array|WP_Error
     {
         if (!$this->settings->hasValidCredentials()) {
-            return ['success' => false, 'error' => __('Credentials not configured', 'quant'), 'processed' => 0, 'failed' => 0, 'remaining' => 0];
+            return new WP_Error('not_configured', __('Credentials are not configured. Open Settings and connect to Quant first.', 'quant'), ['status' => 400]);
         }
 
         $result = $this->processor->run((int) $request->get_param('limit'), 25);
@@ -421,7 +421,9 @@ class RestController
 
         return [
             'success' => $ok,
-            'message' => $ok ? __('Internal connectivity working', 'quant') : sprintf(__('HTTP %d response: %s', 'quant'), $result->status, substr(wp_strip_all_tags($result->body), 0, 100)),
+            'message' => $ok ? __('Internal connectivity working', 'quant') : sprintf(
+                /* translators: 1: HTTP status code, 2: start of the response body */
+                __('HTTP %1$d response: %2$s', 'quant'), $result->status, substr(wp_strip_all_tags($result->body), 0, 100)),
             'original_url' => $original,
             'adjusted_url' => $result->requestedUrl,
             'host_header' => $this->fetcher->hostHeader(),
@@ -493,6 +495,12 @@ class RestController
      */
     private function saveStaticConfig(array $input): void
     {
+        // On multisite, only network administrators choose where the server
+        // sends its own requests.
+        if (is_multisite() && !current_user_can('manage_network_options')) {
+            unset($input['webserver_url'], $input['webserver_host']);
+        }
+
         $sanitizers = [
             'webserver_url' => static fn($v): string => rtrim(esc_url_raw((string) $v), '/'),
             'webserver_host' => static fn($v): string => sanitize_text_field((string) $v),

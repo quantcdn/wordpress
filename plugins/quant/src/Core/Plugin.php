@@ -333,7 +333,9 @@ class Plugin
     {
         global $pagenow;
 
-        if ($pagenow === 'options-general.php' && ($_GET['page'] ?? '') === 'quant') {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect of an old bookmark.
+        $requested = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
+        if ($pagenow === 'options-general.php' && $requested === 'quant') {
             wp_safe_redirect(admin_url('admin.php?page=quant'));
             exit;
         }

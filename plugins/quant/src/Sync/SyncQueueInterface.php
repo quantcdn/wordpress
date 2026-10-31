@@ -53,7 +53,7 @@ interface SyncQueueInterface
      *
      * @return int Count of jobs reset
      */
-    public function recoverStale(int $olderThanSeconds = 600): int;
+    public function recoverStale(int $olderThanSeconds = 900): int;
 
     /**
      * Put fetched-but-unprocessed jobs back to pending.

@@ -34,7 +34,7 @@
     },
     "scripts": {
         "test": "phpunit",
-        "analyse": "phpstan analyse --memory-limit=1G",
+        "analyse": "phpstan analyse --memory-limit=2G",
         "lint:complexity": "phpmd src text phpmd.xml",
         "lint": [
             "@analyse",

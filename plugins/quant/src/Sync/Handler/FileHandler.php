@@ -44,7 +44,7 @@ final class FileHandler implements HandlerInterface
     {
         $result = $this->media->sync($attachmentId);
         if (!$result->success) {
-            throw new RuntimeException($result->message);
+            throw new RuntimeException(esc_html($result->message));
         }
     }
 
@@ -53,7 +53,7 @@ final class FileHandler implements HandlerInterface
         $failures = array_filter($this->themeAssets->syncActiveTheme(), static fn($r): bool => !$r->success);
         if ($failures !== []) {
             $first = reset($failures);
-            throw new RuntimeException(count($failures) . " theme assets failed, first: {$first->path}: {$first->message}");
+            throw new RuntimeException(esc_html(count($failures) . " theme assets failed, first: {$first->path}: {$first->message}"));
         }
     }
 
@@ -66,12 +66,12 @@ final class FileHandler implements HandlerInterface
         }
 
         if ($file === '' || !is_file($file)) {
-            throw new RuntimeException("File not found for {$url}");
+            throw new RuntimeException(esc_html("File not found for {$url}"));
         }
 
         $response = $this->api->uploadFile(Paths::normalise(strtok($url, '?') ?: $url), $file);
         if (!$response->success) {
-            throw new RuntimeException("API error uploading {$url}: {$response->message}");
+            throw new RuntimeException(esc_html("API error uploading {$url}: {$response->message}"));
         }
     }
 }

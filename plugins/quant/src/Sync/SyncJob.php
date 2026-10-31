@@ -45,6 +45,19 @@ final class SyncJob implements JsonSerializable
     }
 
     /**
+     * Identity of the work this job does, used to replace an older pending
+     * job for the same thing. Publish and unpublish share a key so the most
+     * recent request wins; a listing page number is part of the key.
+     */
+    public function dedupeKey(): string
+    {
+        $group = $this->action === SyncAction::Purge ? 'purge' : 'content';
+        $page = (int) ($this->meta['page'] ?? 1);
+
+        return md5($this->type->value . '|' . $this->objectId . '|' . $page . '|' . $group);
+    }
+
+    /**
      * Encode meta for storage. Empty meta is stored as NULL.
      */
     public function encodeMeta(): ?string

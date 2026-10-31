@@ -39,7 +39,7 @@ class InternalFetcher
         $response = wp_remote_get($url, $args);
 
         if (is_wp_error($response)) {
-            throw new RuntimeException("Unable to connect to local webserver at {$url}: " . $response->get_error_message());
+            throw new RuntimeException(esc_html("Unable to connect to local webserver at {$url}: " . $response->get_error_message()));
         }
 
         $location = wp_remote_retrieve_header($response, 'location');
@@ -131,10 +131,13 @@ class InternalFetcher
             'cookies' => [],
         ];
 
-        if (!empty($_SERVER['PHP_AUTH_USER'])) {
-            $args['headers']['Authorization'] = 'Basic ' . base64_encode(
-                $_SERVER['PHP_AUTH_USER'] . ':' . ($_SERVER['PHP_AUTH_PW'] ?? '')
-            );
+        // Pass basic auth through when the admin request carried it (sites behind a password).
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Credentials are forwarded verbatim; sanitising would change them.
+        $user = isset($_SERVER['PHP_AUTH_USER']) ? (string) wp_unslash($_SERVER['PHP_AUTH_USER']) : '';
+        if ($user !== '') {
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- As above.
+            $password = isset($_SERVER['PHP_AUTH_PW']) ? (string) wp_unslash($_SERVER['PHP_AUTH_PW']) : '';
+            $args['headers']['Authorization'] = 'Basic ' . base64_encode($user . ':' . $password);
         }
 
         /** This filter is documented in v2.0.0; it adjusts the request args used for internal rendering. */

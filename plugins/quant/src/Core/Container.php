@@ -46,7 +46,7 @@ class Container
             return $this->resolve($this->bindings[$key]);
         }
 
-        throw new RuntimeException("No binding found for: {$key}");
+        throw new RuntimeException(esc_html("No binding found for: {$key}"));
     }
 
     public function has(string $key): bool
@@ -79,7 +79,7 @@ class Container
         $reflector = new ReflectionClass($class);
 
         if (!$reflector->isInstantiable()) {
-            throw new RuntimeException("Class {$class} is not instantiable");
+            throw new RuntimeException(esc_html("Class {$class} is not instantiable"));
         }
 
         $constructor = $reflector->getConstructor();
@@ -99,7 +99,7 @@ class Container
                     continue;
                 }
                 throw new RuntimeException(
-                    "Cannot resolve parameter: {$param->getName()} in {$class}"
+                    esc_html("Cannot resolve parameter: {$param->getName()} in {$class}")
                 );
             }
 

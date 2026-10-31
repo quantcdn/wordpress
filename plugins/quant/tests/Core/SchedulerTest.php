@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Tests\Core;
 
 use Brain\Monkey;
+use Brain\Monkey\Actions;
 use Brain\Monkey\Functions;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
@@ -13,6 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Quant\Core\Scheduler;
 use Quant\Core\Settings;
+use Quant\Sync\DatabaseQueue;
 use Quant\Sync\JobProcessor;
 use Quant\Sync\QueueStatus;
 use Quant\Sync\Seeder;
@@ -105,14 +107,26 @@ final class SchedulerTest extends TestCase
     }
 
     #[Test]
-    public function it_runs_processing_soon_after_jobs_are_queued_unless_a_run_is_imminent(): void
+    public function it_schedules_a_one_off_run_and_spawns_cron_once_after_jobs_are_queued(): void
     {
-        Functions\when('wp_next_scheduled')->justReturn(time() + 600);
-        Functions\expect('wp_schedule_single_event')->once()->with(Mockery::type('int'), Scheduler::PROCESS_HOOK);
-        $this->scheduler()->ensureProcessing();
+        Functions\when('wp_next_scheduled')->justReturn(false);
+        Functions\when('wp_doing_cron')->justReturn(false);
+        Functions\expect('wp_schedule_single_event')->twice()->with(Mockery::type('int'), Scheduler::PROCESS_SOON_HOOK);
+        Actions\expectAdded('shutdown')->once()->with(\Mockery::type('array'), 100);
 
-        Functions\when('wp_next_scheduled')->justReturn(time() + 2);
+        $scheduler = $this->scheduler();
+        $scheduler->ensureProcessing();
+        $scheduler->ensureProcessing();
+    }
+
+    #[Test]
+    public function it_does_not_schedule_a_second_one_off_run_or_spawn_inside_cron(): void
+    {
+        Functions\when('wp_next_scheduled')->alias(static fn(string $hook) => $hook === Scheduler::PROCESS_SOON_HOOK ? time() : false);
+        Functions\when('wp_doing_cron')->justReturn(true);
         Functions\expect('wp_schedule_single_event')->never();
+        Actions\expectAdded('shutdown')->never();
+
         $this->scheduler()->ensureProcessing();
     }
 
@@ -121,9 +135,46 @@ final class SchedulerTest extends TestCase
     {
         $this->processor->shouldReceive('run')->once()->with(25, 40)->andReturn(new SyncResult(25, 0));
         $this->queue->shouldReceive('getStatus')->once()->andReturn(new QueueStatus(5, 0, 0, 30));
-        Functions\expect('wp_schedule_single_event')->once()->with(Mockery::type('int'), Scheduler::PROCESS_HOOK);
+        Functions\expect('wp_schedule_single_event')->once()->with(Mockery::type('int'), Scheduler::PROCESS_SOON_HOOK);
 
         $this->scheduler()->processQueue();
+    }
+
+    #[Test]
+    public function it_retries_due_jobs_every_run_and_prunes_once_a_day(): void
+    {
+        $wpdb = Mockery::mock(\wpdb::class);
+        $wpdb->prefix = 'wp_';
+        $wpdb->rows_affected = 0;
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static fn(string $sql): string => $sql);
+        $queries = [];
+        $wpdb->shouldReceive('query')->andReturnUsing(static function (string $sql) use (&$queries): int {
+            $queries[] = $sql;
+            return 0;
+        });
+        $queue = new DatabaseQueue($wpdb);
+
+        $this->processor->shouldReceive('run')->twice()->andReturn(new SyncResult(0, 0));
+
+        $transient = false;
+        Functions\when('get_transient')->alias(static function () use (&$transient) {
+            return $transient;
+        });
+        Functions\expect('set_transient')->once()->with('quant_queue_maintenance', 1, Mockery::type('int'))->andReturnUsing(static function () use (&$transient): bool {
+            $transient = 1;
+            return true;
+        });
+
+        $settings = $this->mockSettings();
+        $settings->shouldReceive('getSchedule')->andReturn(Settings::SCHEDULE_DEFAULTS);
+        $scheduler = new Scheduler($settings, $queue, $this->processor, $this->seeder);
+        $scheduler->processQueue();
+        $scheduler->processQueue();
+
+        $retries = array_filter($queries, static fn(string $q): bool => str_contains($q, 'attempts < %d'));
+        $prunes = array_filter($queries, static fn(string $q): bool => str_contains($q, 'DELETE old FROM'));
+        $this->assertCount(2, $retries);
+        $this->assertCount(1, $prunes);
     }
 
     #[Test]
@@ -144,7 +195,8 @@ final class SchedulerTest extends TestCase
         $this->seeder->shouldReceive('seed')->once()->with(['home', 'post'])->andReturn(['queued' => 3, 'types' => []]);
         $this->queue->shouldReceive('push')->once()->with(Mockery::on(static fn(SyncJob $j): bool => $j->objectId === '/robots.txt'));
         Functions\when('wp_next_scheduled')->justReturn(false);
-        Functions\expect('wp_schedule_single_event')->once();
+        Functions\when('wp_doing_cron')->justReturn(true);
+        Functions\expect('wp_schedule_single_event')->once()->with(Mockery::type('int'), Scheduler::PROCESS_SOON_HOOK);
 
         $this->scheduler(['enabled' => true, 'types' => ['home', 'post'], 'custom_routes' => ['robots.txt']])->runScheduledSync();
     }

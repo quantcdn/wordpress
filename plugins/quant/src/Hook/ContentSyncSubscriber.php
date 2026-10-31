@@ -54,6 +54,9 @@ class ContentSyncSubscriber
     /** @var array<int, array<string>> Term paths captured before deletion */
     private array $termPaths = [];
 
+    /** @var array<int, array<int, array{0: int, 1: string}>> Terms a post had before the update: [term_id, taxonomy] */
+    private array $previousTerms = [];
+
     public function __construct(
         private readonly SyncQueueInterface $queue,
         private readonly Settings $settings
@@ -64,7 +67,8 @@ class ContentSyncSubscriber
     {
         add_action('pre_post_update', [$this, 'onPrePostUpdate'], 10, 2);
         add_action('wp_trash_post', [$this, 'onPrePostUpdate'], 10, 1);
-        add_action('save_post', [$this, 'onPostSave'], 1000, 3);
+        // wp_after_insert_post runs once the block editor has saved terms and meta.
+        add_action('wp_after_insert_post', [$this, 'onAfterInsertPost'], 1000, 2);
         add_action('delete_post', [$this, 'onPostDelete'], 10, 2);
         add_action('transition_post_status', [$this, 'onTransitionPostStatus'], 10, 3);
 
@@ -102,7 +106,18 @@ class ContentSyncSubscriber
             if (is_string($permalink)) {
                 $this->previousPaths[$postId] = Paths::normalise(Paths::fromUrl($permalink));
             }
+            $this->previousTerms[$postId] = $this->termRefs($post);
         }
+    }
+
+    public function onAfterInsertPost(int $postId, ?WP_Post $post = null): void
+    {
+        $post = $post ?? get_post($postId);
+        if (!$post instanceof WP_Post) {
+            return;
+        }
+
+        $this->onPostSave($postId, $post, true);
     }
 
     public function onPostSave(int $postId, WP_Post $post, bool $update): void
@@ -303,30 +318,47 @@ class ContentSyncSubscriber
             return;
         }
 
-        $this->queue->push(new SyncJob(SyncType::Home, '/', SyncAction::Publish));
+        $jobs = [new SyncJob(SyncType::Home, '/', SyncAction::Publish)];
 
-        foreach (get_object_taxonomies($post, 'objects') as $taxonomy) {
-            if ($this->ignoredTaxonomy($taxonomy->name)) {
-                continue;
-            }
-            $terms = get_the_terms($post, $taxonomy->name);
-            foreach (is_array($terms) ? $terms : [] as $term) {
-                $this->queue->push(new SyncJob(SyncType::Taxonomy, (string) $term->term_id, SyncAction::Publish, [
-                    'taxonomy' => $taxonomy->name,
-                    'page' => 1,
-                ]));
-            }
+        $terms = array_merge($this->previousTerms[$post->ID] ?? [], $this->termRefs($post));
+        unset($this->previousTerms[$post->ID]);
+        foreach (array_unique($terms, SORT_REGULAR) as [$termId, $taxonomy]) {
+            $jobs[] = new SyncJob(SyncType::Taxonomy, (string) $termId, SyncAction::Publish, ['taxonomy' => $taxonomy, 'page' => 1]);
         }
 
         $archive = get_post_type_archive_link($post->post_type);
-        if (is_string($archive)) {
-            $this->queue->push(new SyncJob(SyncType::Archive, Paths::normalise(Paths::fromUrl($archive)), SyncAction::Publish, ['post_type' => $post->post_type]));
+        $archivePath = is_string($archive) ? Paths::normalise(Paths::fromUrl($archive)) : '/';
+        if ($archivePath !== '/') {
+            $jobs[] = new SyncJob(SyncType::Archive, $archivePath, SyncAction::Publish, ['post_type' => $post->post_type]);
         }
+
+        $this->queue->pushBatch($jobs);
 
         if ($post->post_type === 'post' && (int) $post->post_author > 0) {
             $author = get_author_posts_url((int) $post->post_author);
             $this->queue->push(new SyncJob(SyncType::Author, Paths::normalise(Paths::fromUrl($author)), SyncAction::Publish, ['user' => (int) $post->post_author]));
         }
+    }
+
+    /**
+     * Public terms of a post as [term_id, taxonomy] pairs.
+     *
+     * @return array<int, array{0: int, 1: string}>
+     */
+    private function termRefs(WP_Post $post): array
+    {
+        $refs = [];
+        foreach (get_object_taxonomies($post, 'names') as $taxonomy) {
+            if ($this->ignoredTaxonomy($taxonomy)) {
+                continue;
+            }
+            $terms = get_the_terms($post, $taxonomy);
+            foreach (is_array($terms) ? $terms : [] as $term) {
+                $refs[] = [(int) $term->term_id, $taxonomy];
+            }
+        }
+
+        return $refs;
     }
 
     /**

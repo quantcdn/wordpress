@@ -13,16 +13,11 @@ use Quant\Core\Settings;
  * Shortcodes: `[quant_search page="id"]` and
  * `[quant_search_autocomplete page="id" placeholder="Search" show_summary="1"]`.
  * Blocks `quant/search` and `quant/search-autocomplete` render the same output.
- * The InstantSearch and Autocomplete libraries load from jsDelivr, as the
- * Drupal module does, so the static copy works without WordPress.
+ * The InstantSearch and Autocomplete libraries are bundled with the plugin's
+ * scripts, so the static copy works without WordPress or a third-party CDN.
  */
 class Frontend
 {
-    private const INSTANTSEARCH_CSS = 'https://cdn.jsdelivr.net/npm/instantsearch.css@7.4.5/themes/algolia-min.css';
-    private const ALGOLIA_LITE_JS = 'https://cdn.jsdelivr.net/npm/algoliasearch@4.24.0/dist/algoliasearch-lite.umd.js';
-    private const INSTANTSEARCH_JS = 'https://cdn.jsdelivr.net/npm/instantsearch.js@4.75.0/dist/instantsearch.production.min.js';
-    private const AUTOCOMPLETE_JS = 'https://cdn.jsdelivr.net/npm/@algolia/autocomplete-js@1.17.7/dist/umd/index.production.js';
-    private const AUTOCOMPLETE_CSS = 'https://cdn.jsdelivr.net/npm/@algolia/autocomplete-theme-classic@1.17.7/dist/theme.min.css';
 
     private const INDEX_TRANSIENT = 'quant_search_index_config';
 
@@ -49,7 +44,9 @@ class Frontend
             return;
         }
 
+        // @phpstan-ignore-next-line argument.type (api_version is an int in WP_Block_Type)
         register_block_type('quant/search', [
+            'api_version' => 3,
             'title' => __('Quant Search', 'quant'),
             'category' => 'widgets',
             'icon' => 'search',
@@ -58,7 +55,9 @@ class Frontend
             'editor_script' => 'quant-search-blocks',
         ]);
 
+        // @phpstan-ignore-next-line argument.type (api_version is an int in WP_Block_Type)
         register_block_type('quant/search-autocomplete', [
+            'api_version' => 3,
             'title' => __('Quant Search Autocomplete', 'quant'),
             'category' => 'widgets',
             'icon' => 'search',
@@ -123,13 +122,18 @@ class Frontend
         $config = [
             'index' => $index,
             'filters' => $this->pages->filterString($page),
-            'searchPath' => $page['route'],
+            'searchPath' => home_url($page['route']),
             'placeholder' => (string) $atts['placeholder'],
             'showSummary' => filter_var($atts['show_summary'], FILTER_VALIDATE_BOOLEAN),
             'queryParam' => 'keys',
         ];
 
-        return sprintf('<div class="quant-search-autocomplete" data-quant-autocomplete="%s"></div>', esc_attr((string) wp_json_encode($config)));
+        // The fallback form works without JavaScript; the script replaces it.
+        return sprintf(
+            '<div class="quant-search-autocomplete" data-quant-autocomplete="%s">%s</div>',
+            esc_attr((string) wp_json_encode($config)),
+            $this->fallbackForm(home_url($page['route']), (string) $atts['placeholder'])
+        );
     }
 
     /**
@@ -152,7 +156,8 @@ class Frontend
             $action,
             esc_html__('Search for:', 'quant'),
             esc_attr__('Search …', 'quant'),
-            esc_attr((string) ($_GET['keys'] ?? '')),
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public search term echoed back into the search box.
+            esc_attr(isset($_GET['keys']) && is_string($_GET['keys']) ? sanitize_text_field(wp_unslash($_GET['keys'])) : ''),
             esc_html__('Search', 'quant')
         );
     }
@@ -303,11 +308,35 @@ class Frontend
 
         return $facetMarkup
             . '<div class="quant-search__content">'
-            . (!empty($display['display_search']) ? '<div class="quant-search__box" data-quant-searchbox></div>' : '')
+            . (!empty($display['display_search'])
+                ? '<div class="quant-search__box" data-quant-searchbox>' . $this->fallbackForm(home_url($page['route']), __('Search…', 'quant')) . '</div>'
+                : '')
             . (!empty($display['display_stats']) ? '<div class="quant-search__stats" data-quant-stats></div>' : '')
             . '<div class="quant-search__hits" data-quant-hits></div>'
             . (!empty($display['pagination_enabled']) ? '<div class="quant-search__pagination" data-quant-pagination></div>' : '')
             . '</div>';
+    }
+
+    /**
+     * A plain search form for visitors without JavaScript or when the
+     * search libraries fail to load. Submits `keys` to the search page.
+     */
+    private function fallbackForm(string $action, string $placeholder): string
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public search term echoed back into the search box.
+        $keys = isset($_GET['keys']) && is_string($_GET['keys']) ? sanitize_text_field(wp_unslash($_GET['keys'])) : '';
+
+        return sprintf(
+            '<form role="search" method="get" class="quant-search__fallback" action="%s">'
+            . '<label><span class="screen-reader-text">%s</span>'
+            . '<input type="search" name="keys" value="%s" placeholder="%s" /></label>'
+            . '<button type="submit">%s</button></form>',
+            esc_url($action),
+            esc_html__('Search for:', 'quant'),
+            esc_attr($keys),
+            esc_attr($placeholder),
+            esc_html__('Search', 'quant')
+        );
     }
 
     private function unavailable(string $message): string
@@ -321,20 +350,25 @@ class Frontend
 
     private function enqueueSearchAssets(): void
     {
-        wp_enqueue_style('quant-instantsearch', self::INSTANTSEARCH_CSS, [], '7.4.5');
-        wp_enqueue_style('quant-search', QUANT_PLUGIN_URL . 'assets/build/search.css', ['quant-instantsearch'], QUANT_VERSION);
-        wp_enqueue_script('quant-algoliasearch', self::ALGOLIA_LITE_JS, [], '4.24.0', true);
-        wp_enqueue_script('quant-instantsearch', self::INSTANTSEARCH_JS, ['quant-algoliasearch'], '4.75.0', true);
-        wp_enqueue_script('quant-search', QUANT_PLUGIN_URL . 'assets/build/search.js', ['quant-instantsearch'], QUANT_VERSION, true);
+        $this->enqueueBundle('quant-search', 'search');
     }
 
     private function enqueueAutocompleteAssets(): void
     {
-        wp_enqueue_style('quant-autocomplete-theme', self::AUTOCOMPLETE_CSS, [], '1.17.7');
-        wp_enqueue_style('quant-search', QUANT_PLUGIN_URL . 'assets/build/search.css', [], QUANT_VERSION);
-        wp_enqueue_script('quant-algoliasearch', self::ALGOLIA_LITE_JS, [], '4.24.0', true);
-        wp_enqueue_script('quant-autocomplete', self::AUTOCOMPLETE_JS, ['quant-algoliasearch'], '1.17.7', true);
-        wp_enqueue_script('quant-search-autocomplete', QUANT_PLUGIN_URL . 'assets/build/autocomplete.js', ['quant-autocomplete'], QUANT_VERSION, true);
+        $this->enqueueBundle('quant-search-autocomplete', 'autocomplete');
+    }
+
+    /**
+     * Enqueue a bundle built by wp-scripts. The InstantSearch and Autocomplete
+     * libraries are bundled with it, so nothing loads from a third-party CDN.
+     */
+    private function enqueueBundle(string $handle, string $name): void
+    {
+        $assetFile = QUANT_PLUGIN_DIR . "assets/build/{$name}.asset.php";
+        $asset = file_exists($assetFile) ? require $assetFile : ['dependencies' => [], 'version' => QUANT_VERSION];
+
+        wp_enqueue_style($handle, QUANT_PLUGIN_URL . "assets/build/{$name}.css", [], $asset['version']);
+        wp_enqueue_script($handle, QUANT_PLUGIN_URL . "assets/build/{$name}.js", $asset['dependencies'], $asset['version'], true);
     }
 
     private function registerBlockEditorScript(): void

@@ -40,7 +40,7 @@ class JobProcessor
             }
         }
 
-        throw new RuntimeException("No handler for {$job->type->value} {$job->action->value}");
+        throw new RuntimeException(esc_html("No handler for {$job->type->value} {$job->action->value}"));
     }
 
     /**
@@ -90,7 +90,8 @@ class JobProcessor
 
             return true;
         } catch (Throwable $e) {
-            $message = $e->getMessage() !== '' ? $e->getMessage() : get_class($e);
+            // Messages are HTML-escaped when thrown; store them as plain text.
+            $message = $e->getMessage() !== '' ? html_entity_decode($e->getMessage(), ENT_QUOTES | ENT_HTML5) : get_class($e);
             $this->queue->markFailed($job->id, $message);
             $errors[] = "{$job->type->value} {$job->objectId}: {$message}";
 

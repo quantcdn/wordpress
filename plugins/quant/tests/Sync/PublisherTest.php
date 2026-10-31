@@ -66,6 +66,7 @@ final class PublisherTest extends TestCase
         $this->queue->shouldReceive('hasRecentJob')->once()->with(SyncType::Route, '/blog/page/2', SyncAction::Publish, 600)->andReturn(false);
         $this->queue->shouldReceive('push')->once()->with(Mockery::on(static fn(SyncJob $job): bool =>
             $job->type === SyncType::Route && $job->objectId === '/blog/page/2' && $job->meta === ['discovered_from' => '/blog']));
+        $this->api->shouldReceive('purge')->once()->with(['/blog'])->andReturn(ApiResponse::success());
 
         $this->publisher()->publish($content);
     }
@@ -77,6 +78,7 @@ final class PublisherTest extends TestCase
         $this->api->shouldReceive('publish')->once()->andReturn(ApiResponse::success());
         $this->queue->shouldReceive('hasRecentJob')->once()->with(SyncType::Route, '/blog/page/3', SyncAction::Publish, 600)->andReturn(true);
         $this->queue->shouldNotReceive('push');
+        $this->api->shouldReceive('purge')->once()->andReturn(ApiResponse::success());
 
         $this->publisher()->publish($content);
     }
@@ -87,6 +89,7 @@ final class PublisherTest extends TestCase
         $content = new RenderedContent('/blog', '<link rel="next" href="/blog/page/2/">');
         $this->api->shouldReceive('publish')->once()->andReturn(ApiResponse::success());
         $this->queue->shouldNotReceive('hasRecentJob');
+        $this->api->shouldReceive('purge')->once()->andReturn(ApiResponse::success());
 
         $this->publisher(['follow_links' => false])->publish($content);
     }
@@ -95,6 +98,7 @@ final class PublisherTest extends TestCase
     public function it_throws_when_the_api_rejects_the_content(): void
     {
         $this->api->shouldReceive('publish')->once()->andReturn(ApiResponse::error('Invalid credentials', 403));
+        $this->api->shouldNotReceive('purge');
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('API error publishing /x: Invalid credentials');
@@ -107,6 +111,7 @@ final class PublisherTest extends TestCase
     {
         $this->api->shouldReceive('unpublish')->once()->with('/a')->andReturn(ApiResponse::success());
         $this->api->shouldReceive('unpublish')->once()->with('/b')->andReturn(ApiResponse::error('nope'));
+        $this->api->shouldNotReceive('purge');
 
         try {
             $this->publisher()->unpublish(['/a', '/b', '/a']);
@@ -114,5 +119,38 @@ final class PublisherTest extends TestCase
         } catch (RuntimeException $e) {
             $this->assertSame('API error unpublishing: /b: nope', $e->getMessage());
         }
+    }
+
+    #[Test]
+    public function it_purges_both_slash_variants_after_a_publish_even_if_the_purge_fails(): void
+    {
+        $this->api->shouldReceive('publish')->once()->andReturn(ApiResponse::success());
+        // The API client expands /about into /about and /about/.
+        $this->api->shouldReceive('purge')->once()->with(['/about'])->andReturn(ApiResponse::error('purge down', 500));
+
+        $this->publisher(['follow_links' => false])->publish(new RenderedContent('/about', '<p>x</p>'));
+        $this->addToAssertionCount(1);
+    }
+
+    #[Test]
+    public function it_purges_after_unpublishing(): void
+    {
+        $this->api->shouldReceive('unpublish')->twice()->andReturn(ApiResponse::success());
+        $this->api->shouldReceive('purge')->once()->with(['/a', '/b'])->andReturn(ApiResponse::success());
+
+        $this->publisher()->unpublish(['/a', '/b', '/a']);
+    }
+
+    #[Test]
+    public function it_skips_the_purge_when_the_filter_says_so(): void
+    {
+        \Brain\Monkey\Filters\expectApplied('quant_purge_after_publish')->twice()->andReturn(false);
+        $this->api->shouldReceive('publish')->once()->andReturn(ApiResponse::success());
+        $this->api->shouldReceive('unpublish')->once()->andReturn(ApiResponse::success());
+        $this->api->shouldNotReceive('purge');
+
+        $publisher = $this->publisher(['follow_links' => false]);
+        $publisher->publish(new RenderedContent('/about', '<p>x</p>'));
+        $publisher->unpublish(['/about']);
     }
 }

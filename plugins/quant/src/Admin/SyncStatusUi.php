@@ -96,7 +96,8 @@ class SyncStatusUi
      */
     public function handleSyncPost(): void
     {
-        $postId = (int) ($_GET['post'] ?? 0);
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified by check_admin_referer() on the next line.
+        $postId = isset($_GET['post']) ? absint(wp_unslash($_GET['post'])) : 0;
         check_admin_referer('quant_sync_post_' . $postId);
 
         if (!current_user_can('manage_options')) {

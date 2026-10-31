@@ -127,12 +127,10 @@ final class V1Migrator
             delete_option($option);
         }
 
-        $this->wpdb->query(
-            $this->wpdb->prepare(
-                "DELETE FROM {$this->wpdb->options} WHERE option_name LIKE %s",
-                $this->wpdb->esc_like('batch_quant_') . '%'
-            )
-        );
+        $wpdb = $this->wpdb;
+        $like = $wpdb->esc_like('batch_quant_') . '%';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One-off cleanup of 1.x batch rows.
+        $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $like));
 
         return true;
     }

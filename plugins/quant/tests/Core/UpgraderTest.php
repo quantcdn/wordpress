@@ -26,6 +26,9 @@ final class UpgraderTest extends TestCase
     private array $options = [];
     private Upgrader $upgrader;
 
+    /** @var array<string> */
+    private array $clearedHooks = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -37,6 +40,10 @@ final class UpgraderTest extends TestCase
             return true;
         });
         Functions\when('__')->returnArg();
+        Functions\when('wp_clear_scheduled_hook')->alias(function (string $hook): int {
+            $this->clearedHooks[] = $hook;
+            return 0;
+        });
 
         // Schema already current, so Activator::maybeUpgrade() is a no-op without a database.
         $this->options['quant_db_version'] = Activator::DB_VERSION;
@@ -80,6 +87,27 @@ final class UpgraderTest extends TestCase
         $this->assertSame('acme', $this->options[Settings::OPTION_CREDENTIALS]['organization']);
         $this->assertSame('success', $this->options[Upgrader::OPTION_NOTICE]['type']);
         $this->assertTrue($this->options['quant_migration_complete']);
+    }
+
+    #[Test]
+    public function it_clears_the_orphaned_1x_cron_event_on_upgrade(): void
+    {
+        $this->options[Upgrader::OPTION_VERSION] = '1.6.0';
+        $this->options[V1Detector::V1_SETTINGS_OPTION] = ['api_account' => 'acme', 'api_project' => 'site', 'api_token' => 'tok'];
+
+        $this->upgrader->maybeUpgrade();
+
+        $this->assertContains('quant_cronjob', $this->clearedHooks);
+    }
+
+    #[Test]
+    public function it_leaves_cron_alone_when_the_version_is_current(): void
+    {
+        $this->options[Upgrader::OPTION_VERSION] = QUANT_VERSION;
+
+        $this->upgrader->maybeUpgrade();
+
+        $this->assertSame([], $this->clearedHooks);
     }
 
     #[Test]

@@ -38,7 +38,7 @@ final class UnpublishHandler implements HandlerInterface
         }
 
         if ($paths === []) {
-            throw new RuntimeException("Cannot determine the path to unpublish for {$job->type->value} #{$job->objectId}");
+            throw new RuntimeException(esc_html("Cannot determine the path to unpublish for {$job->type->value} #{$job->objectId}"));
         }
 
         $this->publisher->unpublish(array_map([Paths::class, 'normalise'], $paths));

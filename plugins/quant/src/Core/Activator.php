@@ -8,7 +8,7 @@ use Quant\Sync\DatabaseQueue;
 
 class Activator
 {
-    public const DB_VERSION = '2.0.2';
+    public const DB_VERSION = '2.0.3';
 
     public static function activate(): void
     {
@@ -49,13 +49,15 @@ class Activator
             error_message TEXT NULL,
             meta LONGTEXT NULL,
             claim VARCHAR(36) NULL,
+            dedupe_key CHAR(32) NULL,
             created_at DATETIME NOT NULL,
             processed_at DATETIME NULL,
             PRIMARY KEY  (id),
             KEY idx_status (status),
             KEY idx_type_object (type, object_id(191)),
             KEY idx_job_id (job_id),
-            KEY idx_claim (claim)
+            KEY idx_claim (claim),
+            KEY idx_dedupe (dedupe_key, status)
         ) {$charsetCollate};";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';

@@ -117,4 +117,47 @@ final class PathsTest extends TestCase
             rmdir($dir);
         }
     }
+
+    #[Test]
+    public function it_allows_only_public_static_file_names(): void
+    {
+        foreach (['/wp-content/uploads/a.jpg', '/wp-content/themes/t/style.css', '/robots.txt', '/doc.PDF', '/sitemap.xml', '/fonts/x.woff2'] as $ok) {
+            $this->assertTrue(Paths::isPublicFileName($ok), $ok);
+        }
+
+        foreach ([
+            '/wp-config.php', '/index.php', '/x.phtml', '/wp-config-sample.php', '/wp-config.bak.txt',
+            '/.env', '/.htaccess', '/wp-content/.git/config.json', '/wp-content/plugins/p/composer.json',
+            '/package.json', '/wp-content/debug.log', '/backup.sql', '/noextension',
+        ] as $blocked) {
+            $this->assertFalse(Paths::isPublicFileName($blocked), $blocked);
+        }
+    }
+
+    #[Test]
+    public function it_lets_a_filter_change_the_allowed_extensions(): void
+    {
+        \Brain\Monkey\Filters\expectApplied('quant_public_file_extensions')->andReturnUsing(static fn(array $ext): array => array_merge($ext, ['log']));
+
+        $this->assertTrue(Paths::isPublicFileName('/wp-content/app.log'));
+    }
+
+    #[Test]
+    public function it_refuses_to_resolve_private_files_that_exist(): void
+    {
+        $dir = ABSPATH . 'wp-content/test-' . uniqid();
+        mkdir($dir, 0777, true);
+        file_put_contents($dir . '/wp-config.php', '<?php');
+        file_put_contents($dir . '/.env', 'SECRET=1');
+        $relative = substr($dir, strlen(rtrim(ABSPATH, '/')));
+
+        try {
+            $this->assertNull(Paths::localFile($relative . '/wp-config.php'));
+            $this->assertNull(Paths::localFile($relative . '/.env'));
+        } finally {
+            unlink($dir . '/wp-config.php');
+            unlink($dir . '/.env');
+            rmdir($dir);
+        }
+    }
 }

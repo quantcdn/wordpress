@@ -27,7 +27,7 @@ final class PurgeHandler implements HandlerInterface
         $response = $this->api->purge(array_values(array_filter($paths, 'is_string')));
 
         if (!$response->success) {
-            throw new RuntimeException($response->message);
+            throw new RuntimeException(esc_html($response->message));
         }
     }
 }

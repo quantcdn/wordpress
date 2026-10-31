@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Quant\Core;
 
+use Quant\Sync\DatabaseQueue;
 use Quant\Sync\JobProcessor;
 use Quant\Sync\Seeder;
+use Quant\Sync\SyncAction;
+use Quant\Sync\SyncJob;
 use Quant\Sync\SyncQueueInterface;
+use Quant\Sync\SyncType;
 
 /**
  * WP-Cron integration: drains the queue in the background and runs the
@@ -15,6 +19,11 @@ use Quant\Sync\SyncQueueInterface;
 class Scheduler
 {
     public const PROCESS_HOOK = 'quant_process_queue';
+    /** One-off run scheduled right after jobs are queued (a distinct hook, so WP-Cron does not treat it as a duplicate of the recurring event). */
+    public const PROCESS_SOON_HOOK = 'quant_process_queue_soon';
+    private const MAINTENANCE_TRANSIENT = 'quant_queue_maintenance';
+
+    private bool $spawnRequested = false;
     public const SCHEDULED_SYNC_HOOK = 'quant_scheduled_sync';
     public const INTERVAL = 'quant_every_minute';
 
@@ -30,6 +39,7 @@ class Scheduler
     {
         add_filter('cron_schedules', [$this, 'addSchedules']);
         add_action(self::PROCESS_HOOK, [$this, 'processQueue']);
+        add_action(self::PROCESS_SOON_HOOK, [$this, 'processQueue']);
         add_action(self::SCHEDULED_SYNC_HOOK, [$this, 'runScheduledSync']);
         add_action('quant_jobs_queued', [$this, 'ensureProcessing']);
         add_action('init', [$this, 'ensureSchedules'], 20);
@@ -80,12 +90,22 @@ class Scheduler
      */
     public function ensureProcessing(): void
     {
-        $next = wp_next_scheduled(self::PROCESS_HOOK);
-        if ($next && $next <= time() + 5) {
-            return;
+        if (!wp_next_scheduled(self::PROCESS_SOON_HOOK)) {
+            wp_schedule_single_event(time(), self::PROCESS_SOON_HOOK);
         }
 
-        wp_schedule_single_event(time(), self::PROCESS_HOOK);
+        if (!$this->spawnRequested && !wp_doing_cron() && !(defined('DISABLE_WP_CRON') && DISABLE_WP_CRON)) {
+            $this->spawnRequested = true;
+            add_action('shutdown', [$this, 'spawnCron'], 100);
+        }
+    }
+
+    /**
+     * Start WP-Cron in the background so queued jobs run without waiting for the next visit.
+     */
+    public function spawnCron(): void
+    {
+        spawn_cron();
     }
 
     public function processQueue(): void
@@ -93,6 +113,8 @@ class Scheduler
         if (!$this->settings->hasValidCredentials()) {
             return;
         }
+
+        $this->maintain();
 
         /** This filter is documented in v2.0.0; it sets how many jobs one cron run processes. */
         $limit = (int) apply_filters('quant_cron_batch_size', 25);
@@ -102,7 +124,24 @@ class Scheduler
         $result = $this->processor->run($limit, $budget);
 
         if ($result->processed + $result->failed >= $limit && $this->queue->getStatus()->pending > 0) {
-            wp_schedule_single_event(time() + 5, self::PROCESS_HOOK);
+            wp_schedule_single_event(time(), self::PROCESS_SOON_HOOK);
+        }
+    }
+
+    /**
+     * Retry failed jobs with backoff, and prune old rows once a day.
+     */
+    private function maintain(): void
+    {
+        if (!$this->queue instanceof DatabaseQueue) {
+            return;
+        }
+
+        $this->queue->retryDue();
+
+        if (get_transient(self::MAINTENANCE_TRANSIENT) === false) {
+            set_transient(self::MAINTENANCE_TRANSIENT, 1, DAY_IN_SECONDS);
+            $this->queue->pruneCompleted();
         }
     }
 
@@ -117,7 +156,7 @@ class Scheduler
         $this->seeder->seed($types);
 
         foreach ($schedule['custom_routes'] as $route) {
-            $this->queue->push(new \Quant\Sync\SyncJob(\Quant\Sync\SyncType::CustomRoute, '/' . ltrim($route, '/'), \Quant\Sync\SyncAction::Publish));
+            $this->queue->push(new SyncJob(SyncType::CustomRoute, '/' . ltrim($route, '/'), SyncAction::Publish));
         }
 
         $this->ensureProcessing();

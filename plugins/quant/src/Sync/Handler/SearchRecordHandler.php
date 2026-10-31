@@ -42,7 +42,7 @@ final class SearchRecordHandler implements HandlerInterface
 
         $response = $this->api->sendSearchRecords([$record]);
         if (!$response->success) {
-            throw new RuntimeException("API error indexing {$record['url']}: {$response->message}");
+            throw new RuntimeException(esc_html("API error indexing {$record['url']}: {$response->message}"));
         }
     }
 }

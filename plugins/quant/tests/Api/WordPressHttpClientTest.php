@@ -78,14 +78,15 @@ final class WordPressHttpClientTest extends TestCase
     }
 
     #[Test]
-    public function it_builds_a_multipart_body_for_uploads(): void
+    public function it_builds_a_multipart_body(): void
     {
         $file = tempnam(sys_get_temp_dir(), 'quant') . '.css';
         file_put_contents($file, 'body{color:red}');
         $client = WordPressHttpClient::withDefaults(30, true);
 
         try {
-            $response = $client->upload('https://api.test/v1', ['Quant-File-Url' => '/style.css'], $file);
+            $method = new \ReflectionMethod($client, 'uploadBuffered');
+            $response = $method->invoke($client, 'https://api.test/v1', ['Quant-File-Url' => '/style.css'], $file, 'data');
         } finally {
             unlink($file);
         }
@@ -97,6 +98,61 @@ final class WordPressHttpClientTest extends TestCase
         $this->assertStringStartsWith('multipart/form-data; boundary=quantabcdef1234567890', $args['headers']['Content-Type']);
         $this->assertSame('/style.css', $args['headers']['Quant-File-Url']);
         $this->assertStringContainsString("--quantabcdef1234567890\r\nContent-Disposition: form-data; name=\"data\"; filename=\"" . basename($file) . "\"\r\nContent-Type: text/css\r\n\r\nbody{color:red}\r\n--quantabcdef1234567890--\r\n", $args['body']);
+    }
+
+    #[Test]
+    public function it_uploads_through_the_wordpress_http_api(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'quant') . '.css';
+        file_put_contents($file, 'body{color:blue}');
+        Functions\when('wp_convert_hr_to_bytes')->justReturn(-1);
+        Functions\when('wp_raise_memory_limit')->justReturn(false);
+
+        try {
+            $response = WordPressHttpClient::withDefaults(30, true)->upload('https://api.test/v1', ['Quant-File-Url' => '/a.css'], $file);
+        } finally {
+            unlink($file);
+        }
+
+        $this->assertSame(201, $response['code']);
+        $this->assertStringContainsString('body{color:blue}', $this->captured['args']['body']);
+    }
+
+    #[Test]
+    public function it_refuses_a_file_over_the_upload_limit_without_a_request(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'quant');
+        file_put_contents($file, str_repeat('x', 2048));
+        Functions\when('apply_filters')->alias(static fn(string $hook, $value) => $hook === 'quant_max_upload_bytes' ? 1024 : $value);
+
+        try {
+            $response = WordPressHttpClient::withDefaults()->upload('https://api.test/v1', [], $file);
+        } finally {
+            unlink($file);
+        }
+
+        $this->assertSame(0, $response['code']);
+        $this->assertStringContainsString('upload limit', $response['error']);
+        $this->assertArrayNotHasKey('args', $this->captured);
+    }
+
+    #[Test]
+    public function it_refuses_a_file_that_does_not_fit_in_php_memory(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'quant');
+        file_put_contents($file, str_repeat('x', 4096));
+        Functions\when('wp_raise_memory_limit')->justReturn(false);
+        Functions\when('wp_convert_hr_to_bytes')->justReturn(memory_get_usage(true) + 1024);
+
+        try {
+            $response = WordPressHttpClient::withDefaults()->upload('https://api.test/v1', [], $file);
+        } finally {
+            unlink($file);
+        }
+
+        $this->assertSame(0, $response['code']);
+        $this->assertStringContainsString('Not enough PHP memory', $response['error']);
+        $this->assertArrayNotHasKey('args', $this->captured);
     }
 
     #[Test]

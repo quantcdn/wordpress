@@ -20,8 +20,14 @@ final class DatabaseQueue implements SyncQueueInterface
     private const STATUS_FAILED = 'failed';
     private const STATUS_COMPLETED = 'completed';
 
-    private const COLUMNS = 'job_id, type, object_id, action, status, attempts, created_at, meta';
-    private const ROW_PLACEHOLDERS = '(%s, %s, %s, %s, %s, %d, %s, %s)';
+    private const COLUMNS = 'job_id, type, object_id, action, status, attempts, created_at, meta, dedupe_key';
+    private const ROW_PLACEHOLDERS = '(%s, %s, %s, %s, %s, %d, %s, %s, %s)';
+
+    /** Jobs that fail or stall this many times stay failed until retried by hand. */
+    public const MAX_ATTEMPTS = 3;
+
+    /** Processing jobs older than this are considered abandoned (seconds). */
+    public const STALE_AFTER = 900;
 
     private string $tableName;
 
@@ -31,28 +37,14 @@ final class DatabaseQueue implements SyncQueueInterface
         $this->tableName = $this->wpdb->prefix . self::TABLE_NAME;
     }
 
+    /**
+     * Queue a job. A pending job for the same work (see SyncJob::dedupeKey())
+     * is replaced, so the latest request wins: publish after unpublish, a
+     * changed redirect destination, or a repeated save.
+     */
     public function push(SyncJob $job): void
     {
-        if ($this->hasPendingDuplicate($job)) {
-            return;
-        }
-
-        $this->wpdb->insert(
-            $this->tableName,
-            [
-                'job_id' => $job->id,
-                'type' => $job->type->value,
-                'object_id' => $job->objectId,
-                'action' => $job->action->value,
-                'status' => self::STATUS_PENDING,
-                'attempts' => 0,
-                'created_at' => $job->createdAt->format('Y-m-d H:i:s'),
-                'meta' => $job->encodeMeta(),
-            ],
-            ['%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s']
-        );
-
-        $this->announce();
+        $this->pushBatch([$job]);
     }
 
     /**
@@ -60,18 +52,18 @@ final class DatabaseQueue implements SyncQueueInterface
      */
     public function pushBatch(array $jobs): void
     {
-        if ($jobs === []) {
+        $latest = [];
+        foreach ($jobs as $job) {
+            $latest[$job->dedupeKey()] = $job;
+        }
+
+        if ($latest === []) {
             return;
         }
 
-        $jobs = $this->withoutDuplicates($jobs);
-
-        if ($jobs === []) {
-            return;
-        }
-
-        foreach (array_chunk($jobs, 200) as $chunk) {
-            $this->insertChunk($chunk);
+        foreach (array_chunk($latest, 200, true) as $chunk) {
+            $this->deletePendingKeys(array_keys($chunk));
+            $this->insertChunk(array_values($chunk));
         }
 
         $this->announce();
@@ -146,9 +138,9 @@ final class DatabaseQueue implements SyncQueueInterface
                 'error_message' => null,
                 'processed_at' => gmdate('Y-m-d H:i:s'),
             ],
-            ['job_id' => $jobId],
+            ['job_id' => $jobId, 'status' => self::STATUS_PROCESSING],
             ['%s', '%s', '%s'],
-            ['%s']
+            ['%s', '%s']
         );
     }
 
@@ -161,11 +153,12 @@ final class DatabaseQueue implements SyncQueueInterface
                  error_message = %s,
                  attempts = attempts + 1,
                  processed_at = %s
-             WHERE job_id = %s",
+             WHERE job_id = %s AND status = %s",
             self::STATUS_FAILED,
             mb_substr($error, 0, 2000),
             gmdate('Y-m-d H:i:s'),
-            $jobId
+            $jobId,
+            self::STATUS_PROCESSING
         );
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query is prepared above
@@ -221,6 +214,7 @@ final class DatabaseQueue implements SyncQueueInterface
         $sql = $this->wpdb->prepare(
             "UPDATE {$this->tableName}
              SET status = %s,
+                 attempts = 0,
                  error_message = NULL,
                  processed_at = NULL
              WHERE status = %s",
@@ -234,19 +228,54 @@ final class DatabaseQueue implements SyncQueueInterface
         return (int) $this->wpdb->rows_affected;
     }
 
-    public function recoverStale(int $olderThanSeconds = 600): int
+    public function recoverStale(int $olderThanSeconds = self::STALE_AFTER): int
     {
         $cutoff = gmdate('Y-m-d H:i:s', time() - $olderThanSeconds);
 
-        // processed_at holds the claim time while a job is processing.
+        // processed_at holds the claim time while a job is processing. A job
+        // that keeps stalling (fatal error, memory limit) is failed after
+        // MAX_ATTEMPTS so it cannot block the queue.
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
         $sql = $this->wpdb->prepare(
             "UPDATE {$this->tableName}
-             SET status = %s, claim = NULL
+             SET attempts = attempts + 1,
+                 claim = NULL,
+                 status = IF(attempts >= %d, %s, %s),
+                 error_message = IF(attempts >= %d, %s, error_message)
              WHERE status = %s AND (processed_at IS NULL OR processed_at < %s)",
+            self::MAX_ATTEMPTS,
+            self::STATUS_FAILED,
             self::STATUS_PENDING,
+            self::MAX_ATTEMPTS,
+            'Processing did not finish (timeout, memory limit or fatal error)',
             self::STATUS_PROCESSING,
             $cutoff
+        );
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query is prepared above
+        $this->wpdb->query($sql);
+
+        return (int) $this->wpdb->rows_affected;
+    }
+
+    /**
+     * Put failed jobs back in the queue with a growing delay, up to MAX_ATTEMPTS.
+     *
+     * @return int Jobs queued again
+     */
+    public function retryDue(int $backoffSeconds = 300): int
+    {
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
+        $sql = $this->wpdb->prepare(
+            "UPDATE {$this->tableName}
+             SET status = %s
+             WHERE status = %s
+               AND attempts < %d
+               AND processed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL (%d * attempts) SECOND)",
+            self::STATUS_PENDING,
+            self::STATUS_FAILED,
+            self::MAX_ATTEMPTS,
+            $backoffSeconds
         );
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query is prepared above
@@ -372,14 +401,22 @@ final class DatabaseQueue implements SyncQueueInterface
      *
      * @return int Rows deleted
      */
-    public function pruneCompleted(int $olderThanSeconds = 2592000): int
+    public function pruneCompleted(int $olderThanSeconds = 604800): int
     {
         $cutoff = gmdate('Y-m-d H:i:s', time() - $olderThanSeconds);
 
+        // Keep the newest row per object so the sync status stays visible.
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
         $sql = $this->wpdb->prepare(
-            "DELETE FROM {$this->tableName} WHERE status = %s AND processed_at < %s",
+            "DELETE old FROM {$this->tableName} old
+             INNER JOIN {$this->tableName} newer
+                ON newer.type = old.type
+               AND newer.object_id = old.object_id
+               AND newer.action = old.action
+               AND newer.id > old.id
+             WHERE old.status IN (%s, %s) AND old.processed_at < %s",
             self::STATUS_COMPLETED,
+            self::STATUS_FAILED,
             $cutoff
         );
 
@@ -408,7 +445,8 @@ final class DatabaseQueue implements SyncQueueInterface
                 self::STATUS_PENDING,
                 0,
                 $job->createdAt->format('Y-m-d H:i:s'),
-                $job->encodeMeta() ?? ''
+                $job->encodeMeta() ?? '',
+                $job->dedupeKey()
             );
         }
 
@@ -424,69 +462,20 @@ final class DatabaseQueue implements SyncQueueInterface
     }
 
     /**
-     * Drop jobs that duplicate another job in the batch or a pending job in the table.
-     *
-     * @param array<SyncJob> $jobs
-     * @return array<SyncJob>
+     * @param array<string> $keys
      */
-    private function withoutDuplicates(array $jobs): array
+    private function deletePendingKeys(array $keys): void
     {
-        $pending = $this->pendingKeys();
-        $result = [];
+        $placeholders = implode(', ', array_fill(0, count($keys), '%s'));
 
-        foreach ($jobs as $job) {
-            $key = $this->jobKey($job->type->value, $job->objectId, $job->action->value);
-            if (isset($pending[$key])) {
-                continue;
-            }
-            $pending[$key] = true;
-            $result[] = $job;
-        }
-
-        return $result;
-    }
-
-    /**
-     * @return array<string, true>
-     */
-    private function pendingKeys(): array
-    {
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name and placeholders are safely constructed
         $sql = $this->wpdb->prepare(
-            "SELECT type, object_id, action FROM {$this->tableName} WHERE status = %s",
-            self::STATUS_PENDING
+            "DELETE FROM {$this->tableName} WHERE status = %s AND dedupe_key IN ($placeholders)",
+            array_merge([self::STATUS_PENDING], $keys)
         );
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query is prepared above
-        $rows = $this->wpdb->get_results($sql, ARRAY_A) ?: [];
-
-        $keys = [];
-        foreach ($rows as $row) {
-            $keys[$this->jobKey($row['type'], $row['object_id'], $row['action'])] = true;
-        }
-
-        return $keys;
-    }
-
-    private function hasPendingDuplicate(SyncJob $job): bool
-    {
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
-        $sql = $this->wpdb->prepare(
-            "SELECT COUNT(*) FROM {$this->tableName}
-             WHERE status = %s AND type = %s AND object_id = %s AND action = %s",
-            self::STATUS_PENDING,
-            $job->type->value,
-            $job->objectId,
-            $job->action->value
-        );
-
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query is prepared above
-        return (int) $this->wpdb->get_var($sql) > 0;
-    }
-
-    private function jobKey(string $type, string $objectId, string $action): string
-    {
-        return $type . '|' . $objectId . '|' . $action;
+        $this->wpdb->query($sql);
     }
 
     /**

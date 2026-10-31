@@ -136,4 +136,43 @@ final class RoutePublishHandlerTest extends TestCase
 
         $this->handler->handle(new SyncJob(SyncType::Home, '/', SyncAction::Publish));
     }
+
+    #[Test]
+    public function it_unpublishes_a_route_that_now_returns_404(): void
+    {
+        $this->renderer->shouldReceive('render')->andThrow(new \Quant\Sync\Exception\UnpublishedContentException('/old-route', 'HTTP 404 response for /old-route'));
+        $this->publisher->shouldReceive('unpublish')->once()->with(['/old-route']);
+        $this->publisher->shouldNotReceive('publish');
+
+        $this->handler->handle(new SyncJob(SyncType::CustomRoute, '/old-route', SyncAction::Publish));
+    }
+
+    #[Test]
+    public function it_treats_a_missing_home_page_as_an_error(): void
+    {
+        $this->renderer->shouldReceive('render')->andThrow(new \Quant\Sync\Exception\UnpublishedContentException('/', 'HTTP 404 response for /'));
+        $this->publisher->shouldNotReceive('unpublish');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('The home page returned an error');
+
+        $this->handler->handle(new SyncJob(SyncType::Home, '/', SyncAction::Publish));
+    }
+
+    #[Test]
+    public function it_never_uploads_a_php_file_named_as_a_custom_route(): void
+    {
+        $file = ABSPATH . 'wp-config-' . uniqid() . '.php';
+        file_put_contents($file, '<?php // secrets');
+
+        try {
+            $this->api->shouldNotReceive('uploadFile');
+            $this->renderer->shouldReceive('render')->once()->andReturn(new \Quant\Sync\Renderer\RenderedContent('/x', 'y'));
+            $this->publisher->shouldReceive('publish')->once();
+
+            $this->handler->handle(new SyncJob(SyncType::CustomRoute, '/' . basename($file), SyncAction::Publish));
+        } finally {
+            unlink($file);
+        }
+    }
 }

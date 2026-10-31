@@ -41,23 +41,23 @@ final class PostRenderer implements ContentRendererInterface
         $post = get_post($postId);
 
         if (!$post instanceof WP_Post) {
-            throw new RuntimeException("Post #{$postId} not found");
+            throw new RuntimeException(esc_html("Post #{$postId} not found"));
         }
 
         $permalink = get_permalink($post);
         if (!is_string($permalink) || $permalink === '') {
-            throw new RuntimeException("Cannot get permalink for post #{$postId}");
+            throw new RuntimeException(esc_html("Cannot get permalink for post #{$postId}"));
         }
 
         if (!$this->supports($post)) {
-            throw new UnpublishedContentException(
-                Paths::fromUrl($permalink),
-                "Post #{$postId} ({$post->post_type}) is not public (status: {$post->post_status})"
-            );
+            $reason = "Post #{$postId} ({$post->post_type}) is not public (status: {$post->post_status})";
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries paths to the job handler; the message is escaped in the factory.
+            throw UnpublishedContentException::forPath(Paths::fromUrl($permalink), $reason);
         }
 
         if (!empty($post->post_password)) {
-            throw new UnpublishedContentException(Paths::fromUrl($permalink), "Post #{$postId} is password protected");
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries paths to the job handler; the message is escaped in the factory.
+            throw UnpublishedContentException::forPath(Paths::fromUrl($permalink), "Post #{$postId} is password protected");
         }
 
         $path = Paths::fromUrl($permalink);

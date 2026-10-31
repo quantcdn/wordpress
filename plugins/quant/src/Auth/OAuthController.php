@@ -344,24 +344,53 @@ class OAuthController
 
         $organizations = get_option('quant_oauth_organizations', []);
 
-        // Fetch projects for each organization
-        $result = [];
-        foreach ($organizations as $org) {
-            $projects = $this->fetchProjectsForOrganization($token['access_token'], $org['machine_name'] ?? $org['id']);
+        return $this->projectsForOrganizations((string) $token['access_token'], is_array($organizations) ? $organizations : []);
+    }
 
-            if (!is_wp_error($projects)) {
-                $result[] = [
-                    'organization' => [
-                        'id' => $org['id'] ?? null,
-                        'name' => $org['name'] ?? '',
-                        'machine_name' => $org['machine_name'] ?? '',
-                    ],
-                    'projects' => $projects,
-                ];
+    /**
+     * Projects of each organization; an error when none could be loaded.
+     *
+     * @param array<int, mixed> $organizations
+     * @return array<int, array<string, mixed>>|WP_Error
+     */
+    private function projectsForOrganizations(string $accessToken, array $organizations): array|WP_Error
+    {
+        $result = [];
+        $errors = [];
+
+        foreach ($organizations as $org) {
+            $key = is_array($org) ? (string) ($org['machine_name'] ?? $org['id'] ?? '') : '';
+            if ($key === '') {
+                continue;
             }
+
+            $projects = $this->fetchProjectsForOrganization($accessToken, $key);
+            if (is_wp_error($projects)) {
+                $errors[] = ($org['name'] ?? $key) . ': ' . $projects->get_error_message();
+                continue;
+            }
+
+            $result[] = [
+                'organization' => [
+                    'id' => $org['id'] ?? null,
+                    'name' => $org['name'] ?? '',
+                    'machine_name' => $org['machine_name'] ?? '',
+                ],
+                'projects' => $projects,
+            ];
         }
 
-        return $result;
+        if ($result !== []) {
+            return $result;
+        }
+
+        return new WP_Error(
+            'no_projects',
+            $errors === []
+                ? __('Your Quant account has no organizations this site can use. Reconnect, or enter the project credentials by hand.', 'quant')
+                : __('Could not load projects from Quant: ', 'quant') . implode('; ', $errors),
+            ['status' => 502]
+        );
     }
 
     /**
@@ -369,7 +398,7 @@ class OAuthController
      */
     private function fetchProjectsForOrganization(string $accessToken, string $orgMachineName): array|WP_Error
     {
-        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . $orgMachineName . '/projects', [
+        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . rawurlencode($orgMachineName) . '/projects', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Accept' => 'application/json',
@@ -397,7 +426,7 @@ class OAuthController
      */
     private function fetchProjectDetails(string $accessToken, string $orgMachineName, string $projectMachineName): array|WP_Error
     {
-        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . $orgMachineName . '/projects/' . $projectMachineName . '?with_token=1', [
+        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . rawurlencode($orgMachineName) . '/projects/' . rawurlencode($projectMachineName) . '?with_token=1', [
             'headers' => [
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Accept' => 'application/json',

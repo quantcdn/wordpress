@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
+// Patchwork first, so Brain Monkey can redefine the fallbacks below per test.
+require_once dirname(__DIR__) . '/vendor/antecedent/patchwork/Patchwork.php';
+require_once __DIR__ . '/Support/wp-fallbacks.php';
 require_once __DIR__ . '/Support/FakeRedirection.php';
 
 // Define WordPress constants for testing
@@ -25,6 +28,12 @@ if (!defined('QUANT_PLUGIN_URL')) {
 // WordPress constants used by wpdb
 if (!defined('ARRAY_A')) {
     define('ARRAY_A', 'ARRAY_A');
+}
+
+foreach (['MINUTE_IN_SECONDS' => 60, 'HOUR_IN_SECONDS' => 3600, 'DAY_IN_SECONDS' => 86400, 'KB_IN_BYTES' => 1024, 'MB_IN_BYTES' => 1048576] as $quantConstant => $quantValue) {
+    if (!defined($quantConstant)) {
+        define($quantConstant, $quantValue);
+    }
 }
 
 if (!defined('OBJECT')) {

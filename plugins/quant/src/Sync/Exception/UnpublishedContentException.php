@@ -17,4 +17,12 @@ final class UnpublishedContentException extends RuntimeException
     ) {
         parent::__construct($reason);
     }
+
+    /**
+     * The path is data for the handler, not output; only the reason is a message.
+     */
+    public static function forPath(string $path, string $reason): self
+    {
+        return new self($path, esc_html($reason));
+    }
 }

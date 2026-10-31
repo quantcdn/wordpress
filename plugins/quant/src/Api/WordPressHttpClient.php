@@ -47,11 +47,55 @@ class WordPressHttpClient implements HttpClientInterface
 
     public function upload(string $url, array $headers, string $filePath, string $fieldName = 'data'): array
     {
-        $contents = @file_get_contents($filePath);
-        if ($contents === false) {
+        if (!is_file($filePath) || !is_readable($filePath)) {
             return ['code' => 0, 'body' => '', 'error' => "Could not read file: {$filePath}"];
         }
 
+        $refusal = $this->sizeRefusal((int) filesize($filePath));
+        if ($refusal !== null) {
+            return ['code' => 0, 'body' => '', 'error' => "{$refusal}: {$filePath}"];
+        }
+
+        return $this->uploadBuffered($url, $headers, $filePath, $fieldName);
+    }
+
+    /**
+     * The WordPress HTTP API sends the request body from memory, so the file
+     * is held about three times over (contents, multipart body, transport).
+     * Refuse a file that cannot fit rather than run out of memory mid-batch.
+     */
+    private function sizeRefusal(int $bytes): ?string
+    {
+        /** This filter is documented in v2.0.0; it sets the largest file the plugin uploads (bytes). */
+        $limit = (int) apply_filters('quant_max_upload_bytes', 256 * MB_IN_BYTES);
+        if ($bytes > $limit) {
+            return sprintf('File is larger than the %d MB upload limit (quant_max_upload_bytes)', (int) ($limit / MB_IN_BYTES));
+        }
+
+        if (function_exists('wp_raise_memory_limit')) {
+            wp_raise_memory_limit('quant_upload');
+        }
+
+        $memoryLimit = function_exists('wp_convert_hr_to_bytes') ? wp_convert_hr_to_bytes((string) ini_get('memory_limit')) : -1;
+        if ($memoryLimit <= 0) {
+            return null;
+        }
+
+        $needed = ($bytes * 3) + (8 * MB_IN_BYTES);
+        if (memory_get_usage(true) + $needed > $memoryLimit) {
+            return sprintf('Not enough PHP memory to upload a %d MB file (memory_limit %s)', (int) ceil($bytes / MB_IN_BYTES), (string) ini_get('memory_limit'));
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, string> $headers
+     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string}
+     */
+    private function uploadBuffered(string $url, array $headers, string $filePath, string $fieldName): array
+    {
+        $contents = (string) file_get_contents($filePath);
         $boundary = 'quant' . wp_generate_password(24, false);
         $mime = $this->mimeType($filePath);
         $filename = basename($filePath);
