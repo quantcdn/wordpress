@@ -8,7 +8,7 @@ import {
 	Spinner,
 	CheckboxControl,
 } from '@wordpress/components';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { useNavigate } from 'react-router-dom';
 
@@ -243,7 +243,7 @@ export function Migration() {
 					</CardBody>
 				</Card>
 
-				{ status && status.has_v1_table && (
+				{ status && status.has_v1_settings && (
 					<Card style={ { marginTop: '16px' } }>
 						<CardHeader>
 							<h2 style={ { margin: 0 } }>
@@ -367,14 +367,16 @@ export function Migration() {
 						</table>
 					) }
 
-					{ status && status.has_v1_table && (
+					{ status && status.v1_queue_count > 0 && (
 						<p style={ { color: '#666' } }>
-							{ __(
-								'Note: Old queue table found with',
-								'quant'
-							) }{ ' ' }
-							{ status.v1_queue_count }{ ' ' }
-							{ __( 'items.', 'quant' ) }
+							{ sprintf(
+								/* translators: %d: number of v1 batch rows */
+								__(
+									'Note: %d rows of 1.x batch state are still in wp_options. Cleanup removes them.',
+									'quant'
+								),
+								status.v1_queue_count
+							) }
 						</p>
 					) }
 

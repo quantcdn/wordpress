@@ -109,3 +109,5 @@ Done in `plugins/quant`:
 Verified in Docker against the mock Content API: a full push publishes posts, pages, a CPT, terms, home, archives, `/_quant404`, `/robots.txt` (text/plain), all core sitemaps (application/xml), uploads theme assets, media sizes and discovered attachments, and creates the Redirection redirect; markup has relative links only; `wp quant process_queue all --threads=3` works.
 
 Open at the time of writing: the unit test rewrite and the Playwright suite run in parallel agents; results are recorded in the session summary.
+
+Results: PHPUnit 288 tests green; PHPStan and PHPMD clean; Playwright 36 tests green (onboarding, OAuth, settings and environment overrides, full push, selective push and unpublish, failure and retry, auto-sync on save/slug change/draft/delete/term/media/Redirection, CDN-only purges, cache page, automatic 1.x migration and cleanup, legacy URL redirect, Quant Search status/records/pages/reindex/clear/native search redirect, WP-CLI including 1.x aliases and threads, diagnostics report download, post list column, admin bar).
