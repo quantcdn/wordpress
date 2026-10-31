@@ -7,146 +7,110 @@ namespace Quant\Migration;
 use wpdb;
 
 /**
- * Detects v1 QuantCDN plugin settings and tables.
+ * Detects v1 (1.x) plugin settings.
  *
- * V1 used these options:
- * - wp_quant_settings (main settings: api_account, api_project, api_token, api_endpoint, webserver_url, webserver_host)
- * - wp_quant_seed (seed settings: 404_route, custom_routes, domains_strip)
- * - wp_quant_cron_settings (cron settings)
- * - {prefix}quant_seed_queue (queue table)
+ * V1 stored:
+ * - wp_quant_settings: enabled, purge_on_save, disable_tls_verify, http_request_timeout,
+ *   webserver_url, webserver_host, api_endpoint, api_account, api_project, api_token
+ * - wp_quant_seed: 404_route, custom_routes (newline separated), domains_strip (newline separated)
+ * - wp_quant_cron_settings: cron_enabled, cron_schedule, cron_home, cron_posts, cron_pages,
+ *   cron_categories, cron_tags, cron_custom_routes
+ * - batch state as wp_options rows named batch_quant_*_processed / _claimed
  */
 final class V1Detector
 {
-    private const V1_SETTINGS_OPTION = 'wp_quant_settings';
-    private const V1_SEED_OPTION = 'wp_quant_seed';
-    private const V1_CRON_OPTION = 'wp_quant_cron_settings';
+    public const V1_SETTINGS_OPTION = 'wp_quant_settings';
+    public const V1_SEED_OPTION = 'wp_quant_seed';
+    public const V1_CRON_OPTION = 'wp_quant_cron_settings';
 
     private const V1_OPTIONS = [
-        'wp_quant_settings',
-        'wp_quant_seed',
-        'wp_quant_cron_settings',
+        self::V1_SETTINGS_OPTION,
+        self::V1_SEED_OPTION,
+        self::V1_CRON_OPTION,
     ];
-
-    private const V1_TABLE = 'quant_seed_queue';
 
     private const V2_OPTION_CREDENTIALS = 'quant_credentials';
 
     public function __construct(
         private readonly wpdb $wpdb
-    ) {}
+    ) {
+    }
 
-    /**
-     * Check if v1 settings exist.
-     */
     public function hasV1Settings(): bool
     {
         $settings = get_option(self::V1_SETTINGS_OPTION, []);
+        if (!is_array($settings)) {
+            return false;
+        }
 
-        // Check if we have v1 API credentials
         return !empty($settings['api_account']) || !empty($settings['api_project']) || !empty($settings['api_token']);
     }
 
-    /**
-     * Check if v2 credentials are already configured.
-     */
     public function hasV2Settings(): bool
     {
         $credentials = get_option(self::V2_OPTION_CREDENTIALS, []);
 
-        return !empty($credentials['organization'])
+        return is_array($credentials)
+            && !empty($credentials['organization'])
             && !empty($credentials['project'])
             && !empty($credentials['token']);
     }
 
-    /**
-     * Check if migration is needed (has v1 settings but not v2).
-     */
     public function needsMigration(): bool
     {
         return $this->hasV1Settings() && !$this->hasV2Settings();
     }
 
-    /**
-     * Check if this is a fresh install (no v1, no v2).
-     */
     public function isFreshInstall(): bool
     {
         return !$this->hasV1Settings() && !$this->hasV2Settings();
     }
 
     /**
-     * Get all v1 settings.
+     * All v1 settings in v2 terms.
      *
-     * @return array{organization: string, project: string, token: string, endpoint: string, webserver_url: string, webserver_host: string, route_404: string, custom_routes: array, domain_rewrites: array}
+     * @return array<string, mixed>
      */
     public function getV1Settings(): array
     {
-        $settings = get_option(self::V1_SETTINGS_OPTION, []);
-        $seedSettings = get_option(self::V1_SEED_OPTION, []);
-
-        // Parse custom routes (newline separated in v1)
-        $customRoutes = [];
-        if (!empty($seedSettings['custom_routes'])) {
-            $customRoutes = array_filter(array_map('trim', explode("\n", $seedSettings['custom_routes'])));
-        }
-
-        // Parse domain rewrites (newline separated in v1)
-        $domainRewrites = [];
-        if (!empty($seedSettings['domains_strip'])) {
-            $domainRewrites = array_filter(array_map('trim', explode("\n", $seedSettings['domains_strip'])));
-        }
+        $settings = $this->option(self::V1_SETTINGS_OPTION);
+        $seed = $this->option(self::V1_SEED_OPTION);
+        $cron = $this->option(self::V1_CRON_OPTION);
 
         return [
-            // API credentials
             'organization' => (string) ($settings['api_account'] ?? ''),
             'project' => (string) ($settings['api_project'] ?? ''),
             'token' => (string) ($settings['api_token'] ?? ''),
             'endpoint' => (string) ($settings['api_endpoint'] ?? 'https://api.quantcdn.io'),
-            // Webserver config
+            'disable_tls_verify' => !empty($settings['disable_tls_verify']),
+            'http_request_timeout' => (int) ($settings['http_request_timeout'] ?? 30) ?: 30,
+            'auto_sync' => !empty($settings['enabled']),
+            'auto_purge' => !isset($settings['purge_on_save']) || !empty($settings['purge_on_save']),
             'webserver_url' => (string) ($settings['webserver_url'] ?? ''),
             'webserver_host' => (string) ($settings['webserver_host'] ?? ''),
-            // Seed settings
-            'route_404' => (string) ($seedSettings['404_route'] ?? '/404'),
-            'custom_routes' => $customRoutes,
-            'domain_rewrites' => $domainRewrites,
+            'route_404' => (string) ($seed['404_route'] ?? '/404'),
+            'custom_routes' => $this->lines($seed['custom_routes'] ?? '/robots.txt'),
+            'domain_rewrites' => $this->lines($seed['domains_strip'] ?? ''),
+            'schedule' => $this->schedule($cron),
         ];
     }
 
     /**
-     * Check if v1 queue table exists.
-     */
-    public function hasV1Table(): bool
-    {
-        $tableName = $this->wpdb->prefix . self::V1_TABLE;
-
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safe
-        $result = $this->wpdb->get_var(
-            $this->wpdb->prepare('SHOW TABLES LIKE %s', $tableName)
-        );
-
-        return $result === $tableName;
-    }
-
-    /**
-     * Get count of items in v1 queue table.
+     * Number of v1 batch state rows still in wp_options.
      */
     public function getV1QueueCount(): int
     {
-        if (!$this->hasV1Table()) {
-            return 0;
-        }
-
-        $tableName = $this->wpdb->prefix . self::V1_TABLE;
-
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safe
-        $count = $this->wpdb->get_var("SELECT COUNT(*) FROM {$tableName}");
+        $count = $this->wpdb->get_var(
+            $this->wpdb->prepare(
+                "SELECT COUNT(*) FROM {$this->wpdb->options} WHERE option_name LIKE %s",
+                $this->wpdb->esc_like('batch_quant_') . '%'
+            )
+        );
 
         return (int) $count;
     }
 
     /**
-     * Get v1 option names.
-     *
      * @return array<string>
      */
     public function getV1OptionNames(): array
@@ -155,17 +119,7 @@ final class V1Detector
     }
 
     /**
-     * Get v1 table name.
-     */
-    public function getV1TableName(): string
-    {
-        return $this->wpdb->prefix . self::V1_TABLE;
-    }
-
-    /**
-     * Get migration status summary.
-     *
-     * @return array{needs_migration: bool, fresh_install: bool, has_v1_settings: bool, has_v2_settings: bool, has_v1_table: bool, v1_queue_count: int}
+     * @return array{needs_migration: bool, fresh_install: bool, has_v1_settings: bool, has_v2_settings: bool, v1_queue_count: int}
      */
     public function getStatus(): array
     {
@@ -174,8 +128,54 @@ final class V1Detector
             'fresh_install' => $this->isFreshInstall(),
             'has_v1_settings' => $this->hasV1Settings(),
             'has_v2_settings' => $this->hasV2Settings(),
-            'has_v1_table' => $this->hasV1Table(),
             'v1_queue_count' => $this->getV1QueueCount(),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function option(string $name): array
+    {
+        $value = get_option($name, []);
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * @param array<string, mixed> $cron
+     * @return array{enabled: bool, interval: string, types: array<string>, custom_routes: array<string>}
+     */
+    private function schedule(array $cron): array
+    {
+        $types = [];
+        foreach (['home' => 'home', 'posts' => 'post', 'pages' => 'page', 'categories' => 'taxonomy', 'tags' => 'taxonomy'] as $key => $type) {
+            if (!empty($cron["cron_{$key}"])) {
+                $types[] = $type;
+            }
+        }
+
+        $interval = (string) ($cron['cron_schedule'] ?? 'daily');
+
+        return [
+            'enabled' => !empty($cron['cron_enabled']),
+            'interval' => in_array($interval, ['hourly', 'twicedaily', 'daily', 'weekly'], true) ? $interval : 'daily',
+            'types' => array_values(array_unique($types)),
+            'custom_routes' => $this->lines($cron['cron_custom_routes'] ?? ''),
+        ];
+    }
+
+    /**
+     * @return array<string>
+     */
+    private function lines(mixed $value): array
+    {
+        if (is_array($value)) {
+            $lines = $value;
+        } else {
+            $lines = explode("\n", (string) $value);
+        }
+
+        return array_values(array_filter(array_map(static fn($l): string => trim((string) $l), $lines)));
     }
 }

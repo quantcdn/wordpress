@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Quant\Sync;
 
-final readonly class QueueStatus
+final class QueueStatus
 {
     public function __construct(
-        public int $pending,
-        public int $processing,
-        public int $failed,
-        public int $total,
+        public readonly int $pending,
+        public readonly int $processing,
+        public readonly int $failed,
+        public readonly int $total,
     ) {
     }
 }

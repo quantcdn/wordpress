@@ -8,9 +8,7 @@ class Deactivator
 {
     public static function deactivate(): void
     {
-        // Clear scheduled events
-        wp_clear_scheduled_hook('quant_sync_cron');
-
-        flush_rewrite_rules();
+        wp_clear_scheduled_hook('quant_process_queue');
+        wp_clear_scheduled_hook('quant_scheduled_sync');
     }
 }

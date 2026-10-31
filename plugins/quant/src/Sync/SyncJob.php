@@ -30,7 +30,7 @@ final class SyncJob implements JsonSerializable
     /**
      * Create a SyncJob from database row data.
      *
-     * @param array{job_id: string, type: string, object_id: string, action: string, created_at: string} $row
+     * @param array{job_id: string, type: string, object_id: string, action: string, created_at: string, meta?: string|null} $row
      */
     public static function fromDatabaseRow(array $row): self
     {
@@ -38,10 +38,38 @@ final class SyncJob implements JsonSerializable
             type: SyncType::from($row['type']),
             objectId: $row['object_id'],
             action: SyncAction::from($row['action']),
-            meta: [],
+            meta: self::decodeMeta($row['meta'] ?? null),
             id: $row['job_id'],
             createdAt: new DateTimeImmutable($row['created_at']),
         );
+    }
+
+    /**
+     * Encode meta for storage. Empty meta is stored as NULL.
+     */
+    public function encodeMeta(): ?string
+    {
+        if ($this->meta === []) {
+            return null;
+        }
+
+        $encoded = json_encode($this->meta);
+
+        return $encoded === false ? null : $encoded;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function decodeMeta(?string $raw): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**

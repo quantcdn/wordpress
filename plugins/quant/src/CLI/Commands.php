@@ -6,150 +6,230 @@ namespace Quant\CLI;
 
 use Quant\Api\ContentApiInterface;
 use Quant\Core\Settings;
+use Quant\Search\SearchRecordBuilder;
+use Quant\Sync\JobProcessor;
+use Quant\Sync\Paths;
+use Quant\Sync\Seeder;
 use Quant\Sync\SyncAction;
 use Quant\Sync\SyncJob;
 use Quant\Sync\SyncQueueInterface;
 use Quant\Sync\SyncType;
-use Quant\Sync\Renderer\ContentRendererInterface;
 use WP_CLI;
 
 /**
- * WP-CLI commands for QuantCDN.
+ * Manage the QuantCDN integration.
  *
- * Provides command-line interface for cache purging, content syncing,
- * and queue management operations.
+ * The v1 commands (`info`, `reset_queue`, `process_queue`) keep working.
  */
 class Commands
 {
+    /**
+     * v1 queue names and the v2 seed types they map to.
+     */
+    private const LEGACY_QUEUES = [
+        'pages' => ['page'],
+        'posts' => ['post'],
+        'custom_posts' => ['__cpt__'],
+        'categories' => ['taxonomy'],
+        'tags' => ['taxonomy'],
+        'custom_taxonomies' => ['taxonomy'],
+        'home' => ['home'],
+        'theme_assets' => ['theme_assets'],
+        'custom_routes' => ['custom_routes'],
+        'archives' => ['archives'],
+        'media_assets' => ['media'],
+        'redirects' => ['redirects'],
+    ];
+
     public function __construct(
         private readonly ContentApiInterface $api,
         private readonly Settings $settings,
         private readonly SyncQueueInterface $queue,
-        private readonly ContentRendererInterface $renderer
+        private readonly JobProcessor $processor,
+        private readonly Seeder $seeder,
+        private readonly SearchRecordBuilder $search
     ) {
     }
 
     /**
-     * Purge cache from QuantCDN.
-     *
-     * ## OPTIONS
-     *
-     * [<path>]
-     * : Path to purge (e.g., /blog/my-post)
-     *
-     * [--all]
-     * : Purge all cached content
+     * Show connection status, mode and queue counts.
      *
      * ## EXAMPLES
      *
-     *     # Purge a specific path
-     *     wp quant purge /blog/my-post
-     *
-     *     # Purge all cached content
-     *     wp quant purge --all
+     *     wp quant status
      *
      * @when after_wp_load
-     *
-     * @param array<int, string> $args       Positional arguments
-     * @param array<string, mixed> $assocArgs Named arguments
      */
-    public function purge(array $args, array $assocArgs): void
+    public function status(array $args, array $assocArgs): void
     {
+        $credentials = $this->settings->getCredentials();
+        $status = $this->queue->getStatus();
+
+        WP_CLI::log('QuantCDN ' . QUANT_VERSION);
+        WP_CLI::log(sprintf('Mode:          %s', $this->settings->getMode()));
+        WP_CLI::log(sprintf('Organization:  %s', $credentials['organization'] ?: '(not set)'));
+        WP_CLI::log(sprintf('Project:       %s', $credentials['project'] ?: '(not set)'));
+        WP_CLI::log(sprintf('Endpoint:      %s', $credentials['endpoint']));
+        WP_CLI::log(sprintf('Queue:         %d pending, %d processing, %d failed, %d total', $status->pending, $status->processing, $status->failed, $status->total));
+
         if (!$this->settings->hasValidCredentials()) {
-            WP_CLI::error('QuantCDN credentials are not configured. Please configure in the WordPress admin.');
+            WP_CLI::warning('Credentials are not configured.');
+            return;
         }
 
-        $purgeAll = isset($assocArgs['all']);
-
-        if ($purgeAll) {
-            $path = '/*';
-            WP_CLI::log('Purging all cached content...');
-        } elseif (!empty($args[0])) {
-            $path = $this->normalizePath($args[0]);
-            WP_CLI::log(sprintf('Purging cache for: %s', $path));
-        } else {
-            WP_CLI::error('Please specify a path to purge or use --all to purge everything.');
-        }
-
-        $response = $this->api->purge($path);
-
+        $response = $this->api->ping();
         if ($response->success) {
-            WP_CLI::success(sprintf('Cache purged successfully for: %s', $path));
+            $search = !empty($response->data['config']['search_enabled']) ? 'enabled' : 'disabled';
+            WP_CLI::success("Connected to the Quant API (search {$search}).");
         } else {
-            WP_CLI::error(sprintf('Failed to purge cache: %s', $response->message));
+            WP_CLI::error("Connection failed: {$response->message}");
         }
     }
 
     /**
-     * Sync content to QuantCDN.
+     * Test the API connection.
+     *
+     * @when after_wp_load
+     */
+    public function ping(array $args, array $assocArgs): void
+    {
+        $this->requireCredentials();
+        $response = $this->api->ping();
+        $response->success ? WP_CLI::success('pong') : WP_CLI::error($response->message);
+    }
+
+    /**
+     * Purge the edge cache.
      *
      * ## OPTIONS
      *
-     * [<post_id>]
-     * : Post ID to sync
+     * [<path>...]
+     * : One or more paths to purge.
      *
      * [--all]
-     * : Sync all content
+     * : Purge everything.
      *
-     * [--type=<type>]
-     * : Content type to sync (post, page, media, taxonomy, archive)
-     *
-     * [--immediate]
-     * : Process immediately instead of queueing (for single post)
+     * [--paths=<file>]
+     * : Read paths from a file, one per line.
      *
      * ## EXAMPLES
      *
-     *     # Sync a specific post immediately
-     *     wp quant sync 123 --immediate
-     *
-     *     # Queue a specific post for sync
-     *     wp quant sync 123
-     *
-     *     # Sync all content
-     *     wp quant sync --all
-     *
-     *     # Sync all posts
-     *     wp quant sync --type=post
-     *
-     *     # Sync all pages
-     *     wp quant sync --type=page
+     *     wp quant purge /blog/my-post
+     *     wp quant purge --all
      *
      * @when after_wp_load
+     */
+    public function purge(array $args, array $assocArgs): void
+    {
+        $this->requireCredentials();
+
+        $paths = $args;
+        if (isset($assocArgs['all'])) {
+            $paths = ['/*'];
+        }
+        if (!empty($assocArgs['paths'])) {
+            $file = (string) $assocArgs['paths'];
+            if (!is_readable($file)) {
+                WP_CLI::error("Cannot read {$file}");
+            }
+            $paths = array_merge($paths, array_filter(array_map('trim', file($file) ?: [])));
+        }
+
+        if ($paths === []) {
+            WP_CLI::error('Specify a path, --all, or --paths=<file>.');
+        }
+
+        $response = $this->api->purge($paths);
+        $response->success
+            ? WP_CLI::success(sprintf('Purged %d path(s).', count($paths)))
+            : WP_CLI::error($response->message);
+    }
+
+    /**
+     * Queue content for sync.
      *
-     * @param array<int, string> $args       Positional arguments
-     * @param array<string, mixed> $assocArgs Named arguments
+     * ## OPTIONS
+     *
+     * [<post_id>...]
+     * : Post IDs to sync.
+     *
+     * [--all]
+     * : Queue everything the Content page's "Seed All" queues.
+     *
+     * [--type=<type>]
+     * : Queue one type: post, page, media, taxonomy, home, archives, authors,
+     *   theme_assets, custom_routes, sitemaps, redirects, search, or a custom post type.
+     *
+     * [--process]
+     * : Process the queue after queueing.
+     *
+     * [--immediate]
+     * : Alias of --process.
+     *
+     * ## EXAMPLES
+     *
+     *     wp quant sync --all --process
+     *     wp quant sync --type=page
+     *     wp quant sync 123 456 --process
+     *
+     * @when after_wp_load
      */
     public function sync(array $args, array $assocArgs): void
     {
-        if (!$this->settings->hasValidCredentials()) {
-            WP_CLI::error('QuantCDN credentials are not configured. Please configure in the WordPress admin.');
+        $this->requireCredentials();
+        $this->requireStaticMode();
+
+        if ($args !== []) {
+            $this->queuePosts(array_map('intval', $args));
+        } elseif (isset($assocArgs['all'])) {
+            $this->report($this->seeder->seed(['all']));
+        } elseif (!empty($assocArgs['type'])) {
+            $this->report($this->seeder->seed([(string) $assocArgs['type']]));
+        } else {
+            WP_CLI::error('Specify post IDs, --all, or --type=<type>.');
         }
 
-        if (!$this->settings->isStaticMode()) {
-            WP_CLI::error('Content sync is only available in static mode. Current mode: ' . $this->settings->getMode());
+        if (isset($assocArgs['process']) || isset($assocArgs['immediate'])) {
+            $this->drain(PHP_INT_MAX, 50);
+        } else {
+            WP_CLI::log('Run "wp quant queue process --all" to push the queued items.');
+        }
+    }
+
+    /**
+     * Unpublish content from Quant.
+     *
+     * ## OPTIONS
+     *
+     * [<path>...]
+     * : Paths to unpublish.
+     *
+     * [--post=<id>]
+     * : Unpublish a post by ID.
+     *
+     * @when after_wp_load
+     */
+    public function unpublish(array $args, array $assocArgs): void
+    {
+        $this->requireCredentials();
+
+        $paths = array_map([Paths::class, 'normalise'], $args);
+        if (!empty($assocArgs['post'])) {
+            $permalink = get_permalink((int) $assocArgs['post']);
+            if (!is_string($permalink)) {
+                WP_CLI::error('Post not found.');
+            }
+            $paths[] = Paths::normalise(Paths::fromUrl($permalink));
         }
 
-        $syncAll = isset($assocArgs['all']);
-        $type = $assocArgs['type'] ?? null;
-        $immediate = isset($assocArgs['immediate']);
-        $postId = !empty($args[0]) ? (int) $args[0] : null;
-
-        if ($postId !== null) {
-            $this->syncPost($postId, $immediate);
-            return;
+        if ($paths === []) {
+            WP_CLI::error('Specify a path or --post=<id>.');
         }
 
-        if ($syncAll) {
-            $this->syncAllContent();
-            return;
+        foreach ($paths as $path) {
+            $response = $this->api->unpublish($path);
+            $response->success ? WP_CLI::success("Unpublished {$path}") : WP_CLI::warning("{$path}: {$response->message}");
         }
-
-        if ($type !== null) {
-            $this->syncByType($type);
-            return;
-        }
-
-        WP_CLI::error('Please specify a post ID, use --all to sync everything, or use --type=<type> to sync by type.');
     }
 
     /**
@@ -158,653 +238,338 @@ class Commands
      * ## OPTIONS
      *
      * <action>
-     * : Action to perform (status, process, clear, retry)
+     * : status, process, clear, retry, errors
      *
-     * [--limit=<limit>]
-     * : Number of items to process (default: 50)
+     * [--limit=<n>]
+     * : Jobs per batch (default 50).
+     *
+     * [--all]
+     * : Keep processing until the queue is empty.
+     *
+     * [--threads=<n>]
+     * : Run n worker processes in parallel (process only, max 20).
      *
      * ## EXAMPLES
      *
-     *     # Show queue status
      *     wp quant queue status
-     *
-     *     # Process pending queue items
-     *     wp quant queue process
-     *
-     *     # Process 100 items
-     *     wp quant queue process --limit=100
-     *
-     *     # Clear pending items
-     *     wp quant queue clear
-     *
-     *     # Retry failed items
+     *     wp quant queue process --all --threads=5
      *     wp quant queue retry
      *
      * @when after_wp_load
-     *
-     * @param array<int, string> $args       Positional arguments
-     * @param array<string, mixed> $assocArgs Named arguments
      */
     public function queue(array $args, array $assocArgs): void
     {
-        if (empty($args[0])) {
-            WP_CLI::error('Please specify an action: status, process, clear, or retry.');
-        }
+        $action = $args[0] ?? '';
+        $limit = max(1, (int) ($assocArgs['limit'] ?? 50));
 
-        $action = $args[0];
-
-        switch ($action) {
-            case 'status':
-                $this->queueStatus();
-                break;
-
-            case 'process':
-                $limit = isset($assocArgs['limit']) ? (int) $assocArgs['limit'] : 50;
-                $this->queueProcess($limit);
-                break;
-
-            case 'clear':
-                $this->queueClear();
-                break;
-
-            case 'retry':
-                $this->queueRetry();
-                break;
-
-            default:
-                WP_CLI::error(sprintf('Unknown action: %s. Use: status, process, clear, or retry.', $action));
-        }
+        match ($action) {
+            'status' => $this->queueStatus(),
+            'process' => $this->queueProcess($limit, isset($assocArgs['all']), (int) ($assocArgs['threads'] ?? 1)),
+            'clear' => $this->queueClear(),
+            'retry' => WP_CLI::success(sprintf('%d failed job(s) queued for retry.', $this->queue->retry())),
+            'errors' => $this->queueErrors(),
+            default => WP_CLI::error('Unknown action. Use: status, process, clear, retry, errors.'),
+        };
     }
 
     /**
-     * Show connection status.
+     * Rebuild the Quant Search index from WordPress content.
      *
-     * ## EXAMPLES
+     * ## OPTIONS
      *
-     *     wp quant status
+     * [--clear]
+     * : Clear the index first.
+     *
+     * [--process]
+     * : Process the queue after queueing.
      *
      * @when after_wp_load
-     *
-     * @param array<int, string> $args       Positional arguments
-     * @param array<string, mixed> $assocArgs Named arguments
      */
-    public function status(array $args, array $assocArgs): void
+    public function search(array $args, array $assocArgs): void
     {
-        WP_CLI::log('QuantCDN Connection Status');
-        WP_CLI::log('==========================');
+        $this->requireCredentials();
 
-        $credentials = $this->settings->getCredentials();
-        $hasCredentials = $this->settings->hasValidCredentials();
-
-        WP_CLI::log('');
-        WP_CLI::log('Credentials:');
-        WP_CLI::log(sprintf('  Configured: %s', $hasCredentials ? 'Yes' : 'No'));
-
-        if ($hasCredentials) {
-            WP_CLI::log(sprintf('  Organization: %s', $credentials['organization']));
-            WP_CLI::log(sprintf('  Project: %s', $credentials['project']));
-            WP_CLI::log(sprintf('  Endpoint: %s', $credentials['endpoint'] ?? 'https://api.quantcdn.io'));
+        if (!$this->search->enabled()) {
+            WP_CLI::error('Enable Quant Search records in the plugin settings first.');
         }
 
-        WP_CLI::log('');
-        WP_CLI::log('Mode:');
-        WP_CLI::log(sprintf('  Current mode: %s', $this->settings->getMode()));
+        if (isset($assocArgs['clear'])) {
+            $response = $this->api->clearSearchIndex();
+            $response->success ? WP_CLI::log('Search index cleared.') : WP_CLI::error($response->message);
+        }
 
-        if ($hasCredentials) {
-            WP_CLI::log('');
-            WP_CLI::log('Connection Test:');
+        $this->report($this->seeder->seed(['search']));
 
-            $response = $this->api->ping();
-
-            if ($response->success) {
-                WP_CLI::success('Connected to QuantCDN API');
-            } else {
-                WP_CLI::warning(sprintf('Connection failed: %s', $response->message));
-            }
+        if (isset($assocArgs['process'])) {
+            $this->drain(PHP_INT_MAX, 50);
         }
     }
 
+    // ----------------------------------------------------------- v1 aliases
+
     /**
-     * Show plugin information.
-     *
-     * ## EXAMPLES
-     *
-     *     wp quant info
+     * (v1) Show the queue status.
      *
      * @when after_wp_load
-     *
-     * @param array<int, string> $args       Positional arguments
-     * @param array<string, mixed> $assocArgs Named arguments
+     * @subcommand info
      */
     public function info(array $args, array $assocArgs): void
     {
-        global $wp_version;
-
-        WP_CLI::log('QuantCDN Plugin Information');
-        WP_CLI::log('===========================');
-
-        WP_CLI::log('');
-        WP_CLI::log('Plugin:');
-        WP_CLI::log(sprintf('  Version: %s', QUANT_VERSION));
-        WP_CLI::log(sprintf('  Mode: %s', $this->settings->getMode()));
-
-        WP_CLI::log('');
-        WP_CLI::log('Environment:');
-        WP_CLI::log(sprintf('  PHP Version: %s', PHP_VERSION));
-        WP_CLI::log(sprintf('  WordPress Version: %s', $wp_version));
-
-        WP_CLI::log('');
-        WP_CLI::log('Credentials:');
-        WP_CLI::log(sprintf('  Configured: %s', $this->settings->hasValidCredentials() ? 'Yes' : 'No'));
-
-        $status = $this->queue->getStatus();
-
-        WP_CLI::log('');
-        WP_CLI::log('Queue Status:');
-        WP_CLI::log(sprintf('  Pending: %d', $status->pending));
-        WP_CLI::log(sprintf('  Processing: %d', $status->processing));
-        WP_CLI::log(sprintf('  Failed: %d', $status->failed));
-        WP_CLI::log(sprintf('  Total: %d', $status->total));
-
-        $syncSettings = $this->settings->getSyncSettings();
-
-        WP_CLI::log('');
-        WP_CLI::log('Sync Settings:');
-        WP_CLI::log(sprintf('  Auto Sync: %s', ($syncSettings['auto_sync'] ?? false) ? 'Enabled' : 'Disabled'));
-        WP_CLI::log(sprintf('  Auto Purge: %s', ($syncSettings['auto_purge'] ?? false) ? 'Enabled' : 'Disabled'));
-        WP_CLI::log(sprintf('  Sync Drafts: %s', ($syncSettings['sync_drafts'] ?? false) ? 'Enabled' : 'Disabled'));
+        $this->status($args, $assocArgs);
     }
 
     /**
-     * Sync a specific post.
+     * (v1) Reset a queue: drop its pending jobs and queue its content again.
+     *
+     * ## OPTIONS
+     *
+     * <queue>
+     * : pages, posts, custom_posts, categories, tags, custom_taxonomies, home,
+     *   theme_assets, custom_routes, archives, media_assets, redirects, or all.
+     *
+     * @when after_wp_load
+     * @subcommand reset_queue
      */
-    private function syncPost(int $postId, bool $immediate): void
+    public function resetQueue(array $args, array $assocArgs): void
     {
-        $post = get_post($postId);
+        $this->requireCredentials();
+        $this->requireStaticMode();
 
-        if ($post === null) {
-            WP_CLI::error(sprintf('Post not found: %d', $postId));
+        $types = $this->legacyTypes((string) ($args[0] ?? ''));
+        $this->queue->clearTypes([]);
+        $this->report($this->seeder->seed($types));
+        WP_CLI::success('Queue reset.');
+    }
+
+    /**
+     * (v1) Process a queue.
+     *
+     * ## OPTIONS
+     *
+     * <queue>
+     * : A v1 queue name or all. All pending jobs are processed regardless of the name.
+     *
+     * [--threads=<threads>]
+     * : Worker processes to run in parallel.
+     * ---
+     * default: 5
+     * ---
+     *
+     * @when after_wp_load
+     * @subcommand process_queue
+     */
+    public function processQueueLegacy(array $args, array $assocArgs): void
+    {
+        $this->requireCredentials();
+        $this->queueProcess(50, true, (int) ($assocArgs['threads'] ?? 5));
+    }
+
+    /**
+     * (v1, internal) Worker used by --threads.
+     *
+     * @when after_wp_load
+     * @subcommand process_queue_single
+     */
+    public function processQueueSingle(array $args, array $assocArgs): void
+    {
+        $this->requireCredentials();
+        $this->drain(PHP_INT_MAX, 25);
+    }
+
+    // -------------------------------------------------------------- helpers
+
+    private function requireCredentials(): void
+    {
+        if (!$this->settings->hasValidCredentials()) {
+            WP_CLI::error('QuantCDN credentials are not configured. Configure them in QuantCDN > Settings or with QUANT_* environment variables.');
         }
+    }
 
-        if ($immediate) {
-            WP_CLI::log(sprintf('Rendering and publishing post %d: %s', $postId, $post->post_title));
-
-            $rendered = $this->renderer->render($postId);
-
-            if ($rendered === null) {
-                WP_CLI::error(sprintf('Failed to render post %d. Post may not be published or renderable.', $postId));
-            }
-
-            $response = $this->api->publish($rendered->url, $rendered->markup, $rendered->meta);
-
-            if ($response->success) {
-                WP_CLI::success(sprintf('Published: %s', $rendered->url));
-            } else {
-                WP_CLI::error(sprintf('Failed to publish: %s', $response->message));
-            }
-        } else {
-            $syncType = $this->getSyncTypeForPost($post);
-
-            $job = new SyncJob(
-                type: $syncType,
-                objectId: (string) $postId,
-                action: SyncAction::Publish,
-            );
-
-            $this->queue->push($job);
-            WP_CLI::success(sprintf('Queued post %d for sync: %s', $postId, $post->post_title));
+    private function requireStaticMode(): void
+    {
+        if (!$this->settings->isStaticMode()) {
+            WP_CLI::error('Content sync is only available in Static mode. Current mode: ' . $this->settings->getMode());
         }
     }
 
     /**
-     * Queue all content for sync.
+     * @param array<int> $ids
      */
-    private function syncAllContent(): void
+    private function queuePosts(array $ids): void
     {
-        WP_CLI::log('Queueing all content for sync...');
-
         $jobs = [];
-        $counts = [
-            'posts' => 0,
-            'pages' => 0,
-            'media' => 0,
-        ];
-
-        // Queue posts
-        $posts = get_posts([
-            'post_type' => 'post',
-            'post_status' => 'publish',
-            'numberposts' => -1,
-            'fields' => 'ids',
-        ]);
-
-        foreach ($posts as $postId) {
-            $jobs[] = new SyncJob(
-                type: SyncType::Post,
-                objectId: (string) $postId,
-                action: SyncAction::Publish,
-            );
-            $counts['posts']++;
+        foreach ($ids as $id) {
+            $post = get_post($id);
+            if (!$post instanceof \WP_Post) {
+                WP_CLI::warning("Post {$id} not found.");
+                continue;
+            }
+            $type = match ($post->post_type) {
+                'post' => SyncType::Post,
+                'page' => SyncType::Page,
+                'attachment' => SyncType::Media,
+                default => SyncType::CustomPostType,
+            };
+            $jobs[] = new SyncJob($type, (string) $id, SyncAction::Publish, ['post_type' => $post->post_type]);
         }
 
-        // Queue pages
-        $pages = get_posts([
-            'post_type' => 'page',
-            'post_status' => 'publish',
-            'numberposts' => -1,
-            'fields' => 'ids',
-        ]);
-
-        foreach ($pages as $pageId) {
-            $jobs[] = new SyncJob(
-                type: SyncType::Page,
-                objectId: (string) $pageId,
-                action: SyncAction::Publish,
-            );
-            $counts['pages']++;
-        }
-
-        // Queue media
-        $media = get_posts([
-            'post_type' => 'attachment',
-            'post_status' => 'inherit',
-            'numberposts' => -1,
-            'fields' => 'ids',
-        ]);
-
-        foreach ($media as $mediaId) {
-            $jobs[] = new SyncJob(
-                type: SyncType::Media,
-                objectId: (string) $mediaId,
-                action: SyncAction::Publish,
-            );
-            $counts['media']++;
-        }
-
-        if (!empty($jobs)) {
-            $this->queue->pushBatch($jobs);
-        }
-
-        WP_CLI::success(sprintf(
-            'Queued %d items for sync: %d posts, %d pages, %d media',
-            count($jobs),
-            $counts['posts'],
-            $counts['pages'],
-            $counts['media']
-        ));
-
-        WP_CLI::log('Run "wp quant queue process" to process the queue.');
+        $this->queue->pushBatch($jobs);
+        WP_CLI::success(sprintf('Queued %d post(s).', count($jobs)));
     }
 
     /**
-     * Queue content by type for sync.
+     * @param array{queued: int, types: array<string, int>} $result
      */
-    private function syncByType(string $type): void
+    private function report(array $result): void
     {
-        $syncType = $this->parseSyncType($type);
-
-        if ($syncType === null) {
-            WP_CLI::error(sprintf(
-                'Invalid type: %s. Valid types: post, page, media, taxonomy, archive',
-                $type
-            ));
+        foreach ($result['types'] as $type => $count) {
+            WP_CLI::log(sprintf('  %-16s %d', $type, $count));
         }
-
-        WP_CLI::log(sprintf('Queueing all %s content for sync...', $type));
-
-        $jobs = [];
-
-        switch ($syncType) {
-            case SyncType::Post:
-                $posts = get_posts([
-                    'post_type' => 'post',
-                    'post_status' => 'publish',
-                    'numberposts' => -1,
-                    'fields' => 'ids',
-                ]);
-
-                foreach ($posts as $postId) {
-                    $jobs[] = new SyncJob(
-                        type: SyncType::Post,
-                        objectId: (string) $postId,
-                        action: SyncAction::Publish,
-                    );
-                }
-                break;
-
-            case SyncType::Page:
-                $pages = get_posts([
-                    'post_type' => 'page',
-                    'post_status' => 'publish',
-                    'numberposts' => -1,
-                    'fields' => 'ids',
-                ]);
-
-                foreach ($pages as $pageId) {
-                    $jobs[] = new SyncJob(
-                        type: SyncType::Page,
-                        objectId: (string) $pageId,
-                        action: SyncAction::Publish,
-                    );
-                }
-                break;
-
-            case SyncType::Media:
-                $media = get_posts([
-                    'post_type' => 'attachment',
-                    'post_status' => 'inherit',
-                    'numberposts' => -1,
-                    'fields' => 'ids',
-                ]);
-
-                foreach ($media as $mediaId) {
-                    $jobs[] = new SyncJob(
-                        type: SyncType::Media,
-                        objectId: (string) $mediaId,
-                        action: SyncAction::Publish,
-                    );
-                }
-                break;
-
-            case SyncType::Taxonomy:
-                // Queue categories
-                $categories = get_categories(['hide_empty' => false]);
-                foreach ($categories as $category) {
-                    $jobs[] = new SyncJob(
-                        type: SyncType::Taxonomy,
-                        objectId: (string) $category->term_id,
-                        action: SyncAction::Publish,
-                        meta: ['taxonomy' => 'category'],
-                    );
-                }
-
-                // Queue tags
-                $tags = get_tags(['hide_empty' => false]);
-                if (is_array($tags)) {
-                    foreach ($tags as $tag) {
-                        $jobs[] = new SyncJob(
-                            type: SyncType::Taxonomy,
-                            objectId: (string) $tag->term_id,
-                            action: SyncAction::Publish,
-                            meta: ['taxonomy' => 'post_tag'],
-                        );
-                    }
-                }
-                break;
-
-            case SyncType::Archive:
-                // Queue archive pages - use a special identifier
-                $jobs[] = new SyncJob(
-                    type: SyncType::Archive,
-                    objectId: 'main',
-                    action: SyncAction::Publish,
-                );
-                break;
-
-            default:
-                WP_CLI::error(sprintf('Type "%s" is not yet supported for bulk sync.', $type));
-        }
-
-        if (!empty($jobs)) {
-            $this->queue->pushBatch($jobs);
-        }
-
-        WP_CLI::success(sprintf('Queued %d %s items for sync.', count($jobs), $type));
-        WP_CLI::log('Run "wp quant queue process" to process the queue.');
+        WP_CLI::success(sprintf('Queued %d item(s).', $result['queued']));
     }
 
-    /**
-     * Show queue status.
-     */
     private function queueStatus(): void
     {
         $status = $this->queue->getStatus();
-
-        WP_CLI::log('Queue Status');
-        WP_CLI::log('============');
-        WP_CLI::log('');
-        WP_CLI::log(sprintf('Pending:    %d', $status->pending));
-        WP_CLI::log(sprintf('Processing: %d', $status->processing));
-        WP_CLI::log(sprintf('Failed:     %d', $status->failed));
-        WP_CLI::log(sprintf('Total:      %d', $status->total));
-
         $completed = $status->total - $status->pending - $status->processing - $status->failed;
-        if ($completed > 0) {
-            WP_CLI::log(sprintf('Completed:  %d', $completed));
-        }
+
+        WP_CLI\Utils\format_items('table', [[
+            'pending' => $status->pending,
+            'processing' => $status->processing,
+            'failed' => $status->failed,
+            'completed' => $completed,
+            'total' => $status->total,
+        ]], ['pending', 'processing', 'failed', 'completed', 'total']);
     }
 
-    /**
-     * Process queue items.
-     */
-    private function queueProcess(int $limit): void
+    private function queueProcess(int $limit, bool $all, int $threads): void
     {
-        if (!$this->settings->hasValidCredentials()) {
-            WP_CLI::error('QuantCDN credentials are not configured.');
-        }
+        $this->requireCredentials();
 
-        WP_CLI::log(sprintf('Processing up to %d queue items...', $limit));
-
-        $jobs = $this->queue->fetchPending($limit);
-
-        if (empty($jobs)) {
-            WP_CLI::log('No pending items in queue.');
+        $threads = max(1, min(20, $threads));
+        if ($threads > 1) {
+            $this->runWorkers($threads);
             return;
         }
 
+        $this->drain($all ? PHP_INT_MAX : 1, $limit);
+    }
+
+    /**
+     * Process batches until the queue is empty or $maxBatches is reached.
+     */
+    private function drain(int $maxBatches, int $limit): void
+    {
         $processed = 0;
         $failed = 0;
-        $progress = \WP_CLI\Utils\make_progress_bar('Processing', count($jobs));
+        $batches = 0;
 
-        foreach ($jobs as $job) {
-            try {
-                $success = $this->processJob($job);
+        while ($batches < $maxBatches) {
+            $result = $this->processor->run($limit, 600);
+            $processed += $result->processed;
+            $failed += $result->failed;
+            $batches++;
 
-                if ($success) {
-                    $this->queue->markCompleted($job->id);
-                    $processed++;
-                } else {
-                    $this->queue->markFailed($job->id, 'Processing failed');
-                    $failed++;
-                }
-            } catch (\Throwable $e) {
-                $this->queue->markFailed($job->id, $e->getMessage());
-                $failed++;
+            foreach ($result->errors as $error) {
+                WP_CLI::warning($error);
             }
 
-            $progress->tick();
-        }
-
-        $progress->finish();
-
-        WP_CLI::success(sprintf('Processed %d items (%d successful, %d failed)', count($jobs), $processed, $failed));
-    }
-
-    /**
-     * Process a single job.
-     */
-    private function processJob(SyncJob $job): bool
-    {
-        switch ($job->action) {
-            case SyncAction::Publish:
-                return $this->processPublishJob($job);
-
-            case SyncAction::Unpublish:
-                return $this->processUnpublishJob($job);
-
-            case SyncAction::Purge:
-                return $this->processPurgeJob($job);
-
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * Process a publish job.
-     */
-    private function processPublishJob(SyncJob $job): bool
-    {
-        switch ($job->type) {
-            case SyncType::Post:
-            case SyncType::Page:
-            case SyncType::CustomPostType:
-                $rendered = $this->renderer->render((int) $job->objectId);
-
-                if ($rendered === null) {
-                    return false;
-                }
-
-                $response = $this->api->publish($rendered->url, $rendered->markup, $rendered->meta);
-                return $response->success;
-
-            case SyncType::Media:
-                $attachment = get_post((int) $job->objectId);
-                if ($attachment === null) {
-                    return false;
-                }
-
-                $filePath = get_attached_file((int) $job->objectId);
-                if ($filePath === false || !file_exists($filePath)) {
-                    return false;
-                }
-
-                $url = wp_get_attachment_url((int) $job->objectId);
-                if ($url === false) {
-                    return false;
-                }
-
-                $path = wp_parse_url($url, PHP_URL_PATH);
-                if ($path === null) {
-                    return false;
-                }
-
-                $response = $this->api->uploadFile($path, $filePath);
-                return $response->success;
-
-            default:
-                // Other types not yet implemented
-                return false;
-        }
-    }
-
-    /**
-     * Process an unpublish job.
-     */
-    private function processUnpublishJob(SyncJob $job): bool
-    {
-        // Need to determine the URL from the job
-        // For posts/pages, we can get it from the post
-        $post = get_post((int) $job->objectId);
-
-        if ($post === null) {
-            // Post deleted, get URL from meta if available
-            $url = $job->meta['url'] ?? null;
-            if ($url === null) {
-                return false;
+            if ($result->processed + $result->failed === 0 || $this->queue->getStatus()->pending === 0) {
+                break;
             }
-        } else {
-            $permalink = get_permalink($post);
-            if ($permalink === false) {
-                return false;
-            }
-            $url = wp_parse_url($permalink, PHP_URL_PATH) ?? '/';
         }
 
-        $response = $this->api->unpublish($url);
-        return $response->success;
+        $message = sprintf('Processed %d item(s), %d failed.', $processed, $failed);
+        $failed > 0 ? WP_CLI::warning($message) : WP_CLI::success($message);
     }
 
     /**
-     * Process a purge job.
+     * Spawn worker processes that each drain the queue.
      */
-    private function processPurgeJob(SyncJob $job): bool
+    private function runWorkers(int $threads): void
     {
-        $path = $job->meta['path'] ?? null;
+        $this->queue->recoverStale(0);
+        $command = $this->workerCommand();
+        $procs = [];
 
-        if ($path === null) {
-            return false;
+        for ($i = 0; $i < $threads; $i++) {
+            $proc = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+            if (is_resource($proc)) {
+                $procs[] = [$proc, $pipes];
+            }
         }
 
-        $response = $this->api->purge($path);
-        return $response->success;
+        WP_CLI::log(sprintf('Started %d worker(s).', count($procs)));
+
+        foreach ($procs as [$proc, $pipes]) {
+            WP_CLI::log(trim((string) stream_get_contents($pipes[1])));
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            proc_close($proc);
+        }
+
+        $status = $this->queue->getStatus();
+        WP_CLI::success(sprintf('Workers finished. %d pending, %d failed.', $status->pending, $status->failed));
     }
 
-    /**
-     * Clear pending queue items.
-     */
+    private function workerCommand(): string
+    {
+        $parts = ['wp', 'quant', 'queue', 'process', '--all', '--path=' . escapeshellarg(ABSPATH)];
+
+        foreach (['url', 'allow-root', 'skip-plugins', 'skip-themes'] as $flag) {
+            if (WP_CLI::has_config($flag) && WP_CLI::get_config($flag)) {
+                $value = WP_CLI::get_config($flag);
+                $parts[] = $value === true ? "--{$flag}" : "--{$flag}=" . escapeshellarg((string) $value);
+            }
+        }
+
+        return implode(' ', $parts);
+    }
+
     private function queueClear(): void
     {
-        $status = $this->queue->getStatus();
-        $pending = $status->pending;
-
+        $pending = $this->queue->getStatus()->pending;
         if ($pending === 0) {
             WP_CLI::log('No pending items to clear.');
             return;
         }
 
-        WP_CLI::confirm(sprintf('Are you sure you want to clear %d pending items?', $pending));
-
+        WP_CLI::confirm(sprintf('Clear %d pending item(s)?', $pending));
         $this->queue->clear();
-        WP_CLI::success(sprintf('Cleared %d pending items from queue.', $pending));
+        WP_CLI::success(sprintf('Cleared %d pending item(s).', $pending));
     }
 
-    /**
-     * Retry failed queue items.
-     */
-    private function queueRetry(): void
+    private function queueErrors(): void
     {
-        $status = $this->queue->getStatus();
-
-        if ($status->failed === 0) {
-            WP_CLI::log('No failed items to retry.');
+        if (!$this->queue instanceof \Quant\Sync\DatabaseQueue) {
+            WP_CLI::log('Not available for this queue backend.');
             return;
         }
 
-        $count = $this->queue->retry();
-        WP_CLI::success(sprintf('Queued %d failed items for retry.', $count));
-    }
-
-    /**
-     * Normalize a path for purging.
-     */
-    private function normalizePath(string $path): string
-    {
-        // Ensure path starts with /
-        if (!str_starts_with($path, '/')) {
-            $path = '/' . $path;
+        $errors = $this->queue->recentErrors(25);
+        if ($errors === []) {
+            WP_CLI::success('No failed jobs.');
+            return;
         }
 
-        return $path;
+        WP_CLI\Utils\format_items('table', $errors, ['type', 'object_id', 'error_message', 'processed_at']);
     }
 
     /**
-     * Parse a string type into a SyncType enum.
+     * @return array<string>
      */
-    private function parseSyncType(string $type): ?SyncType
+    private function legacyTypes(string $queue): array
     {
-        return match (strtolower($type)) {
-            'post' => SyncType::Post,
-            'page' => SyncType::Page,
-            'media', 'attachment' => SyncType::Media,
-            'taxonomy', 'category', 'tag' => SyncType::Taxonomy,
-            'archive' => SyncType::Archive,
-            default => null,
-        };
-    }
+        if ($queue === 'all') {
+            return ['all'];
+        }
 
-    /**
-     * Get the SyncType for a given post.
-     *
-     * @param \WP_Post $post
-     */
-    private function getSyncTypeForPost($post): SyncType
-    {
-        return match ($post->post_type) {
-            'post' => SyncType::Post,
-            'page' => SyncType::Page,
-            'attachment' => SyncType::Media,
-            default => SyncType::CustomPostType,
-        };
+        if (!isset(self::LEGACY_QUEUES[$queue])) {
+            WP_CLI::error('Invalid queue name. Valid names: ' . implode(', ', array_keys(self::LEGACY_QUEUES)) . ', all');
+        }
+
+        $types = self::LEGACY_QUEUES[$queue];
+
+        return $types === ['__cpt__'] ? $this->seeder->customPostTypes() : $types;
     }
 }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Quant\Api;
 
-readonly class ApiResponse
+class ApiResponse
 {
     public function __construct(
-        public bool $success,
-        public string $message = '',
-        public array $data = [],
-        public int $statusCode = 200
+        public readonly bool $success,
+        public readonly string $message = '',
+        public readonly array $data = [],
+        public readonly int $statusCode = 200
     ) {}
 
     public static function success(array $data = [], string $message = ''): self

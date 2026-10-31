@@ -7,16 +7,16 @@ namespace Quant\Sync;
 /**
  * Value object representing the result of syncing a single file.
  */
-final readonly class FileSyncResult
+final class FileSyncResult
 {
     /**
      * @param array<string, mixed> $meta
      */
     public function __construct(
-        public bool $success,
-        public string $path,
-        public string $message = '',
-        public array $meta = []
+        public readonly bool $success,
+        public readonly string $path,
+        public readonly string $message = '',
+        public readonly array $meta = []
     ) {
     }
 

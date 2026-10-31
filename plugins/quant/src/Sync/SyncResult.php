@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Quant\Sync;
 
-final readonly class SyncResult
+final class SyncResult
 {
     /**
      * @param array<string> $errors
      */
     public function __construct(
-        public int $processed,
-        public int $failed,
-        public array $errors = [],
+        public readonly int $processed,
+        public readonly int $failed,
+        public readonly array $errors = [],
     ) {
     }
 }

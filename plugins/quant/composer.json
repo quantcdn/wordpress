@@ -7,9 +7,13 @@
         "php": ">=8.1"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.0",
         "brain/monkey": "^2.6",
-        "mockery/mockery": "^1.6"
+        "mockery/mockery": "^1.6",
+        "php-stubs/wp-cli-stubs": "^2.11",
+        "phpmd/phpmd": "^2.15",
+        "phpstan/phpstan": "^1.12",
+        "phpunit/phpunit": "^10.0",
+        "szepeviktor/phpstan-wordpress": "^1.3"
     },
     "autoload": {
         "psr-4": {
@@ -23,6 +27,22 @@
     },
     "config": {
         "optimize-autoloader": true,
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": false
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "lint:complexity": "phpmd src text phpmd.xml",
+        "lint": [
+            "@analyse",
+            "@lint:complexity"
+        ],
+        "check": [
+            "@lint",
+            "@test"
+        ]
     }
 }

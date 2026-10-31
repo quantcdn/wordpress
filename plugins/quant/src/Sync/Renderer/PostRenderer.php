@@ -4,33 +4,26 @@ declare(strict_types=1);
 
 namespace Quant\Sync\Renderer;
 
+use Quant\Sync\Exception\UnpublishedContentException;
+use Quant\Sync\Paths;
+use RuntimeException;
 use WP_Post;
 
 /**
- * Renders posts, pages, and custom post types by fetching their HTML via HTTP.
+ * Renders posts, pages and custom post type entries.
  */
 final class PostRenderer implements ContentRendererInterface
 {
-    /**
-     * Supported post statuses for rendering.
-     *
-     * @var array<string>
-     */
-    private const SUPPORTED_STATUSES = ['publish'];
-
-    /**
-     * Built-in post types that are always supported.
-     *
-     * @var array<string>
-     */
     private const BUILTIN_POST_TYPES = ['post', 'page'];
 
-    /**
-     * {@inheritdoc}
-     */
+    public function __construct(
+        private readonly RouteRenderer $routes
+    ) {
+    }
+
     public function supports(WP_Post $post): bool
     {
-        if (!in_array($post->post_status, self::SUPPORTED_STATUSES, true)) {
+        if ($post->post_status !== 'publish') {
             return false;
         }
 
@@ -38,136 +31,78 @@ final class PostRenderer implements ContentRendererInterface
             return true;
         }
 
-        return $this->isPublicCustomPostType($post->post_type);
+        $postTypeObject = get_post_type_object($post->post_type);
+
+        return $postTypeObject !== null && $postTypeObject->public === true && $postTypeObject->publicly_queryable !== false;
     }
 
-    /**
-     * {@inheritdoc}
-     *
-     * @throws \RuntimeException If rendering fails
-     */
-    public function render(int $postId): ?RenderedContent
+    public function render(int $postId): RenderedContent
     {
         $post = get_post($postId);
 
         if (!$post instanceof WP_Post) {
-            throw new \RuntimeException("Post #{$postId} not found");
-        }
-
-        if (!$this->supports($post)) {
-            throw new \RuntimeException("Post #{$postId} ({$post->post_type}) is not supported for rendering (status: {$post->post_status})");
+            throw new RuntimeException("Post #{$postId} not found");
         }
 
         $permalink = get_permalink($post);
-
-        if ($permalink === false) {
-            throw new \RuntimeException("Cannot get permalink for post #{$postId}");
+        if (!is_string($permalink) || $permalink === '') {
+            throw new RuntimeException("Cannot get permalink for post #{$postId}");
         }
 
-        $markup = $this->fetchRenderedHtml($permalink);
+        if (!$this->supports($post)) {
+            throw new UnpublishedContentException(
+                Paths::fromUrl($permalink),
+                "Post #{$postId} ({$post->post_type}) is not public (status: {$post->post_status})"
+            );
+        }
 
-        $url = $this->extractPath($permalink);
+        if (!empty($post->post_password)) {
+            throw new UnpublishedContentException(Paths::fromUrl($permalink), "Post #{$postId} is password protected");
+        }
+
+        $path = Paths::fromUrl($permalink);
+        $publishAs = $this->isFrontPage($post) ? '/' : null;
+
+        $rendered = $this->routes->render($path, $publishAs);
 
         return new RenderedContent(
-            url: $url,
-            markup: $markup,
-            meta: $this->buildMeta($post),
+            url: $rendered->url,
+            markup: $rendered->markup,
+            info: $this->buildInfo($post),
+            options: array_merge($rendered->options, [
+                'content_timestamp' => $this->timestamp($post),
+            ]),
         );
     }
 
     /**
-     * Check if a post type is a public custom post type.
+     * @return array<string, string>
      */
-    private function isPublicCustomPostType(string $postType): bool
+    private function buildInfo(WP_Post $post): array
     {
-        $postTypeObject = get_post_type_object($postType);
+        $info = ['source' => 'wordpress'];
 
-        if ($postTypeObject === null) {
-            return false;
+        $author = get_the_author_meta('display_name', (int) $post->post_author);
+        if (is_string($author) && $author !== '') {
+            $info['author_name'] = $author;
         }
 
-        return $postTypeObject->public === true;
+        $info['log'] = sprintf('%s #%d modified %s', $post->post_type, $post->ID, $post->post_modified_gmt);
+
+        return $info;
     }
 
-    /**
-     * Fetch the rendered HTML from the given URL.
-     *
-     * @throws \RuntimeException If the URL cannot be fetched
-     */
-    private function fetchRenderedHtml(string $url): string
+    private function timestamp(WP_Post $post): int
     {
-        $originalUrl = $url;
-        // Allow filtering the URL for internal fetching (e.g., Docker environments)
-        $url = apply_filters('quant_internal_fetch_url', $url);
+        $timestamp = strtotime($post->post_modified_gmt . ' UTC');
 
-        // Build request args - allow filtering for Host header etc
-        $args = apply_filters('quant_internal_fetch_args', [
-            'timeout' => 30,
-            // SSL verification disabled by default for internal requests.
-            // Use 'quant_renderer_ssl_verify' filter to enable.
-            'sslverify' => apply_filters('quant_renderer_ssl_verify', false),
-        ]);
-
-        $response = wp_remote_get($url, $args);
-
-        if (is_wp_error($response)) {
-            throw new \RuntimeException("HTTP request failed for {$url}: " . $response->get_error_message());
-        }
-
-        $statusCode = wp_remote_retrieve_response_code($response);
-
-        if ($statusCode !== 200) {
-            throw new \RuntimeException("HTTP {$statusCode} response for {$url} (original: {$originalUrl})");
-        }
-
-        $body = wp_remote_retrieve_body($response);
-
-        if (empty($body)) {
-            throw new \RuntimeException("Empty response body for {$url}");
-        }
-
-        return $body;
+        return $timestamp === false ? time() : $timestamp;
     }
 
-    /**
-     * Extract the path (with query string) from a full URL.
-     */
-    private function extractPath(string $url): string
+    private function isFrontPage(WP_Post $post): bool
     {
-        $parsed = wp_parse_url($url);
-
-        $path = $parsed['path'] ?? '/';
-
-        if ($path === '') {
-            $path = '/';
-        }
-
-        // Include query string if present (important for plain permalinks like /?p=123)
-        if (!empty($parsed['query'])) {
-            $path .= '?' . $parsed['query'];
-        }
-
-        return $path;
-    }
-
-    /**
-     * Build metadata array for the rendered content.
-     *
-     * The Quant API only accepts specific fields in the 'info' object.
-     * Valid fields: author_name
-     *
-     * @return array{author_name?: string}
-     */
-    private function buildMeta(WP_Post $post): array
-    {
-        $authorId = $post->post_author;
-        $authorName = get_the_author_meta('display_name', $authorId);
-
-        // Only include author_name if it's not empty
-        if (!empty($authorName)) {
-            return ['author_name' => $authorName];
-        }
-
-        return [];
+        return $post->post_type === 'page'
+            && get_option('show_on_front') === 'page'
+            && (int) get_option('page_on_front') === $post->ID;
     }
 }

@@ -137,46 +137,49 @@ class OAuthController
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $error = isset($_GET['error']) ? sanitize_text_field(wp_unslash($_GET['error'])) : '';
 
-        // Handle OAuth errors
-        if (!empty($error)) {
-            $this->renderError(__('Authorization was denied or cancelled.', 'quant'));
+        $failure = $this->validateCallback($code, $state, $error);
+        if ($failure !== null) {
+            $this->renderError($failure);
             return;
         }
 
-        // Validate state (CSRF protection)
-        $storedState = get_transient(self::STATE_TRANSIENT_PREFIX . $state);
-        delete_transient(self::STATE_TRANSIENT_PREFIX . $state);
-
-        if (!$storedState || !is_array($storedState)) {
-            $this->renderError(__('Invalid or expired authorization request. Please try again.', 'quant'));
-            return;
-        }
-
-        // Verify user is the same
-        if ($storedState['user_id'] !== get_current_user_id()) {
-            $this->renderError(__('Authorization session mismatch. Please try again.', 'quant'));
-            return;
-        }
-
-        if (empty($code)) {
-            $this->renderError(__('No authorization code received.', 'quant'));
-            return;
-        }
-
-        // Exchange code for token
         $tokenResult = $this->exchangeCodeForToken($code);
-
         if (is_wp_error($tokenResult)) {
             $this->renderError($tokenResult->get_error_message());
             return;
         }
 
-        // Store the token and organization data
         $this->storeOAuthData($tokenResult);
 
-        // Redirect to settings page with success notice
-        wp_safe_redirect(admin_url('admin.php?page=quant&oauth=success'));
+        wp_safe_redirect(admin_url('admin.php?page=quant&oauth=success#/settings'));
         exit;
+    }
+
+    /**
+     * Check the callback parameters and the CSRF state. Returns an error message or null.
+     */
+    private function validateCallback(string $code, string $state, string $error): ?string
+    {
+        if ($error !== '') {
+            return __('Authorization was denied or cancelled.', 'quant');
+        }
+
+        $storedState = get_transient(self::STATE_TRANSIENT_PREFIX . $state);
+        delete_transient(self::STATE_TRANSIENT_PREFIX . $state);
+
+        if (!is_array($storedState)) {
+            return __('Invalid or expired authorization request. Please try again.', 'quant');
+        }
+
+        if (($storedState['user_id'] ?? null) !== get_current_user_id()) {
+            return __('Authorization session mismatch. Please try again.', 'quant');
+        }
+
+        if ($code === '') {
+            return __('No authorization code received.', 'quant');
+        }
+
+        return null;
     }
 
     /**
@@ -506,16 +509,11 @@ class OAuthController
      */
     private function getPortalUrl(): string
     {
-        return apply_filters('quant_portal_url', self::PORTAL_URL);
-    }
+        $endpoint = $this->settings->getCredentials()['endpoint'] ?? '';
+        $portal = str_contains($endpoint, 'quantgov.cloud') ? 'https://dash.quantgov.cloud' : self::PORTAL_URL;
 
-    /**
-     * Get the Content API URL from settings or default.
-     */
-    private function getApiUrl(): string
-    {
-        $credentials = $this->settings->getCredentials();
-        return $credentials['endpoint'] ?? 'https://api.quantcdn.io';
+        /** This filter is documented in v2.0.0; it sets the dashboard used for OAuth. */
+        return rtrim((string) apply_filters('quant_portal_url', $portal), '/');
     }
 
     /**
@@ -523,6 +521,7 @@ class OAuthController
      */
     private function getCloudApiUrl(): string
     {
-        return apply_filters('quant_cloud_api_url', self::PORTAL_URL . '/api/v2');
+        /** This filter is documented in v2.0.0; it sets the platform API used to list projects. */
+        return rtrim((string) apply_filters('quant_cloud_api_url', $this->getPortalUrl() . '/api/v2'), '/');
     }
 }

@@ -17,33 +17,14 @@ final class ThemeAssetSync
      * File extensions to sync as static assets.
      */
     private const ASSET_EXTENSIONS = [
-        // Stylesheets
-        'css',
-        'scss',
-        'sass',
-        'less',
-        // JavaScript
-        'js',
-        'mjs',
-        // Images
-        'png',
-        'jpg',
-        'jpeg',
-        'gif',
-        'webp',
-        'avif',
-        'ico',
-        'svg',
-        // Fonts
-        'woff',
-        'woff2',
-        'ttf',
-        'otf',
-        'eot',
-        // Other
-        'json',
-        'map',
+        'css', 'scss', 'sass', 'less',
+        'js', 'mjs', 'map', 'json',
+        'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'svg',
+        'woff', 'woff2', 'ttf', 'otf', 'eot',
+        'mp4', 'webm', 'mp3', 'pdf',
     ];
+
+    private const SKIPPED_DIRECTORIES = ['node_modules', '.git', 'vendor'];
 
     public function __construct(
         private readonly ContentApiInterface $api
@@ -51,7 +32,7 @@ final class ThemeAssetSync
     }
 
     /**
-     * Sync all assets from the active theme.
+     * Sync all assets from the active theme (and its parent).
      *
      * @return FileSyncResult[]
      */
@@ -59,29 +40,27 @@ final class ThemeAssetSync
     {
         $results = [];
 
-        // Get child theme directory (or main theme if no child theme)
-        $stylesheetDir = get_stylesheet_directory();
-        $stylesheetUri = get_stylesheet_directory_uri();
-
-        // Get parent theme directory
-        $templateDir = get_template_directory();
-        $templateUri = get_template_directory_uri();
-
-        // Sync child theme assets first
-        $results = array_merge(
-            $results,
-            $this->syncThemeDirectory($stylesheetDir, $stylesheetUri)
-        );
-
-        // If using a child theme, also sync parent theme assets
-        if ($stylesheetDir !== $templateDir) {
-            $results = array_merge(
-                $results,
-                $this->syncThemeDirectory($templateDir, $templateUri)
-            );
+        foreach ($this->scanActiveTheme() as $asset) {
+            $results[] = $this->syncAsset($asset['file'], $asset['url']);
         }
 
         return $results;
+    }
+
+    /**
+     * List the assets of the active theme and, for a child theme, its parent.
+     *
+     * @return array<int, array{file: string, url: string, type: string}>
+     */
+    public function scanActiveTheme(): array
+    {
+        $assets = $this->scanDirectory(get_stylesheet_directory(), get_stylesheet_directory_uri());
+
+        if (get_stylesheet_directory() !== get_template_directory()) {
+            $assets = array_merge($assets, $this->scanDirectory(get_template_directory(), get_template_directory_uri()));
+        }
+
+        return $assets;
     }
 
     /**
@@ -103,66 +82,69 @@ final class ThemeAssetSync
     }
 
     /**
-     * Sync all assets from a theme directory.
-     *
-     * @return FileSyncResult[]
+     * @return array<int, array{file: string, url: string, type: string}>
      */
-    private function syncThemeDirectory(string $themeDir, string $themeUri): array
+    private function scanDirectory(string $themeDir, string $themeUri): array
     {
         if (!is_dir($themeDir)) {
             return [];
         }
 
-        $results = [];
-        $cdnBasePath = $this->uriToPath($themeUri);
+        $basePath = $this->uriToPath($themeUri);
         $themeDir = trailingslashit($themeDir);
+        $assets = [];
 
         $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator(
-                $themeDir,
-                RecursiveDirectoryIterator::SKIP_DOTS
-            ),
+            new RecursiveDirectoryIterator($themeDir, RecursiveDirectoryIterator::SKIP_DOTS),
             RecursiveIteratorIterator::LEAVES_ONLY
         );
 
         foreach ($iterator as $file) {
-            if (!$file->isFile()) {
+            if (!$file->isFile() || !$this->isAsset($file->getPathname(), $themeDir)) {
                 continue;
             }
 
-            $extension = strtolower($file->getExtension());
-
-            if (!$this->isAssetExtension($extension)) {
-                continue;
-            }
-
-            $localPath = $file->getPathname();
-            $relativePath = substr($localPath, strlen($themeDir));
-            $cdnPath = $cdnBasePath . '/' . $relativePath;
-
-            $results[] = $this->syncAsset($localPath, $cdnPath);
+            $relative = str_replace('\\', '/', substr($file->getPathname(), strlen($themeDir)));
+            $assets[] = [
+                'file' => $file->getPathname(),
+                'url' => $basePath . '/' . $relative,
+                'type' => $this->assetType(strtolower($file->getExtension())),
+            ];
         }
 
-        return $results;
+        return $assets;
     }
 
-    /**
-     * Check if the extension is a supported asset type.
-     */
-    private function isAssetExtension(string $extension): bool
+    private function isAsset(string $path, string $themeDir): bool
     {
-        return in_array($extension, self::ASSET_EXTENSIONS, true);
+        $relative = substr($path, strlen($themeDir));
+        foreach (self::SKIPPED_DIRECTORIES as $dir) {
+            if (str_contains('/' . str_replace('\\', '/', $relative), '/' . $dir . '/')) {
+                return false;
+            }
+        }
+
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), self::ASSET_EXTENSIONS, true);
     }
 
-    /**
-     * Convert a theme URI to a CDN path.
-     */
+    private function assetType(string $extension): string
+    {
+        return match ($extension) {
+            'css', 'scss', 'sass', 'less' => 'stylesheet',
+            'js', 'mjs', 'map', 'json' => 'script',
+            'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'svg', 'ico' => 'image',
+            'woff', 'woff2', 'ttf', 'otf', 'eot' => 'font',
+            default => 'other',
+        };
+    }
+
     private function uriToPath(string $uri): string
     {
-        $parsed = parse_url($uri);
+        $parsed = wp_parse_url($uri);
         if ($parsed === false || !isset($parsed['path'])) {
             return '';
         }
-        return $parsed['path'];
+
+        return rtrim($parsed['path'], '/');
     }
 }

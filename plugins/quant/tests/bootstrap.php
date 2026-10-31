@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
+require_once __DIR__ . '/Support/FakeRedirection.php';
 
 // Define WordPress constants for testing
 if (!defined('ABSPATH')) {
@@ -84,6 +85,7 @@ if (!class_exists('WP_Post')) {
         public string $guid = '';
         public int $menu_order = 0;
         public string $post_mime_type = '';
+        public string $post_password = '';
         public string $comment_status = 'open';
         public string $ping_status = 'open';
         public int $comment_count = 0;
@@ -133,5 +135,112 @@ if (!class_exists('wpdb')) {
         {
             return 'utf8mb4_unicode_ci';
         }
+    }
+}
+
+// Stub WP_Term class for testing
+if (!class_exists('WP_Term')) {
+    // phpcs:ignore
+    class WP_Term
+    {
+        public int $term_id = 0;
+        public string $name = '';
+        public string $slug = '';
+        public string $taxonomy = 'category';
+        public int $count = 0;
+        public int $parent = 0;
+        public string $description = '';
+    }
+}
+
+// Stub WP_Taxonomy class for testing
+if (!class_exists('WP_Taxonomy')) {
+    // phpcs:ignore
+    class WP_Taxonomy
+    {
+        public string $name = '';
+        public bool $public = true;
+        public ?bool $publicly_queryable = true;
+        public object $labels;
+
+        public function __construct(string $name = '', bool $public = true, ?bool $publiclyQueryable = true)
+        {
+            $this->name = $name;
+            $this->public = $public;
+            $this->publicly_queryable = $publiclyQueryable;
+            $this->labels = (object) ['name' => ucfirst($name), 'singular_name' => ucfirst($name)];
+        }
+    }
+}
+
+// Stub WP_Post_Type class for testing
+if (!class_exists('WP_Post_Type')) {
+    // phpcs:ignore
+    class WP_Post_Type
+    {
+        public string $name = '';
+        public bool $public = true;
+        public ?bool $publicly_queryable = true;
+        public bool|string $has_archive = false;
+        public object $labels;
+
+        public function __construct(string $name = '', bool $public = true, ?bool $publiclyQueryable = true, bool|string $hasArchive = false)
+        {
+            $this->name = $name;
+            $this->public = $public;
+            $this->publicly_queryable = $publiclyQueryable;
+            $this->has_archive = $hasArchive;
+            $this->labels = (object) ['name' => ucfirst($name) . 's', 'singular_name' => ucfirst($name)];
+        }
+    }
+}
+
+// Stub WP_REST_Request class for testing
+if (!class_exists('WP_REST_Request')) {
+    // phpcs:ignore
+    class WP_REST_Request
+    {
+        /** @param array<string, mixed> $params */
+        public function __construct(private array $params = [], private ?array $json = null)
+        {
+        }
+
+        public function get_param(string $key): mixed
+        {
+            return $this->params[$key] ?? null;
+        }
+
+        public function get_params(): array
+        {
+            return $this->params;
+        }
+
+        public function get_json_params(): ?array
+        {
+            return $this->json;
+        }
+    }
+}
+
+// Stub WP_Admin_Bar class for testing
+if (!class_exists('WP_Admin_Bar')) {
+    // phpcs:ignore
+    class WP_Admin_Bar
+    {
+        public array $nodes = [];
+
+        public function add_node(array $node): void
+        {
+            $this->nodes[] = $node;
+        }
+    }
+}
+
+// Stub WP_User class for testing
+if (!class_exists('WP_User')) {
+    // phpcs:ignore
+    class WP_User
+    {
+        public int $ID = 0;
     }
 }

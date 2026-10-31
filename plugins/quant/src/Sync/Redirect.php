@@ -7,12 +7,12 @@ namespace Quant\Sync;
 /**
  * Value object representing a redirect.
  */
-final readonly class Redirect
+final class Redirect
 {
     public function __construct(
-        public string $from,
-        public string $to,
-        public int $statusCode = 301
+        public readonly string $from,
+        public readonly string $to,
+        public readonly int $statusCode = 301
     ) {
     }
 }

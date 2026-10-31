@@ -4,170 +4,101 @@ declare(strict_types=1);
 
 namespace Quant\Tests\Sync;
 
-use PHPUnit\Framework\TestCase;
-use PHPUnit\Framework\Attributes\Test;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+use Quant\Sync\SyncAction;
 use Quant\Sync\SyncJob;
 use Quant\Sync\SyncType;
-use Quant\Sync\SyncAction;
-use DateTimeImmutable;
-use JsonSerializable;
 
 #[CoversClass(SyncJob::class)]
+#[CoversClass(SyncType::class)]
 final class SyncJobTest extends TestCase
 {
     #[Test]
-    public function it_creates_a_sync_job_with_required_properties(): void
+    public function it_creates_a_job_with_an_id_and_timestamp(): void
     {
-        $job = new SyncJob(
-            type: SyncType::Post,
-            objectId: '123',
-            action: SyncAction::Publish
-        );
+        $job = new SyncJob(SyncType::Post, '123', SyncAction::Publish);
 
-        $this->assertSame(SyncType::Post, $job->type);
-        $this->assertSame('123', $job->objectId);
-        $this->assertSame(SyncAction::Publish, $job->action);
-    }
-
-    #[Test]
-    public function it_auto_generates_a_unique_id(): void
-    {
-        $job1 = new SyncJob(
-            type: SyncType::Post,
-            objectId: '123',
-            action: SyncAction::Publish
-        );
-
-        $job2 = new SyncJob(
-            type: SyncType::Post,
-            objectId: '123',
-            action: SyncAction::Publish
-        );
-
-        $this->assertNotEmpty($job1->id);
-        $this->assertNotEmpty($job2->id);
-        $this->assertNotSame($job1->id, $job2->id);
-    }
-
-    #[Test]
-    public function it_sets_created_at_timestamp(): void
-    {
-        $before = new DateTimeImmutable();
-        $job = new SyncJob(
-            type: SyncType::Page,
-            objectId: '456',
-            action: SyncAction::Unpublish
-        );
-        $after = new DateTimeImmutable();
-
+        $this->assertNotEmpty($job->id);
         $this->assertInstanceOf(DateTimeImmutable::class, $job->createdAt);
-        $this->assertGreaterThanOrEqual($before->getTimestamp(), $job->createdAt->getTimestamp());
-        $this->assertLessThanOrEqual($after->getTimestamp(), $job->createdAt->getTimestamp());
-    }
-
-    #[Test]
-    public function it_accepts_optional_meta_array(): void
-    {
-        $meta = ['revision' => 5, 'author' => 'admin'];
-
-        $job = new SyncJob(
-            type: SyncType::Post,
-            objectId: '123',
-            action: SyncAction::Publish,
-            meta: $meta
-        );
-
-        $this->assertSame($meta, $job->meta);
-    }
-
-    #[Test]
-    public function it_defaults_meta_to_empty_array(): void
-    {
-        $job = new SyncJob(
-            type: SyncType::Post,
-            objectId: '123',
-            action: SyncAction::Publish
-        );
-
         $this->assertSame([], $job->meta);
     }
 
     #[Test]
-    public function it_implements_json_serializable(): void
+    public function it_generates_unique_ids(): void
     {
-        $job = new SyncJob(
-            type: SyncType::Media,
-            objectId: '789',
-            action: SyncAction::Purge,
-            meta: ['filename' => 'image.jpg']
-        );
+        $a = new SyncJob(SyncType::Post, '1', SyncAction::Publish);
+        $b = new SyncJob(SyncType::Post, '1', SyncAction::Publish);
 
-        $this->assertInstanceOf(JsonSerializable::class, $job);
+        $this->assertNotSame($a->id, $b->id);
     }
 
     #[Test]
-    public function it_serializes_to_json_correctly(): void
+    public function it_encodes_meta_as_json_and_null_when_empty(): void
     {
-        $job = new SyncJob(
-            type: SyncType::Media,
-            objectId: '789',
-            action: SyncAction::Purge,
-            meta: ['filename' => 'image.jpg']
-        );
+        $withMeta = new SyncJob(SyncType::Redirect, '/old', SyncAction::Publish, ['to' => '/new', 'code' => 301]);
+        $without = new SyncJob(SyncType::Post, '1', SyncAction::Publish);
 
-        $serialized = $job->jsonSerialize();
-
-        $this->assertIsArray($serialized);
-        $this->assertSame($job->id, $serialized['id']);
-        $this->assertSame('media', $serialized['type']);
-        $this->assertSame('789', $serialized['objectId']);
-        $this->assertSame('purge', $serialized['action']);
-        $this->assertSame(['filename' => 'image.jpg'], $serialized['meta']);
-        $this->assertSame($job->createdAt->format('c'), $serialized['createdAt']);
+        $this->assertSame('{"to":"\/new","code":301}', $withMeta->encodeMeta());
+        $this->assertNull($without->encodeMeta());
     }
 
     #[Test]
-    public function it_works_with_all_sync_types(): void
+    public function it_restores_meta_from_a_database_row(): void
     {
-        $types = [
-            SyncType::Post,
-            SyncType::Page,
-            SyncType::CustomPostType,
-            SyncType::Taxonomy,
-            SyncType::Archive,
-            SyncType::Media,
-            SyncType::ThemeAsset,
-            SyncType::Redirect,
-            SyncType::CustomRoute,
-        ];
+        $job = SyncJob::fromDatabaseRow([
+            'job_id' => 'abc',
+            'type' => 'redirect',
+            'object_id' => '/old',
+            'action' => 'publish',
+            'created_at' => '2026-01-15 10:00:00',
+            'meta' => '{"to":"/new","code":301}',
+        ]);
 
-        foreach ($types as $type) {
-            $job = new SyncJob(
-                type: $type,
-                objectId: '1',
-                action: SyncAction::Publish
-            );
-            $this->assertSame($type, $job->type);
-        }
+        $this->assertSame('abc', $job->id);
+        $this->assertSame(SyncType::Redirect, $job->type);
+        $this->assertSame(['to' => '/new', 'code' => 301], $job->meta);
+        $this->assertSame('2026-01-15 10:00:00', $job->createdAt->format('Y-m-d H:i:s'));
     }
 
     #[Test]
-    public function it_works_with_all_sync_actions(): void
+    public function it_tolerates_missing_or_broken_meta_in_a_row(): void
     {
-        $actions = [
-            SyncAction::Publish,
-            SyncAction::Unpublish,
-            SyncAction::Purge,
-        ];
+        $row = ['job_id' => 'a', 'type' => 'post', 'object_id' => '1', 'action' => 'publish', 'created_at' => '2026-01-15 10:00:00'];
 
-        foreach ($actions as $action) {
-            $job = new SyncJob(
-                type: SyncType::Post,
-                objectId: '1',
-                action: $action
-            );
-            $this->assertSame($action, $job->action);
-        }
+        $this->assertSame([], SyncJob::fromDatabaseRow($row)->meta);
+        $this->assertSame([], SyncJob::fromDatabaseRow($row + ['meta' => '{not json'])->meta);
+        $this->assertSame([], SyncJob::fromDatabaseRow($row + ['meta' => ''])->meta);
+    }
+
+    #[Test]
+    public function it_serialises_to_json(): void
+    {
+        $job = new SyncJob(SyncType::Page, '5', SyncAction::Unpublish, ['url' => '/about'], 'fixed-id', new DateTimeImmutable('2026-01-15T10:00:00+00:00'));
+
+        $this->assertSame([
+            'id' => 'fixed-id',
+            'type' => 'page',
+            'objectId' => '5',
+            'action' => 'unpublish',
+            'meta' => ['url' => '/about'],
+            'createdAt' => '2026-01-15T10:00:00+00:00',
+        ], $job->jsonSerialize());
+    }
+
+    #[Test]
+    public function sync_types_know_whether_they_are_posts_or_routes(): void
+    {
+        $this->assertTrue(SyncType::Post->isPostBacked());
+        $this->assertTrue(SyncType::Media->isPostBacked());
+        $this->assertFalse(SyncType::Taxonomy->isPostBacked());
+
+        $this->assertTrue(SyncType::Home->isRoute());
+        $this->assertTrue(SyncType::Sitemap->isRoute());
+        $this->assertTrue(SyncType::NotFound->isRoute());
+        $this->assertFalse(SyncType::Post->isRoute());
+        $this->assertFalse(SyncType::Redirect->isRoute());
     }
 }

@@ -8,178 +8,153 @@ use Quant\Core\Settings;
 use wpdb;
 
 /**
- * Migrates v1 QuantCDN plugin settings to v2 format.
+ * Copies v1 settings into the v2 options. The v1 options stay until the
+ * administrator chooses to clean them up.
  */
 final class V1Migrator
 {
     private const OPTION_MIGRATION_COMPLETE = 'quant_migration_complete';
     private const OPTION_MIGRATION_DATE = 'quant_migration_date';
+    private const OPTION_MIGRATION_SOURCE = 'quant_migrated_from';
 
     public function __construct(
         private readonly V1Detector $detector,
         private readonly Settings $settings,
         private readonly wpdb $wpdb
-    ) {}
+    ) {
+    }
 
-    /**
-     * Check if migration has already been completed.
-     */
     public function isMigrationComplete(): bool
     {
         return (bool) get_option(self::OPTION_MIGRATION_COMPLETE, false);
     }
 
-    /**
-     * Run the migration from v1 to v2.
-     */
     public function migrate(): MigrationResult
     {
-        $migrated = [];
-        $errors = [];
-
-        // Check if migration is needed
-        if (!$this->detector->hasV1Settings()) {
-            return MigrationResult::failure(['No v1 settings found to migrate']);
+        $blocker = $this->migrationBlocker();
+        if ($blocker !== null) {
+            return MigrationResult::failure([$blocker]);
         }
 
-        // Check if already migrated
-        if ($this->isMigrationComplete()) {
-            return MigrationResult::failure(['Migration has already been completed']);
-        }
+        $v1 = $this->detector->getV1Settings();
 
-        try {
-            // Step 1: Migrate credentials
-            $v1Settings = $this->detector->getV1Settings();
-            $credentialsMigrated = $this->migrateCredentials($v1Settings);
+        $this->settings->setCredentials([
+            'organization' => $v1['organization'],
+            'project' => $v1['project'],
+            'token' => $v1['token'],
+            'endpoint' => $v1['endpoint'] ?: Settings::DEFAULT_ENDPOINT,
+            'disable_tls_verify' => $v1['disable_tls_verify'],
+            'http_request_timeout' => $v1['http_request_timeout'],
+        ]);
 
-            if ($credentialsMigrated) {
-                $migrated['credentials'] = [
-                    'organization' => $v1Settings['organization'],
-                    'project' => $v1Settings['project'],
-                    'endpoint' => $v1Settings['endpoint'],
-                    'token' => '***' . substr($v1Settings['token'], -4), // Masked
-                ];
-            } else {
-                $errors[] = 'Failed to migrate credentials';
-            }
+        $this->settings->setMode(Settings::MODE_STATIC);
 
-            // Step 2: Set default mode
-            $this->settings->setMode('static');
-            $migrated['mode'] = 'static';
+        $this->settings->setSyncSettings([
+            'auto_sync' => $v1['auto_sync'],
+            'auto_purge' => $v1['auto_purge'],
+            'sync_drafts' => false,
+        ]);
 
-            // Step 3: Set default sync settings
-            $syncSettings = [
-                'auto_sync' => true,
-                'auto_purge' => true,
-                'sync_drafts' => false,
-            ];
-            $this->settings->setSyncSettings($syncSettings);
-            $migrated['sync_settings'] = $syncSettings;
+        $this->settings->setStaticConfig([
+            'webserver_url' => $v1['webserver_url'],
+            'webserver_host' => $v1['webserver_host'],
+            'route_404' => $v1['route_404'] ?: '/404',
+            'custom_routes' => $v1['custom_routes'],
+            'domain_rewrites' => $v1['domain_rewrites'],
+        ]);
 
-            // Step 4: Migrate static config (webserver, 404, custom routes, domain rewrites)
-            $staticConfig = [
-                'webserver_url' => $v1Settings['webserver_url'],
-                'webserver_host' => $v1Settings['webserver_host'],
-                'route_404' => $v1Settings['route_404'],
-                'custom_routes' => $v1Settings['custom_routes'],
-                'domain_rewrites' => $v1Settings['domain_rewrites'],
-            ];
-            $this->settings->setStaticConfig($staticConfig);
-            $migrated['static_config'] = [
-                'webserver_url' => $staticConfig['webserver_url'] ?: '(not set)',
-                'webserver_host' => $staticConfig['webserver_host'] ?: '(not set)',
-                'route_404' => $staticConfig['route_404'],
-                'custom_routes_count' => count($staticConfig['custom_routes']),
-                'domain_rewrites_count' => count($staticConfig['domain_rewrites']),
-            ];
+        $this->settings->setSchedule($v1['schedule']);
 
-            // Step 5: Mark migration as complete
-            $this->markMigrationComplete();
-            $migrated['migration_date'] = gmdate('Y-m-d H:i:s');
+        $this->markMigrationComplete();
 
-        } catch (\Exception $e) {
-            $errors[] = 'Migration error: ' . $e->getMessage();
-            return MigrationResult::failure($errors, $migrated);
-        }
-
-        if (!empty($errors)) {
-            return MigrationResult::failure($errors, $migrated);
-        }
-
-        return MigrationResult::success($migrated);
+        return MigrationResult::success($this->summary($v1));
     }
 
     /**
-     * Clean up v1 options and tables.
+     * Why a migration cannot run, or null when it can.
+     */
+    private function migrationBlocker(): ?string
+    {
+        if (!$this->detector->hasV1Settings()) {
+            return 'No v1 settings found to migrate';
+        }
+
+        if ($this->isMigrationComplete()) {
+            return 'Migration has already been completed';
+        }
+
+        $v1 = $this->detector->getV1Settings();
+        if ($v1['organization'] === '' || $v1['project'] === '' || $v1['token'] === '') {
+            return 'The v1 settings do not contain a complete set of API credentials';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $v1
+     * @return array<string, mixed>
+     */
+    private function summary(array $v1): array
+    {
+        return [
+            'credentials' => [
+                'organization' => $v1['organization'],
+                'project' => $v1['project'],
+                'endpoint' => $v1['endpoint'],
+                'token' => '***' . substr($v1['token'], -4),
+            ],
+            'mode' => Settings::MODE_STATIC,
+            'sync_settings' => ['auto_sync' => $v1['auto_sync'], 'auto_purge' => $v1['auto_purge']],
+            'static_config' => [
+                'webserver_url' => $v1['webserver_url'] ?: '(not set)',
+                'webserver_host' => $v1['webserver_host'] ?: '(not set)',
+                'route_404' => $v1['route_404'],
+                'custom_routes_count' => count($v1['custom_routes']),
+                'domain_rewrites_count' => count($v1['domain_rewrites']),
+            ],
+            'schedule' => $v1['schedule'],
+            'migration_date' => gmdate('Y-m-d H:i:s'),
+        ];
+    }
+
+    /**
+     * Remove the v1 options and batch state.
      */
     public function cleanup(): bool
     {
-        try {
-            // Delete v1 options
-            foreach ($this->detector->getV1OptionNames() as $option) {
-                delete_option($option);
-            }
-
-            // Drop v1 table if it exists
-            if ($this->detector->hasV1Table()) {
-                $tableName = $this->detector->getV1TableName();
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safe
-                $this->wpdb->query("DROP TABLE IF EXISTS {$tableName}");
-            }
-
-            return true;
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Reset migration status (for testing or re-migration).
-     */
-    public function resetMigration(): void
-    {
-        delete_option(self::OPTION_MIGRATION_COMPLETE);
-        delete_option(self::OPTION_MIGRATION_DATE);
-    }
-
-    /**
-     * Get migration date if completed.
-     */
-    public function getMigrationDate(): ?string
-    {
-        $date = get_option(self::OPTION_MIGRATION_DATE, null);
-        return $date !== null && $date !== false ? (string) $date : null;
-    }
-
-    /**
-     * Migrate credentials from v1 format to v2.
-     *
-     * @param array{organization: string, project: string, token: string, endpoint: string} $v1Settings
-     */
-    private function migrateCredentials(array $v1Settings): bool
-    {
-        if (empty($v1Settings['organization']) || empty($v1Settings['project']) || empty($v1Settings['token'])) {
-            return false;
+        foreach ($this->detector->getV1OptionNames() as $option) {
+            delete_option($option);
         }
 
-        $credentials = [
-            'organization' => $v1Settings['organization'],
-            'project' => $v1Settings['project'],
-            'token' => $v1Settings['token'],
-            'endpoint' => $v1Settings['endpoint'] ?: 'https://api.quantcdn.io',
-        ];
-
-        $this->settings->setCredentials($credentials);
+        $this->wpdb->query(
+            $this->wpdb->prepare(
+                "DELETE FROM {$this->wpdb->options} WHERE option_name LIKE %s",
+                $this->wpdb->esc_like('batch_quant_') . '%'
+            )
+        );
 
         return true;
     }
 
-    /**
-     * Mark migration as complete.
-     */
+    public function resetMigration(): void
+    {
+        delete_option(self::OPTION_MIGRATION_COMPLETE);
+        delete_option(self::OPTION_MIGRATION_DATE);
+        delete_option(self::OPTION_MIGRATION_SOURCE);
+    }
+
+    public function getMigrationDate(): ?string
+    {
+        $date = get_option(self::OPTION_MIGRATION_DATE, null);
+
+        return is_string($date) && $date !== '' ? $date : null;
+    }
+
     private function markMigrationComplete(): void
     {
         update_option(self::OPTION_MIGRATION_COMPLETE, true);
         update_option(self::OPTION_MIGRATION_DATE, gmdate('Y-m-d H:i:s'));
+        update_option(self::OPTION_MIGRATION_SOURCE, '1.x');
     }
 }
