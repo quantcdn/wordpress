@@ -57,3 +57,55 @@
 ### C. End-to-end
 - `docker-compose.e2e.yml`: WordPress, MySQL, WP-CLI, and a mock Quant API that records requests.
 - Playwright suite in `tests/e2e/`: onboarding, settings, seed and process, auto-sync on save/trash/delete, cache purge, CDN-only mode, migration from v1, WP-CLI, diagnostics.
+
+## Added 2026-10-31: Drupal module parity and seamless upgrade
+
+Reference: `~/apps/quant-drupal` (module 2.1.0). WordPress equivalents:
+
+| Drupal feature | WordPress v2 implementation |
+|---|---|
+| Track content change; tracked entities (nodes, terms, redirects, views) | `auto_sync`; posts, pages, CPTs, terms, media, redirects, archives |
+| Disable content drafts | Only `publish` status is pushed. Scheduled posts push when WP publishes them. |
+| Follow links (xpath) for pagination | Explicit pagination for home, archives, terms, authors, plus `rel="next"` discovery in rendered markup |
+| Strip host domain from content | `MarkupProcessor`: home host, `domain_rewrites`, `http://` to `https://` for external links (v1 behaviour) |
+| Proxy override metadata | `proxy_override` setting sent with every page |
+| Info metadata (`author_name`, `log`), `content_timestamp` | `author_name`, `source: wordpress`, `log` (post modified), `content_timestamp` from `post_modified_gmt` |
+| Attachments discovery (`find_attachments`, response `attachments`, md5 skip) | `JobProcessor` uploads local files the API reports, skipping unchanged md5 |
+| Special pages (`/`, `/_quant404`) | Home and `route_404` rendered as `/_quant404` |
+| Path alias change: unpublish old alias and redirect | Slug change: unpublish old permalink, queue 301 redirect to the new permalink |
+| Redirect module presave/predelete | Redirection plugin `redirection_redirect_updated` / `_deleted` hooks |
+| Internal `quant-token` request header | `Quant-Token` internal header: skips canonical redirects, marks the request internal |
+| Page info block | Admin bar item and list-table column with the sync status |
+| Quant Purger (cache tags) | `CachePurgeSubscriber` purges the page, home, its terms, author and post-type archives |
+| Quant Cron | `quant_schedule` scheduled sync of chosen types (v1 cron parity) |
+| Quant Sitemap | Core `wp-sitemap.xml` index and children, Yoast and Rank Math index detection |
+| Quant Search: records with each push, `skip`, full reindex, clear index, facets, index status | `SearchRecordBuilder`, `search_record` on publish, reindex and clear endpoints, status from `/v1/search` |
+| Quant Search pages and autocomplete block | Search pages stored as an option, rendered by the `[quant_search]` shortcode or block on a WP page; autocomplete shortcode/block; option to point the WP search form at a search page |
+| Multi-domain | WordPress multisite: per-site options and table; network activation creates every site's table |
+| Webform | Not ported. Forms are configured in the Quant dashboard. The readme keeps the Contact Form 7 note. |
+| Tome | Not applicable. |
+
+Seamless upgrade from v1 (1.x):
+- `readme.txt` sets `Requires PHP: 8.1`, so WordPress does not offer the update to sites on older PHP. `quant.php` also guards the PHP version and shows a notice instead of a fatal error.
+- On the first load after the update the v1 options are migrated automatically. No wizard step blocks the admin. A dismissible notice links to the review page.
+- All v1 settings are kept: `enabled`, `purge_on_save`, `disable_tls_verify`, `http_request_timeout`, `webserver_url`, `webserver_host`, API fields, `404_route`, `custom_routes`, `domains_strip`, and every cron option.
+- `QUANT_*` environment variables (Quant Cloud `app-wordpress` template) are read by v2 directly.
+- v1 WP-CLI commands keep working: `wp quant info`, `wp quant reset_queue <queue|all>`, `wp quant process_queue <queue|all> --threads=N`.
+- The v1 settings URL `options-general.php?page=quant` redirects to the new page.
+
+## Status 2026-10-31 (end of session)
+
+Done in `plugins/quant`:
+- v1 files removed; `uninstall.php` rewritten; PHP 8.1 guard and PSR-4 fallback autoloader in `quant.php`; network activation.
+- Queue: `meta` and `claim` columns, atomic claims (safe for `--threads`), dedupe, stale recovery, version-gated `dbDelta` upgrade (`quant_db_version` 2.0.2).
+- `Sync\InternalFetcher`, `MarkupProcessor` (HTML only), `Paths`, `LinkDiscovery`, `Publisher`, `AttachmentUploader`, `Seeder`, `JobProcessor` + handlers, `SitemapDiscovery`, `Redirects\RedirectProvider`, renderers (`RouteRenderer`, `PostRenderer`, `TermRenderer`).
+- `Search\SearchRecordBuilder`, `SearchPageRepository`, `SearchPageSync`, `Frontend` (shortcodes, blocks, search form replacement), `Admin\SearchController`.
+- Hooks: `ContentSyncSubscriber` (registered), `RedirectionSubscriber`, `CachePurgeSubscriber` (v1 rule), `InternalRequestHandler`; `Core\Scheduler` (WP-Cron), `Core\Upgrader` (auto migration), `Core\Environment` (QUANT_* overrides).
+- REST and CLI rewritten on the shared services; v1 CLI aliases; `SyncStatusUi` column, row action, admin bar.
+- React: Settings, Dashboard, Content, Search pages; frontend `search.js`, `autocomplete.js`, `blocks.js`; ESLint and stylelint clean.
+- `readme.txt` for 2.0.0, `RELEASE-NOTES-2.0.0.md`, `.distignore`, `bin/build-zip.sh`, GitHub Actions CI.
+- PHPStan level 5 and PHPMD complexity rules pass.
+
+Verified in Docker against the mock Content API: a full push publishes posts, pages, a CPT, terms, home, archives, `/_quant404`, `/robots.txt` (text/plain), all core sitemaps (application/xml), uploads theme assets, media sizes and discovered attachments, and creates the Redirection redirect; markup has relative links only; `wp quant process_queue all --threads=3` works.
+
+Open at the time of writing: the unit test rewrite and the Playwright suite run in parallel agents; results are recorded in the session summary.
