@@ -86,3 +86,21 @@ screenshots and the HTML report go to `output/test-results/` and
 
 Internal rendering in tests uses `webserver_url = http://wordpress` so that
 both the web container and the WP-CLI container can fetch pages.
+
+## Upgrade test
+
+`bin/upgrade-test.sh [1.x version]` builds the release zip, starts a separate
+stack (`upgrade/compose.yml`, WordPress on port 8089, mock API on 4001), installs
+the published 1.x plugin from WordPress.org, configures it with the 1.x options,
+updates it in place with the zip (as WordPress does for an update, without
+re-activation), and checks the migrated settings, the removal of the 1.x cron
+event, the queue table, a WP-Cron push and a full push. Set `KEEP=1` to leave
+the containers running, and `WP_PORT` / `MOCK_PORT` to change the ports.
+
+## Regression specs
+
+`specs/review-fixes.spec.js` covers the defects found in the pre-release review:
+queue latest-wins, paginated term pages, slash-variant purges, the upload
+allow-list, unpublishing routes that now 404, block-editor saves and CDN-only
+unpublish purges. `specs/search-frontend.spec.js` drives the public search page
+and autocomplete with Algolia answered by Playwright.

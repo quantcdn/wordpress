@@ -127,6 +127,7 @@ async function resetPlugin() {
     $t = $wpdb->prefix . 'quant_sync_queue';
     if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $t)) === $t) { $wpdb->query("TRUNCATE TABLE {$t}"); }
     wp_clear_scheduled_hook('quant_process_queue');
+    wp_clear_scheduled_hook('quant_process_queue_soon');
     wp_clear_scheduled_hook('quant_scheduled_sync');
     wp_cache_flush();
     echo 'reset';

@@ -50,8 +50,10 @@ plugin_fatal() { # prints the fatal error from a front page request, if any
 }
 
 # If a previous run left a broken plugin active, wp-cli itself fatals. Detect and bypass.
+# A fresh database has no WordPress yet; that is handled by the install below.
 wp_loads() { dc exec -T wpcli wp option get siteurl "$@" --path=/var/www/html >/dev/null 2>&1; }
-if ! wp_loads; then
+fresh_db() { dc exec -T wpcli wp core is-installed --skip-plugins --skip-themes --path=/var/www/html >/dev/null 2>&1 && return 1 || return 0; }
+if ! fresh_db && ! wp_loads; then
   if wp_loads --skip-plugins=quant; then
     log "WARNING: WordPress loads only with the quant plugin skipped"
     [[ "$ALLOW_PLUGIN_ERRORS" == "1" ]] || { echo "$(plugin_fatal)"; fail "quant plugin has a PHP error (set E2E_ALLOW_PLUGIN_ERRORS=1 to continue)"; }

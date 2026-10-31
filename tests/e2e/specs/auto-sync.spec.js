@@ -4,7 +4,7 @@ const { test, expect } = require('@playwright/test');
 const { resetPlugin, configurePlugin, mockState, mockRequests, wp, wpEval, copyToContainer } = require('../lib/wp');
 const { processQueue, queueJobs, truncateQueue, runCron, waitForMock } = require('../lib/queue');
 
-const NEWS_CATEGORY = 2;
+const NEWS_CATEGORY = parseInt(wp(['term', 'get', 'category', 'news', '--by=slug', '--field=term_id']), 10);
 
 function createPost(slug, title) {
   return parseInt(wp(['post', 'create', `--post_title=${title}`, `--post_name=${slug}`, '--post_status=publish', '--post_author=1', `--post_category=${NEWS_CATEGORY}`, '--post_content=Body text', '--porcelain']), 10);

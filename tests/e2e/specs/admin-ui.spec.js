@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { resetPlugin, configurePlugin, wp } = require('../lib/wp');
+const { resetPlugin, configurePlugin, wp, postIdBySlug } = require('../lib/wp');
 const { processQueue, queueJobs } = require('../lib/queue');
 const { gotoQuant, screenshot } = require('../lib/admin');
 
@@ -13,19 +13,20 @@ test.describe('admin integration', () => {
   });
 
   test('post list column, row action and admin bar show the sync status', async ({ page }) => {
-    wp(['quant', 'sync', '4', '--process']);
+    const id = String(postIdBySlug('hello-quant'));
+    wp(['quant', 'sync', id, '--process']);
 
     await page.goto('/wp-admin/edit.php');
     await expect(page.locator('th#quant_sync')).toHaveText('Quant');
-    const row = page.locator('tr#post-4');
+    const row = page.locator(`tr#post-${id}`);
     await expect(row.locator('.quant-sync-status')).toContainText('Synced');
     await screenshot(page, 'post-list-column');
 
     await row.hover();
     await row.getByRole('link', { name: 'Push to Quant' }).click();
-    await page.waitForURL(/quant_queued=4/);
+    await page.waitForURL(new RegExp(`quant_queued=${id}`));
     const jobs = queueJobs();
-    expect(jobs.some((j) => j.type === 'post' && j.object_id === '4' && j.status === 'pending')).toBe(true);
+    expect(jobs.some((j) => j.type === 'post' && j.object_id === id && j.status === 'pending')).toBe(true);
     processQueue();
 
     await page.goto('/hello-quant/');

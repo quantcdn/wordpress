@@ -41,6 +41,15 @@ npm run teardown
 
 See `tests/e2e/README.md` for the spec list and the mock endpoints.
 
+Upgrade test: install the published 1.x plugin from WordPress.org, configure
+it, update it in place with a freshly built 2.x zip, and check the migration,
+WP-Cron processing and a full push.
+
+```bash
+tests/e2e/bin/upgrade-test.sh          # from 1.6.0
+tests/e2e/bin/upgrade-test.sh 1.4.0    # from an older release
+```
+
 ## Release
 
 ```bash

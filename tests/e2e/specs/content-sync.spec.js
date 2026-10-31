@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { resetPlugin, configurePlugin, mockState, mockRequests, mockFail, wp } = require('../lib/wp');
+const { resetPlugin, configurePlugin, mockState, mockRequests, mockFail, wp, postIdBySlug } = require('../lib/wp');
 const { processQueue, queueStatus, waitForMock } = require('../lib/queue');
 const { gotoQuant, rest, screenshot, acceptDialogs, notice } = require('../lib/admin');
 
@@ -26,7 +26,10 @@ test.describe('content sync (static mode)', () => {
     // then wait until nothing is pending and the card has finished.
     processQueue();
     await expect.poll(() => queueStatus().pending + queueStatus().processing, { timeout: 120_000 }).toBe(0);
-    await expect(page.locator('.quant-progress')).toHaveCount(0, { timeout: 30_000 });
+    // The card keeps the result on screen until it is dismissed.
+    await expect(page.locator('.quant-progress')).toContainText(/Sync complete/, { timeout: 60_000 });
+    await page.locator('.quant-progress').getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.locator('.quant-progress')).toHaveCount(0);
 
     const state = await mockState();
     for (const p of PATHS) {
@@ -37,7 +40,7 @@ test.describe('content sync (static mode)', () => {
     expect(files.some((f) => /\/wp-content\/themes\/.+\.css$/.test(f)), 'theme css uploaded').toBe(true);
     expect(files.some((f) => /\/wp-content\/uploads\/\d{4}\/\d{2}\/sample\.png$/.test(f)), 'media uploaded').toBe(true);
     // The fixture image is small, so WordPress may not generate intermediate sizes.
-    const sizes = parseInt(wp(['eval', 'echo count(wp_get_attachment_metadata(10)["sizes"] ?? []);']), 10);
+    const sizes = parseInt(wp(['eval', '$a = get_posts(["post_type" => "attachment", "name" => "sample", "posts_per_page" => 1, "post_status" => "inherit"]); echo $a ? count(wp_get_attachment_metadata($a[0]->ID)["sizes"] ?? []) : 0;']), 10);
     if (sizes > 0) {
       expect(files.some((f) => /\/wp-content\/uploads\/\d{4}\/\d{2}\/sample-\d+x\d+\.png$/.test(f)), 'resized variant uploaded').toBe(true);
     }
@@ -54,8 +57,8 @@ test.describe('content sync (static mode)', () => {
     expect(samplePage, 'page with an author').toBeTruthy();
     expect(samplePage.info.author_name).toBe('admin');
 
-    expect(state.published['/wp-sitemap.xml'].headers.content_type).toBe('application/xml');
-    expect(state.published['/robots.txt'].headers.content_type).toBe('text/plain');
+    expect(state.published['/wp-sitemap.xml'].headers['content-type']).toBe('application/xml');
+    expect(state.published['/robots.txt'].headers['content-type']).toBe('text/plain');
     expect(state.published['/_quant404'].content.length).toBeGreaterThan(100);
 
     await page.reload();
@@ -94,7 +97,7 @@ test.describe('content sync (static mode)', () => {
   test('a failed push is reported, retried and completes', async ({ page }) => {
     await mockFail({ path: '/v1', status: 500, times: 1 });
     await gotoQuant(page, 'content');
-    await rest(page, '/sync', { method: 'POST', data: { items: [{ type: 'post', id: 6 }], action: 'sync' } });
+    await rest(page, '/sync', { method: 'POST', data: { items: [{ type: 'post', id: postIdBySlug('third-post') }], action: 'sync' } });
     processQueue();
 
     const status = await rest(page, '/queue/status');

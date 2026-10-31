@@ -1,0 +1,36 @@
+name: quant-upgrade
+services:
+  db:
+    image: mysql:8.0
+    environment: {MYSQL_ROOT_PASSWORD: root, MYSQL_DATABASE: wordpress, MYSQL_USER: wordpress, MYSQL_PASSWORD: wordpress}
+    healthcheck: {test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"], interval: 3s, retries: 40}
+  wordpress:
+    image: ${WP_IMAGE:-wordpress:php8.3-apache}
+    depends_on: {db: {condition: service_healthy}}
+    ports: ["${WP_PORT:-8089}:80"]
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DEBUG: "1"
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_DEBUG_LOG', true);
+        define('WP_DEBUG_DISPLAY', false);
+        define('WP_HOME', 'http://localhost:${WP_PORT:-8089}');
+        define('WP_SITEURL', 'http://localhost:${WP_PORT:-8089}');
+    volumes: [wp:/var/www/html, ./zips:/zips:ro]
+  wpcli:
+    image: ${CLI_IMAGE:-wordpress:cli-php8.3}
+    user: "33:33"
+    entrypoint: ["sleep", "infinity"]
+    depends_on: [wordpress]
+    environment: {WORDPRESS_DB_HOST: db, WORDPRESS_DB_USER: wordpress, WORDPRESS_DB_PASSWORD: wordpress, WORDPRESS_DB_NAME: wordpress}
+    volumes: [wp:/var/www/html, ./zips:/zips:ro]
+  mock-api:
+    image: node:20-alpine
+    command: ["node", "/app/server.js"]
+    environment: {MOCK_TOKEN: test-token-123, MOCK_CUSTOMER: test-org, MOCK_PROJECT: test-project, PORT: "4000"}
+    ports: ["${MOCK_PORT:-4001}:4000"]
+    volumes: ["../mock-api:/app:ro"]
+volumes: {wp: {}}

@@ -81,10 +81,32 @@ set this way are read-only in the admin.
 
 ## Behaviour changes
 
-- In Static mode with automatic push on, saving no longer sends a separate
-  purge request. Publishing the page refreshes the edge. Purge on save
-  applies in CDN Only mode and in Static mode with automatic push off, as in
-  1.x.
+- After every publish and unpublish the plugin purges both `/path` and
+  `/path/`, as 1.6.0 did. Return false from `quant_purge_after_publish` to
+  skip it.
+- Purge on save applies in CDN Only mode and in Static mode with automatic
+  push off, as in 1.x. In CDN Only mode it also purges when a published post
+  is unpublished, trashed or deleted, and covers the terms a post was removed
+  from. The purge runs once per request, after the response is sent.
+- When several changes to the same item wait in the queue, the latest one
+  wins. Publishing, unpublishing and publishing again leaves the page online.
+- A custom route, archive or listing that now returns 404 or 410 is
+  unpublished from Quant, as in 1.x, instead of being reported as a failure.
+- Only static files are uploaded: known asset, media and document
+  extensions, never PHP, configuration, package-manager or hidden files.
+  Extend the list with `quant_public_file_extensions`.
+- Files are uploaded through the WordPress HTTP API. A file larger than
+  256 MB (`quant_max_upload_bytes`), or one that would not fit in PHP memory,
+  is reported as failed instead of stopping the queue. Upload very large
+  media with the Quant CLI.
+- Failed jobs are retried automatically up to three times with a growing
+  delay. A job that keeps stopping PHP (timeout or memory) is marked failed
+  after three attempts. Completed rows older than a week are pruned, keeping
+  the latest row for each item.
+- On multisite, only network administrators can change the Webserver URL and
+  Host header.
+- The InstantSearch and Autocomplete libraries are bundled with the plugin;
+  nothing loads from a third-party CDN.
 - Absolute links to the site are rewritten as relative links only in HTML.
   XML sitemaps and robots.txt keep absolute URLs, which the sitemap protocol
   requires. Set the Hostname (Host header) to the public domain so those URLs
@@ -103,6 +125,11 @@ set this way are read-only in the admin.
   `quant_cron_batch_size`, `quant_cron_time_budget`, `quant_portal_url`,
   `quant_cloud_api_url`. Actions: `quant_jobs_queued`, `quant_seeded`,
   `quant_sync_job_failed`, `quant_purged`, `quant_schedule_updated`.
+- Additional filters: `quant_purge_after_publish`, `quant_public_file_extensions`,
+  `quant_max_upload_bytes`, `quant_search_language_label`.
 - Tests: `composer check` (PHPUnit, PHPStan level 5, PHPMD complexity),
-  `npm run lint:js && npm run build`, and the Playwright suite in `tests/e2e`
-  against a Dockerised WordPress and a mock Quant API.
+  `npm run lint:js && npm run build`, the Playwright suite in `tests/e2e`
+  against a Dockerised WordPress and a mock Quant API, and
+  `tests/e2e/bin/upgrade-test.sh`, which updates the published 1.x plugin in
+  place and checks the migration.
+- Checked with WordPress.org Plugin Check: no errors.

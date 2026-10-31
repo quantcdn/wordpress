@@ -12,6 +12,8 @@ test.describe('settings', () => {
 
   test('manual credentials save and connection tests succeed', async ({ page }) => {
     await gotoQuant(page, 'settings');
+    // On a fresh install the manual form sits behind a link next to "Login to Quant".
+    await page.getByRole('button', { name: 'Use manual credentials instead' }).click();
     await expect(page.getByRole('heading', { name: 'Project Credentials' })).toBeVisible();
 
     await page.getByLabel('API Endpoint').fill(CREDENTIALS.endpoint);

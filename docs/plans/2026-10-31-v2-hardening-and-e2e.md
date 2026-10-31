@@ -111,3 +111,23 @@ Verified in Docker against the mock Content API: a full push publishes posts, pa
 Open at the time of writing: the unit test rewrite and the Playwright suite run in parallel agents; results are recorded in the session summary.
 
 Results: PHPUnit 288 tests green; PHPStan and PHPMD clean; Playwright 36 tests green (onboarding, OAuth, settings and environment overrides, full push, selective push and unpublish, failure and retry, auto-sync on save/slug change/draft/delete/term/media/Redirection, CDN-only purges, cache page, automatic 1.x migration and cleanup, legacy URL redirect, Quant Search status/records/pages/reindex/clear/native search redirect, WP-CLI including 1.x aliases and threads, diagnostics report download, post list column, admin bar).
+
+## Pre-release review, 2026-11-01
+
+Two independent reviews (PHP, JavaScript) and new test tracks found and fixed:
+queue de-duplication that dropped paginated term pages and could leave a
+republished post offline; uploads not restricted to static files (a referenced
+`wp-config.php` could be uploaded); no purge of `/path/` after publish (1.6.0
+regression); CDN-only unpublish not purged; synchronous purges in the editor
+request; poison jobs blocking the queue; stale recovery racing parallel workers;
+`--threads` pipe deadlock; `content_type` header key; unbounded queue table; no
+automatic retry; terms missed on block-editor saves; orphaned 1.x cron event;
+uninstall gaps; a no-op "process soon" event; admin app not mounting on WordPress
+6.0/6.1 (no `createRoot`); 19 admin and front-end UI defects; CDN-loaded search
+libraries and raw cURL (WordPress.org Plugin Check errors); a stale-file bug in
+the zip build; and a setup script that failed on a fresh database.
+
+Verified: PHPUnit 310, PHPStan level 5 and PHPMD clean, ESLint and stylelint clean,
+Plugin Check 0 errors, Playwright 44/44 twice on a freshly built environment,
+in-place upgrade from 1.6.0 and 1.4.0, WordPress 6.0.3 + PHP 8.1 full push and
+admin, PHP 7.4 refused by WordPress (header) and guarded (notice).

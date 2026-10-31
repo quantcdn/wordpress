@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { resetPlugin, configurePlugin, optionJson, mockState, mockRequests, wp } = require('../lib/wp');
+const { resetPlugin, configurePlugin, optionJson, mockState, mockRequests, wp, postIdBySlug } = require('../lib/wp');
 const { processQueue, waitForMock } = require('../lib/queue');
 const { gotoQuant, rest, screenshot, acceptDialogs, notice } = require('../lib/admin');
 
@@ -81,7 +81,7 @@ test.describe('Quant Search', () => {
     expect(record.category_en).toEqual(['News']);
 
     // A page push carries the search record.
-    await rest(page, '/sync', { method: 'POST', data: { items: [{ type: 'post', id: 5 }], action: 'sync' } });
+    await rest(page, '/sync', { method: 'POST', data: { items: [{ type: 'post', id: postIdBySlug('second-post') }], action: 'sync' } });
     processQueue();
     const publishes = (await mockRequests({ path: '/v1', method: 'POST' })).filter((r) => r.body && r.body.url === '/second-post');
     expect(publishes.length).toBeGreaterThan(0);

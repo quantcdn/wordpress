@@ -25,7 +25,7 @@ jobs:
           tools: composer:v2
       - run: composer install --no-interaction --prefer-dist
       - run: ./vendor/bin/phpunit
-      - run: ./vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+      - run: ./vendor/bin/phpstan analyse --memory-limit=2G --no-progress
       - run: ./vendor/bin/phpmd src text phpmd.xml
 
   js:
@@ -82,3 +82,20 @@ jobs:
           name: e2e-output
           path: tests/e2e/output
           if-no-files-found: ignore
+
+  upgrade:
+    name: In-place upgrade from the published 1.x plugin
+    runs-on: ubuntu-latest
+    needs: [php, js]
+    strategy:
+      fail-fast: false
+      matrix:
+        from: ['1.6.0', '1.4.0']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: plugins/quant
+      - run: tests/e2e/bin/upgrade-test.sh ${{ matrix.from }}

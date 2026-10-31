@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { resetPlugin, configurePlugin, mockRequests, mockReset, wp } = require('../lib/wp');
+const { resetPlugin, configurePlugin, mockRequests, mockReset, wp, postIdBySlug } = require('../lib/wp');
 const { gotoQuant, screenshot, acceptDialogs, notice } = require('../lib/admin');
 
 test.describe('CDN only mode', () => {
@@ -12,7 +12,7 @@ test.describe('CDN only mode', () => {
   });
 
   test.afterEach(async () => {
-    wp(['post', 'update', '4', '--post_title=Hello Quant'], { allowFailure: true });
+    wp(['post', 'update', String(postIdBySlug('hello-quant')), '--post_title=Hello Quant'], { allowFailure: true });
   });
 
   test('the Content page explains that publishing is off', async ({ page }) => {
@@ -22,7 +22,7 @@ test.describe('CDN only mode', () => {
   });
 
   test('saving a post purges the post, home and its term pages instead of publishing', async () => {
-    wp(['post', 'update', '4', '--post_title=Updated Hello']);
+    wp(['post', 'update', String(postIdBySlug('hello-quant')), '--post_title=Updated Hello']);
     const purges = await mockRequests({ path: '/v1/purge', method: 'POST' });
     const urls = purges.map((r) => r.headers['quant-url']);
     expect(urls).toEqual(expect.arrayContaining(['/hello-quant', '/hello-quant/', '/', '/category/news', '/category/news/']));
