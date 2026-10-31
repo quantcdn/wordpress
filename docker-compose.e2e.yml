@@ -1,0 +1,83 @@
+# End-to-end test environment for the QuantCDN WordPress plugin.
+# Usage: docker compose -f docker-compose.e2e.yml up -d --wait
+# See tests/e2e/README.md
+
+name: quant-e2e
+
+x-wp-env: &wp-env
+  WORDPRESS_DB_HOST: db
+  WORDPRESS_DB_USER: wordpress
+  WORDPRESS_DB_PASSWORD: wordpress
+  WORDPRESS_DB_NAME: wordpress
+  QUANT_E2E_MOCK_API: http://mock-api:4000
+  WORDPRESS_DEBUG: "1"
+  WORDPRESS_CONFIG_EXTRA: |
+    define('WP_DEBUG_LOG', '/var/www/html/wp-content/debug.log');
+    define('WP_DEBUG_DISPLAY', false);
+    define('DISABLE_WP_CRON', false);
+    define('WP_HOME', 'http://localhost:8088');
+    define('WP_SITEURL', 'http://localhost:8088');
+    define('FS_METHOD', 'direct');
+
+x-wp-volumes: &wp-volumes
+  - wp_html:/var/www/html
+  - ./plugins/quant:/var/www/html/wp-content/plugins/quant
+  - ./tests/e2e/mu-plugins:/var/www/html/wp-content/mu-plugins
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: wordpress
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uwordpress", "-pwordpress"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  wordpress:
+    image: wordpress:php8.3-apache
+    ports:
+      - "8088:80"
+    depends_on:
+      db:
+        condition: service_healthy
+      mock-api:
+        condition: service_started
+    environment: *wp-env
+    volumes: *wp-volumes
+
+  wpcli:
+    image: wordpress:cli-php8.3
+    user: "33:33"
+    entrypoint: ["sleep", "infinity"]
+    depends_on:
+      wordpress:
+        condition: service_started
+    environment:
+      <<: *wp-env
+      WP_CLI_CACHE_DIR: /tmp/wp-cli-cache
+    volumes: *wp-volumes
+
+  mock-api:
+    image: node:20-alpine
+    command: ["node", "/app/server.js"]
+    working_dir: /app
+    ports:
+      - "4000:4000"
+    environment:
+      MOCK_TOKEN: test-token-123
+      MOCK_CUSTOMER: test-org
+      MOCK_PROJECT: test-project
+      PORT: "4000"
+    volumes:
+      - ./tests/e2e/mock-api:/app
+
+volumes:
+  db_data: {}
+  wp_html: {}
