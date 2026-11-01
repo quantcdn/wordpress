@@ -4,7 +4,7 @@
  * Plugin URI: https://www.quantcdn.io/integrations/wordpress
  * Description: Static site generation and CDN integration for WordPress
  * Version: 2.0.0
- * Requires PHP: 8.1
+ * Requires PHP: 8.2
  * Requires at least: 6.0
  * Author: QuantCDN
  * Author URI: https://www.quantcdn.io
@@ -34,12 +34,12 @@ define('QUANT_CRON_SETTINGS_KEY', 'wp_quant_cron_settings');
 define('QUANT_SEED_KEY', 'wp_quant_seed');
 
 // This file must parse on old PHP so the version notice below can show.
-if (version_compare(PHP_VERSION, '8.1', '<')) {
+if (version_compare(PHP_VERSION, '8.2', '<')) {
     add_action('admin_notices', static function () {
         echo '<div class="notice notice-error"><p>';
         echo esc_html(sprintf(
             /* translators: %s: current PHP version */
-            __('QuantCDN 2.0 requires PHP 8.1 or newer. This server runs PHP %s. The plugin is inactive until PHP is upgraded.', 'quant'),
+            __('QuantCDN 2.0 requires PHP 8.2 or newer. This server runs PHP %s. The plugin is inactive until PHP is upgraded.', 'quant'),
             PHP_VERSION
         ));
         echo '</p></div>';
