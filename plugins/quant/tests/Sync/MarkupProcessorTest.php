@@ -41,6 +41,30 @@ final class MarkupProcessorTest extends TestCase
     }
 
     #[Test]
+    public function it_makes_urls_on_private_addresses_relative(): void
+    {
+        $processor = new MarkupProcessor($this->mockSettings());
+
+        $html = '<img src="//10.3.12.115/wp-content/a.jpg"><a href="https://192.168.1.4:8080/x">x</a>'
+            . '<img src="http://172.20.0.5/b.png"><script>{"u":"https:\/\/127.0.0.1\/wp-content\/c.js"}</script>';
+
+        $this->assertSame(
+            '<img src="/wp-content/a.jpg"><a href="/x">x</a><img src="/b.png"><script>{"u":"\/wp-content\/c.js"}</script>',
+            $processor->process($html)
+        );
+    }
+
+    #[Test]
+    public function it_leaves_public_hosts_that_look_like_private_ones(): void
+    {
+        $processor = new MarkupProcessor($this->mockSettings());
+
+        $html = '<a href="https://10example.com/x">a</a><a href="https://172.32.0.1/y">b</a><a href="https://localhost.example.org/z">c</a>';
+
+        $this->assertSame($html, $processor->process($html));
+    }
+
+    #[Test]
     public function it_strips_json_escaped_urls(): void
     {
         $processor = new MarkupProcessor($this->mockSettings());

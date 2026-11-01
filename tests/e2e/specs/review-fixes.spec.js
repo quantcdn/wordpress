@@ -94,6 +94,20 @@ test.describe('review regressions', () => {
     }
   });
 
+  test('URLs on private addresses become relative (cached plugin output from an internal host)', async () => {
+    const id = wp(['post', 'create', '--post_title=Private Host', '--post_status=publish', '--porcelain',
+      '--post_content=<img src="//10.3.12.115/wp-content/uploads/x.jpg"><a href="http://192.168.1.20:8080/about">About</a>']).trim();
+    try {
+      wp(['quant', 'sync', id, '--process']);
+      const content = (await mockState()).published['/private-host'].content;
+      expect(content).toContain('src="/wp-content/uploads/x.jpg"');
+      expect(content).toContain('href="/about"');
+      expect(content).not.toMatch(/10\.3\.12\.115|192\.168\.1\.20/);
+    } finally {
+      wp(['post', 'delete', id, '--force']);
+    }
+  });
+
   test('CDN only: unpublishing a post purges its page and listings', async () => {
     configurePlugin({ mode: 'cdn_only' });
     const id = wp(['post', 'create', '--post_title=Cdn Flip', '--post_status=publish', '--porcelain']).trim();

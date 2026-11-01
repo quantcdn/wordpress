@@ -68,6 +68,11 @@ final class FakeHttpClient implements HttpClientInterface
         return $this->record('UPLOAD', $url, $headers, ['file' => $filePath, 'field' => $fieldName]);
     }
 
+    public function uploadContents(string $url, array $headers, string $contents, string $filename, string $fieldName = 'data'): array
+    {
+        return $this->record('UPLOAD_CONTENTS', $url, $headers, ['contents' => $contents, 'filename' => $filename, 'field' => $fieldName]);
+    }
+
     /**
      * @return array<string, mixed>
      */

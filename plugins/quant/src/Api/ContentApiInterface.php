@@ -31,6 +31,12 @@ interface ContentApiInterface
      */
     public function uploadFile(string $path, string $localPath): ApiResponse;
 
+    /**
+     * Upload generated contents (for example an XML sitemap) as a file served at $path.
+     * The edge sets the content type from the file extension.
+     */
+    public function uploadContents(string $path, string $contents): ApiResponse;
+
     public function createRedirect(string $from, string $to, int $code = 301): ApiResponse;
 
     /**

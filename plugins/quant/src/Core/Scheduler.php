@@ -94,7 +94,10 @@ class Scheduler
             wp_schedule_single_event(time(), self::PROCESS_SOON_HOOK);
         }
 
-        if (!$this->spawnRequested && !wp_doing_cron() && !(defined('DISABLE_WP_CRON') && DISABLE_WP_CRON)) {
+        // Not from WP-CLI: there the site URL is the stored (often public, static)
+        // domain, and spawn_cron() would only set a lock that delays the next run.
+        $cli = defined('WP_CLI') && WP_CLI;
+        if (!$this->spawnRequested && !$cli && !wp_doing_cron() && !(defined('DISABLE_WP_CRON') && DISABLE_WP_CRON)) {
             $this->spawnRequested = true;
             add_action('shutdown', [$this, 'spawnCron'], 100);
         }

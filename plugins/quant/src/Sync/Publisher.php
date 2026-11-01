@@ -29,6 +29,10 @@ class Publisher
      */
     public function publish(RenderedContent $content): void
     {
+        if ($this->publishAsFile($content)) {
+            return;
+        }
+
         $response = $this->api->publish($content->url, $content->markup, $content->info, $content->options);
 
         if (!$response->success) {
@@ -42,6 +46,33 @@ class Publisher
 
         $this->purgeVariants([$content->url]);
         $this->followLinks($content);
+    }
+
+    /**
+     * XML sitemaps, XSL stylesheets, robots.txt and other non-HTML routes are
+     * uploaded as files: the edge serves files with the content type of their
+     * extension, but serves published markup as text/html whatever header it
+     * was published with.
+     *
+     * @return bool True when the content was handled as a file
+     */
+    private function publishAsFile(RenderedContent $content): bool
+    {
+        $type = $content->options['headers']['content-type'] ?? '';
+        $path = strtok($content->url, '?') ?: $content->url;
+
+        if (!is_string($type) || $type === '' || pathinfo($path, PATHINFO_EXTENSION) === '') {
+            return false;
+        }
+
+        $response = $this->api->uploadContents($content->url, $content->markup);
+        if (!$response->success) {
+            throw new RuntimeException(esc_html("API error uploading {$content->url}: {$response->message}"));
+        }
+
+        $this->purgeVariants([$content->url]);
+
+        return true;
     }
 
     /**

@@ -88,6 +88,25 @@ class QuantContentApi implements ContentApiInterface
         return $parsed;
     }
 
+    public function uploadContents(string $path, string $contents): ApiResponse
+    {
+        $path = $this->normalisePath($path);
+        $filename = basename(strtok($path, '?') ?: $path) ?: 'index.html';
+
+        $parsed = $this->parse($this->http->uploadContents(
+            $this->url(''),
+            $this->headers(['Quant-File-Url' => $path]),
+            $contents,
+            $filename
+        ));
+
+        if (!$parsed->success && str_contains(strtolower($parsed->message), 'md5 already matches')) {
+            return ApiResponse::success($parsed->data, 'File unchanged');
+        }
+
+        return $parsed;
+    }
+
     public function createRedirect(string $from, string $to, int $code = 301): ApiResponse
     {
         $from = $this->normalisePath($from);

@@ -97,6 +97,7 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * New CDN Only mode for sites that keep WordPress as the origin.
 * Publishes paginated listings, author pages, date archives, sitemaps and referenced assets automatically.
 * Captures slug changes as redirects and unpublishes removed content reliably.
+* Uploads sitemaps and robots.txt as files so they keep their content type; makes localhost and private-IP URLs relative.
 * Quant Search: records with every push, search pages with facets, autocomplete, index rebuild.
 * Sync status column, admin bar item and "Push to Quant" row action.
 * QUANT_* environment variable and constant overrides.

@@ -37,6 +37,8 @@ class MarkupProcessor
             $markup = $this->stripHost($markup, $host);
         }
 
+        $markup = $this->stripPrivateHosts($markup);
+
         $markup = preg_replace('#http://#i', 'https://', $markup) ?? $markup;
 
         /** This filter is documented in v2.0.0; it adjusts the processed markup before publishing. */
@@ -53,7 +55,10 @@ class MarkupProcessor
     {
         $hosts = [];
 
-        foreach ([home_url(), site_url()] as $url) {
+        // home_url() follows WP_HOME, which on many hosts is the request host. The
+        // stored home and siteurl (usually the public domain) are stripped too,
+        // so the result is the same from a web request, WP-Cron and WP-CLI.
+        foreach (array_merge([home_url(), site_url()], $this->storedSiteUrls()) as $url) {
             $parsed = wp_parse_url($url);
             if (!empty($parsed['host'])) {
                 $hosts[] = $parsed['host'] . (isset($parsed['port']) ? ':' . $parsed['port'] : '');
@@ -87,6 +92,49 @@ class MarkupProcessor
         $type = strtolower(trim(strtok($contentType, ';') ?: ''));
 
         return $type === '' || $type === 'text/html' || $type === 'application/xhtml+xml';
+    }
+
+    /**
+     * The home and siteurl values in the database, ignoring WP_HOME / WP_SITEURL.
+     *
+     * @return array<string>
+     */
+    private function storedSiteUrls(): array
+    {
+        static $urls = null;
+        if ($urls !== null) {
+            return $urls;
+        }
+
+        global $wpdb;
+        if (!$wpdb instanceof \wpdb) {
+            return [];
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- get_option() would return the WP_HOME override.
+        $values = $wpdb->get_col("SELECT option_value FROM {$wpdb->options} WHERE option_name IN ('home', 'siteurl')");
+        $urls = array_values(array_filter(is_array($values) ? $values : [], 'is_string'));
+
+        return $urls;
+    }
+
+    /**
+     * A public static copy can never load from a private address. Plugins
+     * such as Smart Slider cache absolute URLs with whatever host rendered
+     * them (an internal container IP, localhost); browsers then fail to load
+     * them and ask the visitor for local-network permission. URLs on localhost
+     * and private IPv4 ranges become relative.
+     */
+    private function stripPrivateHosts(string $markup): string
+    {
+        $host = '(?:localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?::\d+)?';
+
+        $patterns = [
+            "#(?:https?:)?//{$host}(?=/)#i",
+            "#(?:https?:)?\\\\/\\\\/{$host}(?=\\\\/)#i",
+        ];
+
+        return preg_replace($patterns, '', $markup) ?? $markup;
     }
 
     private function stripHost(string $markup, string $host): string

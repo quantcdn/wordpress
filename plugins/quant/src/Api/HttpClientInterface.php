@@ -47,4 +47,12 @@ interface HttpClientInterface
      * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string}
      */
     public function upload(string $url, array $headers, string $filePath, string $fieldName = 'data'): array;
+
+    /**
+     * Multipart POST of in-memory contents in the `data` field.
+     *
+     * @param array<string, string> $headers
+     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string}
+     */
+    public function uploadContents(string $url, array $headers, string $contents, string $filename, string $fieldName = 'data'): array;
 }

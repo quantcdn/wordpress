@@ -166,6 +166,21 @@ final class QuantContentApiTest extends TestCase
     }
 
     #[Test]
+    public function it_uploads_generated_contents_as_a_named_file(): void
+    {
+        $this->http->respondOk(['url' => '/wp-sitemap.xml']);
+
+        $response = $this->api->uploadContents('/wp-sitemap.xml/', '<urlset/>');
+
+        $this->assertTrue($response->success);
+        $call = $this->http->last();
+        $this->assertSame('UPLOAD_CONTENTS', $call['method']);
+        $this->assertSame('https://api.quantcdn.io/v1', $call['url']);
+        $this->assertSame('/wp-sitemap.xml', $call['headers']['Quant-File-Url']);
+        $this->assertSame(['contents' => '<urlset/>', 'filename' => 'wp-sitemap.xml', 'field' => 'data'], $call['body']);
+    }
+
+    #[Test]
     public function it_creates_redirects(): void
     {
         $this->http->respondOk();

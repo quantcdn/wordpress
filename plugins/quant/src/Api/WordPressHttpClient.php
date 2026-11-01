@@ -95,10 +95,13 @@ class WordPressHttpClient implements HttpClientInterface
      */
     private function uploadBuffered(string $url, array $headers, string $filePath, string $fieldName): array
     {
-        $contents = (string) file_get_contents($filePath);
+        return $this->uploadContents($url, $headers, (string) file_get_contents($filePath), basename($filePath), $fieldName);
+    }
+
+    public function uploadContents(string $url, array $headers, string $contents, string $filename, string $fieldName = 'data'): array
+    {
         $boundary = 'quant' . wp_generate_password(24, false);
-        $mime = $this->mimeType($filePath);
-        $filename = basename($filePath);
+        $mime = $this->mimeType($filename);
 
         $payload = "--{$boundary}\r\n"
             . "Content-Disposition: form-data; name=\"{$fieldName}\"; filename=\"{$filename}\"\r\n"

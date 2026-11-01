@@ -72,6 +72,42 @@ final class PublisherTest extends TestCase
     }
 
     #[Test]
+    public function it_uploads_non_html_routes_with_an_extension_as_files(): void
+    {
+        $content = new RenderedContent('/wp-sitemap.xml', '<?xml version="1.0"?><urlset/>', [], ['headers' => ['content-type' => 'application/xml']]);
+
+        $this->api->shouldReceive('uploadContents')->once()->with('/wp-sitemap.xml', $content->markup)->andReturn(ApiResponse::success());
+        $this->api->shouldReceive('purge')->once()->with(['/wp-sitemap.xml'])->andReturn(ApiResponse::success());
+        $this->api->shouldNotReceive('publish');
+
+        $this->publisher()->publish($content);
+    }
+
+    #[Test]
+    public function it_publishes_non_html_routes_without_an_extension_as_markup(): void
+    {
+        $content = new RenderedContent('/feed', '<rss/>', [], ['headers' => ['content-type' => 'application/rss+xml']]);
+
+        $this->api->shouldReceive('publish')->once()->andReturn(ApiResponse::success([]));
+        $this->api->shouldReceive('purge')->once()->andReturn(ApiResponse::success());
+        $this->api->shouldNotReceive('uploadContents');
+
+        $this->publisher(['follow_links' => false])->publish($content);
+    }
+
+    #[Test]
+    public function it_fails_when_a_file_route_upload_fails(): void
+    {
+        $content = new RenderedContent('/robots.txt', 'User-agent: *', [], ['headers' => ['content-type' => 'text/plain']]);
+        $this->api->shouldReceive('uploadContents')->once()->andReturn(ApiResponse::error('Bad gateway', 502));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('API error uploading /robots.txt: Bad gateway');
+
+        $this->publisher()->publish($content);
+    }
+
+    #[Test]
     public function it_skips_recently_queued_pages_and_itself(): void
     {
         $content = new RenderedContent('/blog/page/2', '<a class="page-numbers" href="/blog/page/2/">2</a><a class="page-numbers" href="/blog/page/3/">3</a>');

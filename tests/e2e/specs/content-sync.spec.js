@@ -4,7 +4,9 @@ const { resetPlugin, configurePlugin, mockState, mockRequests, mockFail, wp, pos
 const { processQueue, queueStatus, waitForMock } = require('../lib/queue');
 const { gotoQuant, rest, screenshot, acceptDialogs, notice } = require('../lib/admin');
 
-const PATHS = ['/', '/hello-quant', '/about', '/books/my-book', '/category/news', '/tag/alpha', '/genre/fiction', '/books', '/_quant404', '/robots.txt', '/wp-sitemap.xml'];
+const PATHS = ['/', '/hello-quant', '/about', '/books/my-book', '/category/news', '/tag/alpha', '/genre/fiction', '/books', '/_quant404'];
+// Non-HTML routes are uploaded as files so the edge serves the right content type.
+const FILE_ROUTES = ['/robots.txt', '/wp-sitemap.xml', '/wp-sitemap-posts-post-1.xml'];
 
 test.describe('content sync (static mode)', () => {
   test.setTimeout(180_000);
@@ -57,8 +59,10 @@ test.describe('content sync (static mode)', () => {
     expect(samplePage, 'page with an author').toBeTruthy();
     expect(samplePage.info.author_name).toBe('admin');
 
-    expect(state.published['/wp-sitemap.xml'].headers['content-type']).toBe('application/xml');
-    expect(state.published['/robots.txt'].headers['content-type']).toBe('text/plain');
+    for (const route of FILE_ROUTES) {
+      expect(Object.keys(state.files), `uploaded ${route}`).toContain(route);
+      expect(Object.keys(state.published), `${route} not published as markup`).not.toContain(route);
+    }
     expect(state.published['/_quant404'].content.length).toBeGreaterThan(100);
 
     await page.reload();

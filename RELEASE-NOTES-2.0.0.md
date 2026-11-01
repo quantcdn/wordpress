@@ -113,6 +113,20 @@ set this way are read-only in the admin.
   are correct.
 - The 404 page is published at `/_quant404`, the path Quant serves for
   missing content.
+- Sitemaps, robots.txt, feeds with an extension and other non-HTML routes
+  are uploaded as files, so the edge serves them with the content type of
+  their extension (for example `application/xml`). The edge serves pushed
+  markup as `text/html` whatever headers are sent.
+- Links and asset URLs on `localhost` or a private IP address
+  (10.x, 172.16-31.x, 192.168.x, 127.x) become relative paths. Page builders
+  and slider plugins often cache such URLs; on the static site they made
+  Chrome ask visitors for local network access and broke images.
+- The site addresses stored in the database (`home`, `siteurl`) are stripped
+  as well as the values in effect, so sites whose address is set by
+  `WP_HOME`/`WP_SITEURL` per request (Quant Cloud) do not leak the
+  production domain into the static copy.
+- WP-CLI commands do not start a WP-Cron request. A queue change made from
+  WP-CLI is processed by the next cron run or by `--process`.
 
 ## For developers
 
