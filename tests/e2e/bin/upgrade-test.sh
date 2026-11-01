@@ -64,7 +64,12 @@ echo "ok   edit after update is pushed by WP-Cron"
 WP quant sync --all --process >/dev/null
 check "full push has no failures" "$(WP eval 'echo (new Quant\Sync\DatabaseQueue($GLOBALS["wpdb"]))->getStatus()->failed;')" 0
 
-LOG="$($DC exec -T wordpress sh -c 'grep -E "PHP (Fatal|Warning|Notice|Deprecated)" /var/www/html/wp-content/debug.log | grep -c "plugins/quant" || true')"
+# Count only errors in files of the installed 2.x plugin. A request that
+# loaded the 1.x code just before the update (a cron loopback, for example)
+# can still log after the log was cleared; those files no longer exist.
+PLUGIN_ERRORS="$($DC exec -T wordpress sh -c 'cd /var/www/html/wp-content && grep -E "PHP (Fatal|Warning|Notice|Deprecated)" debug.log | grep "plugins/quant/" | while IFS= read -r line; do f=$(echo "$line" | grep -o "plugins/quant/[^ ]*\.php" | head -1); [ -n "$f" ] && [ -f "$f" ] && echo "$line"; done; true')"
+[ -z "$PLUGIN_ERRORS" ] || echo "$PLUGIN_ERRORS" >&2
+LOG="$(printf '%s' "$PLUGIN_ERRORS" | grep -c . || true)"
 check "no PHP errors from the plugin" "$LOG" 0
 
 echo "PASS: $FROM_VERSION -> $(basename "$TO_ZIP")"
