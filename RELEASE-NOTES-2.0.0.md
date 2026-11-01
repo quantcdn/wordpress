@@ -62,7 +62,7 @@ set this way are read-only in the admin.
 
 ## Upgrading from 1.x
 
-- **Requires PHP 8.1.** WordPress does not offer the update to sites on an
+- **Requires PHP 8.2.** WordPress does not offer the update to sites on an
   older PHP version; they stay on 1.6. If the plugin files are copied onto an
   old PHP version by hand, the plugin shows a notice and stays inactive
   instead of failing.
@@ -145,7 +145,7 @@ set this way are read-only in the admin.
 
 ## For developers
 
-- PHP 8.1, PSR-4 under `Quant\`, a service container, REST endpoints under
+- PHP 8.2, PSR-4 under `Quant\`, a service container, REST endpoints under
   `quant/v1`, and a single `JobProcessor` used by REST, WP-CLI and WP-Cron.
 - Filters: `quant_internal_fetch_url`, `quant_internal_fetch_args`,
   `quant_processed_markup`, `quant_local_hosts`, `quant_custom_redirects`,

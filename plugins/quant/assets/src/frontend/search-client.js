@@ -11,10 +11,7 @@
  * project's custom ranking as sort_by on every query.
  */
 import algoliasearch from 'algoliasearch/lite';
-// The self-contained build, as the dashboard search pages and the Drupal
-// module load it. The library build needs a Babel regenerator runtime that
-// newer @babel/runtime versions no longer provide in the shape it expects.
-import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter/dist/typesense-instantsearch-adapter.min.js';
+import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter';
 
 /**
  * Typesense node for an endpoint URL.

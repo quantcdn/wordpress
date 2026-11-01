@@ -4,7 +4,7 @@ Donate link: https://www.quantcdn.io/
 Tags: static, cdn, static site generator, jamstack, search
 Requires at least: 6.0
 Tested up to: 7.1
-Requires PHP: 8.1
+Requires PHP: 8.2
 Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -54,7 +54,7 @@ Version 2.0 keeps your settings. On the first page load after the update the plu
 
 The 1.x WP-CLI commands `wp quant info`, `wp quant reset_queue <queue|all>` and `wp quant process_queue <queue|all> --threads=N` keep working.
 
-Version 2.0 requires PHP 8.1. Sites on older PHP are not offered the update and stay on 1.6.
+Version 2.0 requires PHP 8.2. Sites on older PHP are not offered the update and stay on 1.6.
 
 == WP-CLI ==
 
@@ -104,7 +104,7 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * QUANT_* environment variable and constant overrides.
 * QuantGov dashboard support for the Quant login.
 * Automatic migration of 1.x settings; 1.x WP-CLI commands kept as aliases.
-* Requires PHP 8.1.
+* Requires PHP 8.2.
 
 = 1.6.0 =
 * Feature: Added new Cache tab for manual CDN cache purging (purge all or selective paths).
@@ -119,4 +119,4 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 == Upgrade Notice ==
 
 = 2.0.0 =
-Major release. Settings migrate automatically. Requires PHP 8.1. Review QuantCDN > Settings after the update and run "Push everything" once so listings, sitemaps and redirects are published with the new engine.
+Major release. Settings migrate automatically. Requires PHP 8.2. Review QuantCDN > Settings after the update and run "Push everything" once so listings, sitemaps and redirects are published with the new engine.
