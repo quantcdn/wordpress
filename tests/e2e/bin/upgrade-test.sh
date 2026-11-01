@@ -38,8 +38,14 @@ POST_ID=$(WP post create --post_title="Before Upgrade" --post_status=publish --p
 pushed() { local body; body="$(curl -fs "$MOCK/_mock/requests?path=/v1&method=POST")"; [[ "$body" == *"$1"* ]]; }
 if pushed before-upgrade; then echo "ok   $FROM_VERSION pushes content"; else echo "note $FROM_VERSION did not push on this PHP version (its own incompatibility); continuing with the migration checks"; fi
 
+# Update the way wp-admin does: maintenance mode holds new requests while
+# the files are replaced. Wait for requests already running the 1.x code
+# (a cron loopback, for example), then start the log from a clean slate.
+WP maintenance-mode activate >/dev/null
+sleep 5
 $DC exec -T wordpress sh -c ': > /var/www/html/wp-content/debug.log'
 WP plugin install "/zips/$(basename "$TO_ZIP")" --force >/dev/null
+WP maintenance-mode deactivate >/dev/null
 curl -s -o /dev/null "http://localhost:$WP_PORT/"
 
 check "plugin active after update" "$(WP plugin get quant --field=status)" active
