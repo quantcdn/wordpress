@@ -111,6 +111,7 @@ final class SearchPageRepositoryTest extends TestCase
         $this->assertSame(['lang_code', 'content_type', 'genre_en', 'content_type_en', 'language_en', 'author_en'], $this->repository->facetKeys($page, 'en'));
         $this->assertSame("(lang_code:'en' OR lang_code:'fr') AND (content_type:'post' OR content_type:'book') AND category_en:'News'", $this->repository->filterString($page));
         $this->assertSame('', $this->repository->filterString($this->repository->save(['label' => 'Open'])));
+        $this->assertSame("(lang_code:=`en` || lang_code:=`fr`) && (content_type:=`post` || content_type:=`book`) && category_en:'News'", $this->repository->filterString($page, 'typesense'));
     }
 
     #[Test]

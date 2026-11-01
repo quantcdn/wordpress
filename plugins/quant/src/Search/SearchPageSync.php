@@ -107,6 +107,28 @@ class SearchPageSync
     }
 
     /**
+     * Register the facets of every enabled search page.
+     *
+     * A page registers its facets when it is saved. A project that moved to
+     * another backend starts with an empty index, so a re-index registers
+     * them again. Hooked to quant_seeded.
+     *
+     * @param array<string, int> $counts Jobs queued per seed type.
+     */
+    public function onSeeded(array $counts): void
+    {
+        if (!array_key_exists('search', $counts)) {
+            return;
+        }
+
+        foreach ($this->pages->all() as $page) {
+            if (!empty($page['status'])) {
+                $this->declareFacets($page);
+            }
+        }
+    }
+
+    /**
      * @param array<string, mixed> $page
      */
     private function declareFacets(array $page): void
@@ -118,6 +140,8 @@ class SearchPageSync
         }
 
         $this->api->addSearchFacets(array_values(array_unique($keys)));
+        // A newly registered facet shows on the next render, not after the cache expires.
+        Frontend::clearIndexCache();
     }
 
     /**

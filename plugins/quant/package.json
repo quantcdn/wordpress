@@ -25,6 +25,7 @@
     "algoliasearch": "^4.24.0",
     "instantsearch.css": "^7.4.5",
     "instantsearch.js": "^4.75.0",
-    "react-router-dom": "^6.0.0"
+    "react-router-dom": "^6.0.0",
+    "typesense-instantsearch-adapter": "2.9.0"
   }
 }

@@ -20,6 +20,19 @@ class WordPressHttpClient implements HttpClientInterface
     ) {
     }
 
+    /**
+     * The Quant API client: the configured timeout, and TLS always verified.
+     * "Disable SSL verification" applies only to the loopback fetch of local
+     * pages (Quant\Sync\InternalFetcher), never to calls to Quant.
+     */
+    public static function forQuantApi(\Quant\Core\Settings $settings): self
+    {
+        return new self(static fn(): array => [
+            'timeout' => $settings->getCredentials()['http_request_timeout'],
+            'sslverify' => true,
+        ]);
+    }
+
     public static function withDefaults(int $timeout = 30, bool $sslVerify = true): self
     {
         return new self(static fn(): array => ['timeout' => $timeout, 'sslverify' => $sslVerify]);

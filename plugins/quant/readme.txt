@@ -98,7 +98,8 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * Publishes paginated listings, author pages, date archives, sitemaps and referenced assets automatically.
 * Captures slug changes as redirects and unpublishes removed content reliably.
 * Uploads sitemaps and robots.txt as files so they keep their content type; makes localhost and private-IP URLs relative.
-* Quant Search: records with every push, search pages with facets, autocomplete, index rebuild.
+* Quant Search: records with every push, search pages with facets, autocomplete, index rebuild. Algolia on QuantCDN, Typesense on QuantGov.
+* Calls to the Quant API always verify TLS; "Disable SSL verification" applies only to the local webserver.
 * Sync status column, admin bar item and "Push to Quant" row action.
 * QUANT_* environment variable and constant overrides.
 * QuantGov dashboard support for the Quant login.

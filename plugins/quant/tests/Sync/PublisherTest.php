@@ -41,6 +41,7 @@ final class PublisherTest extends TestCase
         $this->api = Mockery::mock(ContentApiInterface::class);
         $this->queue = Mockery::mock(SyncQueueInterface::class);
         $this->attachments = Mockery::mock(AttachmentUploader::class);
+        $this->attachments->shouldReceive('uploadInlineReferences')->andReturn(['uploaded' => 0, 'skipped' => 0, 'errors' => []])->byDefault();
     }
 
     protected function tearDown(): void

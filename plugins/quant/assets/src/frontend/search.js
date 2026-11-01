@@ -3,12 +3,12 @@
  *
  * Reads its configuration from the data-quant-search attribute written by
  * Quant\Search\Frontend and mounts InstantSearch.js widgets. The libraries
- * are loaded from jsDelivr by the plugin, so the static copy of the page
- * works without WordPress.
+ * are bundled with the plugin, so the static copy of the page works without
+ * WordPress. The search client is Algolia or Typesense (search-client.js).
  */
-import algoliasearch from 'algoliasearch/lite';
 import instantsearch from 'instantsearch.js';
 import * as isWidgets from 'instantsearch.js/es/widgets';
+import { createSearchClient } from './search-client';
 import 'instantsearch.css/themes/algolia-min.css';
 import './search.scss';
 
@@ -121,10 +121,7 @@ function mount( root ) {
 
 	const search = instantsearch( {
 		indexName: config.index.index,
-		searchClient: algoliasearch(
-			config.index.application_id,
-			config.index.read_key
-		),
+		searchClient: createSearchClient( config.index ),
 		routing: false,
 		initialUiState: {
 			[ config.index.index ]: {

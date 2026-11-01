@@ -5,9 +5,9 @@
  * Quant\Search\Frontend. Submitting the box goes to the search page with the
  * query in the `keys` parameter.
  */
-import algoliasearch from 'algoliasearch/lite';
 import { autocomplete, getAlgoliaResults } from '@algolia/autocomplete-js';
 import '@algolia/autocomplete-theme-classic/dist/theme.min.css';
+import { createSearchClient } from './search-client';
 import './search.scss';
 
 /**
@@ -38,10 +38,7 @@ function mount( root ) {
 		return;
 	}
 
-	const searchClient = algoliasearch(
-		config.index.application_id,
-		config.index.read_key
-	);
+	const searchClient = createSearchClient( config.index );
 	const searchUrl = ( query ) =>
 		`${ config.searchPath }?${
 			config.queryParam || 'keys'
@@ -85,7 +82,11 @@ function mount( root ) {
 								{
 									indexName: config.index.index,
 									query,
+									// The query goes in both places. Algolia reads the
+									// sibling; the Typesense adapter reads only
+									// params.query and otherwise searches '*'.
 									params: {
+										query,
 										filters: config.filters || '',
 										hitsPerPage: 8,
 									},

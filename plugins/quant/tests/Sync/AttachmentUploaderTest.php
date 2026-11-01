@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Tests\Sync;
 
 use Brain\Monkey;
+use Brain\Monkey\Functions;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -48,6 +49,43 @@ final class AttachmentUploaderTest extends TestCase
         rmdir($this->dir);
         Monkey\tearDown();
         parent::tearDown();
+    }
+
+    #[Test]
+    public function it_finds_local_assets_named_only_in_inline_json(): void
+    {
+        $markup = '<script>window._wpemojiSettings = {"source":{"concatemoji":"\\/wp-includes\\/js\\/wp-emoji-release.min.js?ver=6.8"}};</script>'
+            . '<script>var a = {"css":"/wp-content/plugins/x/a.css","img":"/wp-content/uploads/a.png","ext":"https://cdn.test/b.js",'
+            . '"again":"/wp-includes/js/wp-emoji-release.min.js"};</script><script src="/wp-content/themes/t/app.js"></script>';
+
+        $this->assertSame(
+            ['/wp-includes/js/wp-emoji-release.min.js', '/wp-content/plugins/x/a.css'],
+            AttachmentUploader::inlineReferences($markup)
+        );
+        $this->assertSame([], AttachmentUploader::inlineReferences('<p>No scripts</p>'));
+    }
+
+    #[Test]
+    public function inline_references_are_uploaded_once_until_they_change(): void
+    {
+        $options = [];
+        Functions\when('get_option')->alias(static function (string $key, $default = false) use (&$options) {
+            return $options[$key] ?? $default;
+        });
+        Functions\when('update_option')->alias(static function (string $key, $value) use (&$options): bool {
+            $options[$key] = $value;
+            return true;
+        });
+        $markup = '{"concatemoji":"' . $this->relative . '/app.js?ver=1"}';
+
+        $this->api->shouldReceive('uploadFile')->once()->with($this->relative . '/app.js', $this->dir . '/app.js')->andReturn(ApiResponse::success());
+
+        $this->assertSame(1, $this->uploader->uploadInlineReferences($markup)['uploaded']);
+        $this->assertSame([$this->relative . '/app.js' => md5('console.log(1)')], $options[AttachmentUploader::INLINE_OPTION]);
+
+        // A new process with the stored md5 skips the unchanged file.
+        $fresh = new AttachmentUploader($this->api);
+        $this->assertSame(1, $fresh->uploadInlineReferences($markup)['skipped']);
     }
 
     #[Test]

@@ -43,6 +43,7 @@ class Publisher
         if (is_array($attachments)) {
             $this->attachments->upload($attachments);
         }
+        $this->attachments->uploadInlineReferences($content->markup);
 
         $this->purgeVariants([$content->url]);
         $this->followLinks($content);

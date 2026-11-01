@@ -90,8 +90,8 @@ class Frontend
 
         $config = [
             'index' => $index,
-            'filters' => $this->pages->filterString($page),
-            'facets' => $this->facetConfig($page),
+            'filters' => $this->pages->filterString($page, $index['backend']),
+            'facets' => $this->facetConfig($page, $index),
             'display' => $page['display'],
             'queryParam' => 'keys',
         ];
@@ -100,7 +100,7 @@ class Frontend
             '<div class="quant-search" data-quant-search="%s">%s%s</div>',
             esc_attr((string) wp_json_encode($config)),
             $page['description'] !== '' ? '<h4 class="quant-search__description">' . esc_html($page['description']) . '</h4>' : '',
-            $this->searchLayout($page)
+            $this->searchLayout($page, $index)
         );
     }
 
@@ -121,7 +121,7 @@ class Frontend
 
         $config = [
             'index' => $index,
-            'filters' => $this->pages->filterString($page),
+            'filters' => $this->pages->filterString($page, $index['backend']),
             'searchPath' => home_url($page['route']),
             'placeholder' => (string) $atts['placeholder'],
             'showSummary' => filter_var($atts['show_summary'], FILTER_VALIDATE_BOOLEAN),
@@ -181,37 +181,33 @@ class Frontend
     }
 
     /**
-     * Index credentials from the project record, cached for an hour.
+     * The search backend for the browser, cached for an hour.
      *
-     * @return array{application_id: string, read_key: string, index: string}|null
+     * An unavailable backend is cached for five minutes, and an incomplete
+     * one (a partial API failure) is not cached. The Typesense endpoint is a
+     * local setting and is added at read time. See SearchBackend.
+     *
+     * @return array<string, mixed>|null
      */
     public function indexConfig(): ?array
     {
         $cached = get_transient(self::INDEX_TRANSIENT);
         if (is_array($cached)) {
-            return $cached['index'] ?? null;
+            return SearchBackend::withEndpoint($cached['index'] ?? null);
         }
 
         if (!$this->settings->hasValidCredentials()) {
             return null;
         }
 
-        $response = $this->api->ping();
-        $config = $response->data['config'] ?? [];
-        $index = $config['search_index'] ?? null;
-
-        $result = null;
-        if (!empty($config['search_enabled']) && is_array($index) && !empty($index['algolia_index'])) {
-            $result = [
-                'application_id' => (string) ($index['algolia_application_id'] ?? ''),
-                'read_key' => (string) ($index['algolia_read_key'] ?? ''),
-                'index' => (string) $index['algolia_index'],
-            ];
+        $backend = SearchBackend::resolve($this->api);
+        if ($backend !== null && !SearchBackend::isComplete($backend)) {
+            return null;
         }
 
-        set_transient(self::INDEX_TRANSIENT, ['index' => $result], $result === null ? 300 : 3600);
+        set_transient(self::INDEX_TRANSIENT, ['index' => $backend], $backend === null ? 300 : 3600);
 
-        return $result;
+        return SearchBackend::withEndpoint($backend);
     }
 
     public static function clearIndexCache(): void
@@ -258,9 +254,10 @@ class Frontend
 
     /**
      * @param array<string, mixed> $page
+     * @param array<string, mixed>|null $backend
      * @return array<int, array<string, mixed>>
      */
-    private function facetConfig(array $page): array
+    private function facetConfig(array $page, ?array $backend): array
     {
         $lang = $this->records->defaultLanguage();
         $facets = [];
@@ -279,16 +276,17 @@ class Frontend
             ];
         }
 
-        return $facets;
+        return SearchBackend::declaredFacets($facets, $backend);
     }
 
     /**
      * @param array<string, mixed> $page
+     * @param array<string, mixed>|null $backend
      */
-    private function searchLayout(array $page): string
+    private function searchLayout(array $page, ?array $backend): string
     {
         $display = $page['display'];
-        $facets = $this->facetConfig($page);
+        $facets = $this->facetConfig($page, $backend);
 
         $facetMarkup = '';
         if ($facets !== []) {

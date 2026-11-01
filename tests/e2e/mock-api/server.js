@@ -10,6 +10,9 @@
  *   DELETE /_mock/requests                 clear requests AND state
  *   GET    /_mock/state                    published, files, redirects, search, facets, unpublished
  *   POST   /_mock/fail {path,status,times} fail the next N requests to path
+ *   POST   /_mock/platform {mode,custom_ranking,facets} "aws" makes the project
+ *                                         a QuantGov (Typesense) search project;
+ *                                         facets replaces the registered facets
  */
 
 const http = require('http');
@@ -37,6 +40,7 @@ function freshState() {
     facets: [],         // [string]
     unpublished: [],    // [url]
     purges: [],         // [{ url, cacheKeys, soft }]
+    platform: { mode: '', custom_ranking: [] },
   };
 }
 
@@ -218,6 +222,8 @@ function handlePing(req, res) {
     project: { name: AUTH.project },
     config: {
       search_enabled: true,
+      ...(state.platform.mode ? { platform_mode: state.platform.mode } : {}),
+      search_config: { algolia: { custom_ranking: state.platform.custom_ranking } },
       search_index: {
         algolia_application_id: 'APPID',
         algolia_read_key: 'READKEY',
@@ -343,6 +349,9 @@ function handleSearchStatus(req, res) {
       updatedAt: nowIso(),
     },
     settings: { attributesForFaceting: state.facets },
+    ...(state.platform.mode === 'aws'
+      ? { readOnlyKey: { value: 'TS-READ-KEY', collections: ['test-index'], actions: ['documents:search'] } }
+      : {}),
   });
 }
 
@@ -470,6 +479,12 @@ function routeInspection(req, res, url, raw) {
     if (!body.path) return send(res, 400, { error: 'path required' });
     failures.push({ path: body.path, status: body.status || 500, times: body.times || 1 });
     return send(res, 200, { success: true, failures });
+  }
+  if (m === 'POST' && p === '/_mock/platform') {
+    const body = parseJson(raw) || {};
+    state.platform = { mode: String(body.mode || ''), custom_ranking: Array.isArray(body.custom_ranking) ? body.custom_ranking : [] };
+    if (Array.isArray(body.facets)) state.facets = body.facets;
+    return send(res, 200, { success: true, platform: state.platform });
   }
   if (m === 'GET' && p === '/_mock/health') return send(res, 200, { ok: true });
   return false;

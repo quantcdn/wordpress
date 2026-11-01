@@ -16,6 +16,9 @@ use Quant\Api\ContentApiInterface;
  */
 class AttachmentUploader
 {
+    /** Option that keeps the md5 of uploaded inline-referenced files. */
+    public const INLINE_OPTION = 'quant_inline_asset_md5';
+
     /** @var array<string, string> path => md5 uploaded in this process */
     private array $uploaded = [];
 
@@ -44,6 +47,47 @@ class AttachmentUploader
         }
 
         return $summary;
+    }
+
+    /**
+     * Uploads local scripts and stylesheets that a page names only inside
+     * inline JSON, such as the WordPress emoji loader ("concatemoji"). The
+     * Content API does not report these. The md5 of each upload is kept, so
+     * a file is sent again only when it changes.
+     *
+     * @return array{uploaded: int, skipped: int, errors: array<string>}
+     */
+    public function uploadInlineReferences(string $markup): array
+    {
+        $known = get_option(self::INLINE_OPTION, []);
+        $known = is_array($known) ? $known : [];
+        $items = array_map(static fn(string $path): array => ['path' => $path, 'existing_md5' => $known[$path] ?? null], self::inlineReferences($markup));
+
+        $summary = $this->upload(['js' => $items]);
+
+        $changed = array_diff_assoc(array_intersect_key($this->uploaded, array_flip(self::inlineReferences($markup))), $known);
+        if ($changed !== []) {
+            update_option(self::INLINE_OPTION, array_merge($known, $changed), false);
+        }
+
+        return $summary;
+    }
+
+    /**
+     * Root-relative /wp-includes/ and /wp-content/ .js and .css paths in JSON
+     * strings, with "\/" unescaped and the query string removed.
+     *
+     * @return array<int, string>
+     */
+    public static function inlineReferences(string $markup): array
+    {
+        // A JSON value: the string follows ":", "," or "[", never an HTML attribute.
+        $pattern = '#[:,\[]\s*"((?:\\\\?/)(?:wp-includes|wp-content)(?:\\\\?/)[^"\s<>?]+?\.(?:js|css))(?:\?[^"]*)?"#';
+        if (!preg_match_all($pattern, $markup, $matches)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map(static fn(string $path): string => str_replace('\\/', '/', $path), $matches[1])));
     }
 
     /**

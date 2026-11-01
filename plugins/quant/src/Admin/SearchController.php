@@ -79,6 +79,7 @@ class SearchController
             'connected' => $ping->success,
             'enabled' => $enabled,
             'index' => $config['search_index'] ?? null,
+            'backend' => ($config['platform_mode'] ?? '') === 'aws' ? 'typesense' : 'algolia',
             'stats' => $stats,
             'error' => $ping->success ? null : $ping->message,
         ];

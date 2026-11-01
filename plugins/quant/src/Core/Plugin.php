@@ -59,14 +59,8 @@ class Plugin
 
         $c->singleton(Settings::class, static fn(): Settings => new Settings());
 
-        $c->singleton(Api\HttpClientInterface::class, static fn(Container $c): Api\HttpClientInterface => new Api\WordPressHttpClient(
-            static function () use ($c): array {
-                $credentials = $c->get(Settings::class)->getCredentials();
-                return [
-                    'timeout' => $credentials['http_request_timeout'],
-                    'sslverify' => !$credentials['disable_tls_verify'],
-                ];
-            }
+        $c->singleton(Api\HttpClientInterface::class, static fn(Container $c): Api\HttpClientInterface => Api\WordPressHttpClient::forQuantApi(
+            $c->get(Settings::class)
         ));
 
         $c->singleton(Api\ContentApiInterface::class, static fn(Container $c): Api\ContentApiInterface => new Api\QuantContentApi(
@@ -278,6 +272,7 @@ class Plugin
 
         add_action('rest_api_init', [$this, 'registerRestRoutes']);
         add_action('update_option_' . Settings::OPTION_CREDENTIALS, [Search\Frontend::class, 'clearIndexCache']);
+        add_action('quant_seeded', static fn(array $counts) => $c->get(Search\SearchPageSync::class)->onSeeded($counts));
 
         if (is_admin()) {
             add_action('admin_menu', [$this, 'registerAdminMenu']);

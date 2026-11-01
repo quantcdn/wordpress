@@ -236,7 +236,7 @@ export function SearchPageEditor( {
 				onChange={ ( v ) => set( 'manual_filters', v ) }
 				placeholder="category_en:'News'"
 				help={ __(
-					'Algolia filter expression appended to the page filters.',
+					"Appended to the page filters as written. Use the project's search syntax: Algolia on QuantCDN (category_en:'News'), Typesense on QuantGov (category_en:=`News`).",
 					'quant'
 				) }
 			/>

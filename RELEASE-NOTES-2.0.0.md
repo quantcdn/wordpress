@@ -36,6 +36,11 @@ the admin and rendered by the `[quant_search]` shortcode or the "Quant
 Search" block; an autocomplete box is available as a shortcode or block. The
 WordPress search form can be pointed at a search page so search works on the
 static site. The index can be rebuilt or cleared from the admin or WP-CLI.
+The plugin uses the project's search engine automatically, as the Drupal
+module and the dashboard search pages do: Algolia on QuantCDN, Typesense on
+QuantGov (`https://search.quantgov.cloud`, or `QUANT_SEARCH_ENDPOINT`). A
+facet the index has not registered is left out instead of blanking the page,
+and a rebuild registers the facets of every search page first.
 
 **Admin.** A React admin under *QuantCDN*: dashboard with queue state and
 recent errors, content browser with per-item status and selective push or
@@ -50,7 +55,8 @@ dashboard for the login.
 **Configuration from the environment.** `QUANT_API_ENDPOINT`,
 `QUANT_CUSTOMER`, `QUANT_PROJECT`, `QUANT_TOKEN`, `QUANT_WEBSERVER_URL`,
 `QUANT_WEBSERVER_HOST`, `QUANT_ENABLED`, `QUANT_PURGE_ON_SAVE`,
-`QUANT_DISABLE_TLS_VERIFY`, `QUANT_HTTP_REQUEST_TIMEOUT` and `QUANT_MODE`
+`QUANT_DISABLE_TLS_VERIFY`, `QUANT_HTTP_REQUEST_TIMEOUT`, `QUANT_MODE` and
+`QUANT_SEARCH_ENDPOINT`
 override the saved settings, as environment variables or constants. Fields
 set this way are read-only in the admin.
 
@@ -125,6 +131,15 @@ set this way are read-only in the admin.
   as well as the values in effect, so sites whose address is set by
   `WP_HOME`/`WP_SITEURL` per request (Quant Cloud) do not leak the
   production domain into the static copy.
+- "Disable SSL verification" now applies only to the plugin's own fetch of
+  local pages from the Webserver URL. Calls to the Quant API always verify
+  TLS. Many 1.x sites have the setting on, because 1.x turned it on at
+  activation; their API calls now verify TLS with no change needed.
+- Local scripts and stylesheets that a page names only inside inline JSON,
+  such as the WordPress emoji loader, are uploaded with the page. The
+  Content API does not report them, so 1.x left them missing on the edge.
+- A search page's manual filter is passed through as written, so on QuantGov
+  write it in Typesense syntax (``category_en:=`News` ``).
 - WP-CLI commands do not start a WP-Cron request. A queue change made from
   WP-CLI is processed by the next cron run or by `--process`.
 
@@ -137,7 +152,7 @@ set this way are read-only in the admin.
   `quant_search_record`, `quant_search_record_language`,
   `quant_sitemap_routes`, `quant_sitemap_indexes`, `quant_purge_paths`,
   `quant_cron_batch_size`, `quant_cron_time_budget`, `quant_portal_url`,
-  `quant_cloud_api_url`. Actions: `quant_jobs_queued`, `quant_seeded`,
+  `quant_cloud_api_url`, `quant_search_typesense_endpoint`. Actions: `quant_jobs_queued`, `quant_seeded`,
   `quant_sync_job_failed`, `quant_purged`, `quant_schedule_updated`.
 - Additional filters: `quant_purge_after_publish`, `quant_public_file_extensions`,
   `quant_max_upload_bytes`, `quant_search_language_label`.

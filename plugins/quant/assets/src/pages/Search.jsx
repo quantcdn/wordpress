@@ -76,7 +76,19 @@ function StatusCard( { status, onRefresh } ) {
 						<tbody>
 							<tr>
 								<th>{ __( 'Index', 'quant' ) }</th>
-								<td>{ status.index?.algolia_index || '-' }</td>
+								<td>
+									{ status.index?.algolia_index ||
+										status.stats?.name ||
+										'-' }
+								</td>
+							</tr>
+							<tr>
+								<th>{ __( 'Search engine', 'quant' ) }</th>
+								<td>
+									{ status.backend === 'typesense'
+										? 'Typesense'
+										: 'Algolia' }
+								</td>
 							</tr>
 							<tr>
 								<th>{ __( 'Records', 'quant' ) }</th>

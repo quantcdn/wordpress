@@ -60,6 +60,17 @@ final class WordPressHttpClientTest extends TestCase
     }
 
     #[Test]
+    public function the_quant_api_client_always_verifies_tls(): void
+    {
+        $client = WordPressHttpClient::forQuantApi($this->mockSettings(['disable_tls_verify' => true, 'http_request_timeout' => 20]));
+
+        $client->get('https://api.quantgov.cloud/v1/ping');
+
+        $this->assertTrue($this->captured['args']['sslverify']);
+        $this->assertSame(20, $this->captured['args']['timeout']);
+    }
+
+    #[Test]
     public function it_resolves_options_per_request(): void
     {
         $timeout = 10;

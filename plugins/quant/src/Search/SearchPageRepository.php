@@ -158,27 +158,42 @@ class SearchPageRepository
     }
 
     /**
-     * Algolia filter string for a page: post types, languages and manual filters.
+     * Filter string for a page in the backend's syntax: languages, post types
+     * and manual filters.
      *
      * @param array<string, mixed> $page
      */
-    public function filterString(array $page): string
+    public function filterString(array $page, string $backend = SearchBackend::ALGOLIA): string
     {
+        $typesense = $backend === SearchBackend::TYPESENSE;
         $filters = [];
 
-        if ($page['languages'] !== []) {
-            $filters[] = '(' . implode(' OR ', array_map(static fn(string $l): string => "lang_code:'{$l}'", $page['languages'])) . ')';
+        foreach (['lang_code' => 'languages', 'content_type' => 'post_types'] as $field => $key) {
+            $parts = array_filter(array_map(static fn(string $value): string => self::equals($field, $value, $typesense), $page[$key]));
+            if ($parts !== []) {
+                $filters[] = '(' . implode($typesense ? ' || ' : ' OR ', $parts) . ')';
+            }
         }
 
-        if ($page['post_types'] !== []) {
-            $filters[] = '(' . implode(' OR ', array_map(static fn(string $t): string => "content_type:'{$t}'", $page['post_types'])) . ')';
-        }
-
+        // Passed through verbatim, so it must use the backend's own syntax.
         if (trim((string) $page['manual_filters']) !== '') {
             $filters[] = trim((string) $page['manual_filters']);
         }
 
-        return implode(' AND ', $filters);
+        return implode($typesense ? ' && ' : ' AND ', $filters);
+    }
+
+    /**
+     * One equality clause. Typesense quotes values with backticks, so a value
+     * that contains one is dropped instead of changing the filter's meaning.
+     */
+    private static function equals(string $field, string $value, bool $typesense): string
+    {
+        if (!$typesense) {
+            return $field . ":'" . str_replace("'", '', $value) . "'";
+        }
+
+        return str_contains($value, '`') ? '' : $field . ':=`' . $value . '`';
     }
 
     /**

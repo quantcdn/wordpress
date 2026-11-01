@@ -711,19 +711,6 @@ export function Settings() {
 						'http_request_timeout'
 					) }
 				/>
-				<ToggleControl
-					label={ __( 'Disable SSL verification', 'quant' ) }
-					checked={ !! settings.disable_tls_verify }
-					onChange={ ( v ) => update( 'disable_tls_verify', v ) }
-					disabled={ isOverridden(
-						'credentials',
-						'disable_tls_verify'
-					) }
-					help={ __(
-						'Only for local servers with self-signed certificates.',
-						'quant'
-					) }
-				/>
 			</SectionCard>
 
 			<SectionCard title={ __( 'Mode', 'quant' ) }>
@@ -859,6 +846,26 @@ export function Settings() {
 							'webserver_host',
 							__(
 								'The public hostname WordPress expects, so rendered links use the public domain.',
+								'quant'
+							)
+						) }
+					/>
+					<ToggleControl
+						label={ __(
+							'Disable SSL verification for the local webserver',
+							'quant'
+						) }
+						checked={ !! settings.disable_tls_verify }
+						onChange={ ( v ) => update( 'disable_tls_verify', v ) }
+						disabled={ isOverridden(
+							'credentials',
+							'disable_tls_verify'
+						) }
+						help={ helpFor(
+							'credentials',
+							'disable_tls_verify',
+							__(
+								'Only for a local webserver with a self-signed certificate. Calls to the Quant API always verify TLS.',
 								'quant'
 							)
 						) }
