@@ -54,23 +54,10 @@ function SectionCard( { title, children, description } ) {
 	);
 }
 
-function OverrideHint( { overridden, group, field } ) {
-	if (
-		! overridden ||
-		! overridden[ group ] ||
-		! overridden[ group ].includes( field )
-	) {
-		return null;
-	}
-	return (
-		<p className="quant-override-hint">
-			{ __(
-				'Set by a QUANT_* environment variable or constant. Change it there.',
-				'quant'
-			) }
-		</p>
-	);
-}
+const OVERRIDE_HINT = __(
+	'Set by a QUANT_* environment variable or constant. Change it there.',
+	'quant'
+);
 
 /**
  * OAuth connection card: login, project selection, change project, disconnect.
@@ -587,6 +574,8 @@ export function Settings() {
 	);
 	const isOverridden = ( group, field ) =>
 		!! ( overridden[ group ] && overridden[ group ].includes( field ) );
+	const helpFor = ( group, field, help ) =>
+		isOverridden( group, field ) ? OVERRIDE_HINT : help;
 	const scheduleOptions = Object.entries( settings.schedules || {} ).map(
 		( [ value, label ] ) => ( { value, label } )
 	);
@@ -629,15 +618,14 @@ export function Settings() {
 						value={ settings.endpoint }
 						onChange={ ( v ) => update( 'endpoint', v ) }
 						disabled={ isOverridden( 'credentials', 'endpoint' ) }
-						help={ __(
-							'https://api.quantcdn.io for QuantCDN, https://api.quantgov.cloud for QuantGov. Without /v1.',
-							'quant'
+						help={ helpFor(
+							'credentials',
+							'endpoint',
+							__(
+								'https://api.quantcdn.io for QuantCDN, https://api.quantgov.cloud for QuantGov. Without /v1.',
+								'quant'
+							)
 						) }
-					/>
-					<OverrideHint
-						overridden={ overridden }
-						group="credentials"
-						field="endpoint"
 					/>
 					<TextControl
 						label={ __( 'Organization (API Customer)', 'quant' ) }
@@ -647,22 +635,14 @@ export function Settings() {
 							'credentials',
 							'organization'
 						) }
-					/>
-					<OverrideHint
-						overridden={ overridden }
-						group="credentials"
-						field="organization"
+						help={ helpFor( 'credentials', 'organization' ) }
 					/>
 					<TextControl
 						label={ __( 'Project', 'quant' ) }
 						value={ settings.project }
 						onChange={ ( v ) => update( 'project', v ) }
 						disabled={ isOverridden( 'credentials', 'project' ) }
-					/>
-					<OverrideHint
-						overridden={ overridden }
-						group="credentials"
-						field="project"
+						help={ helpFor( 'credentials', 'project' ) }
 					/>
 					<TextControl
 						label={ __( 'API Token', 'quant' ) }
@@ -678,11 +658,7 @@ export function Settings() {
 								  )
 								: __( 'Project token', 'quant' )
 						}
-					/>
-					<OverrideHint
-						overridden={ overridden }
-						group="credentials"
-						field="token"
+						help={ helpFor( 'credentials', 'token' ) }
 					/>
 					<Flex
 						justify="flex-start"
@@ -863,15 +839,14 @@ export function Settings() {
 						onChange={ ( v ) => update( 'webserver_url', v ) }
 						placeholder="http://localhost"
 						disabled={ isOverridden( 'static', 'webserver_url' ) }
-						help={ __(
-							'Where the plugin can reach this site from the server, for example http://localhost. Leave empty to use the site URL.',
-							'quant'
+						help={ helpFor(
+							'static',
+							'webserver_url',
+							__(
+								'Where the plugin can reach this site from the server, for example http://localhost. Leave empty to use the site URL.',
+								'quant'
+							)
 						) }
-					/>
-					<OverrideHint
-						overridden={ overridden }
-						group="static"
-						field="webserver_url"
 					/>
 					<TextControl
 						label={ __( 'Hostname (Host header)', 'quant' ) }
@@ -879,15 +854,14 @@ export function Settings() {
 						onChange={ ( v ) => update( 'webserver_host', v ) }
 						placeholder="www.example.com"
 						disabled={ isOverridden( 'static', 'webserver_host' ) }
-						help={ __(
-							'The public hostname WordPress expects, so rendered links use the public domain.',
-							'quant'
+						help={ helpFor(
+							'static',
+							'webserver_host',
+							__(
+								'The public hostname WordPress expects, so rendered links use the public domain.',
+								'quant'
+							)
 						) }
-					/>
-					<OverrideHint
-						overridden={ overridden }
-						group="static"
-						field="webserver_host"
 					/>
 					<ToggleControl
 						label={ __(
