@@ -1,0 +1,21 @@
+# Files excluded from the distributed plugin zip
+/.git
+/.github
+/.gitignore
+/.distignore
+/.phpunit.cache
+/node_modules
+/tests
+/assets/src
+/vendor
+/composer.json
+/composer.lock
+/package.json
+/package-lock.json
+/phpunit.xml
+/phpstan.neon
+/phpmd.xml
+/webpack.config.js
+/bin
+/build
+/dist

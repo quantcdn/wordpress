@@ -1,0 +1,110 @@
+/* Quant Search page and autocomplete styles.
+   Theme-neutral; themes can override. */
+.quant-search {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2rem;
+
+	&__description {
+		flex-basis: 100%;
+		margin: 0 0 0.5rem;
+	}
+
+	&__facets {
+		flex: 0 0 240px;
+		max-width: 100%;
+	}
+
+	&__facet {
+		margin-bottom: 1.5rem;
+	}
+
+	&__facet-heading {
+		font-weight: 600;
+		margin-bottom: 0.5rem;
+	}
+
+	&__content {
+		flex: 1 1 320px;
+		min-width: 0;
+	}
+
+	&__stats {
+		margin: 0.75rem 0;
+		font-size: 0.9em;
+		opacity: 0.8;
+	}
+
+	&__hit {
+		padding: 1rem 0;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+
+		&:last-child {
+			border-bottom: 0;
+		}
+
+		a {
+			text-decoration: none;
+		}
+
+		img {
+			max-width: 120px;
+			height: auto;
+			float: right;
+			margin: 0 0 0.5rem 1rem;
+		}
+	}
+
+	&__hit-title {
+		margin: 0 0 0.25rem;
+		font-size: 1.1em;
+	}
+
+	&__hit-summary {
+		margin: 0;
+		opacity: 0.85;
+	}
+
+	&__hit-tag {
+		display: inline-block;
+		margin: 0.25rem 0.25rem 0 0;
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.06);
+		font-size: 0.8em;
+	}
+
+	&__empty {
+		padding: 2rem 0;
+		text-align: center;
+		opacity: 0.8;
+	}
+
+	&--unavailable {
+		padding: 1rem;
+		border: 1px dashed rgba(0, 0, 0, 0.3);
+	}
+
+	.ais-Pagination {
+		margin-top: 1.5rem;
+	}
+}
+
+.quant-search-autocomplete {
+	max-width: 480px;
+
+	.aa-Panel {
+		z-index: 1000;
+	}
+
+	.quant-autocomplete__title {
+		margin: 0;
+		font-size: 1em;
+	}
+
+	.quant-autocomplete__summary {
+		margin: 0.25rem 0 0;
+		font-size: 0.85em;
+		opacity: 0.8;
+	}
+}

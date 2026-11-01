@@ -1,0 +1,17 @@
+{
+  "name": "quant-wordpress-e2e",
+  "version": "2.0.0",
+  "private": true,
+  "description": "End-to-end tests for the QuantCDN WordPress plugin (Docker + Playwright + mock Quant API)",
+  "scripts": {
+    "setup": "bash bin/setup.sh",
+    "teardown": "bash bin/teardown.sh",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "mock:logs": "docker compose -f ../../docker-compose.e2e.yml logs -f mock-api",
+    "wp:logs": "docker compose -f ../../docker-compose.e2e.yml exec -T wpcli cat /var/www/html/wp-content/debug.log"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

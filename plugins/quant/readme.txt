@@ -1,160 +1,122 @@
 === QuantCDN ===
-Contributors: stooit
+Contributors: stooit, quantcdn
 Donate link: https://www.quantcdn.io/
-Tags: static, jamstack, cdn, quant, static site generator
-Requires at least: 4.6
-Tested up to: 6.8.2
-Requires PHP: 7.4
-Stable tag: 1.5.2
+Tags: static, cdn, static site generator, jamstack, search
+Requires at least: 6.0
+Tested up to: 7.1
+Requires PHP: 8.1
+Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-QuantCDN static site generator and edge integration. Push a static export of your Wordpress site with ease.
+Publish a static copy of your WordPress site to the QuantCDN edge, keep it in sync automatically, purge the cache, and add Quant Search pages.
 
 == Description ==
 
-QuantCDN is a CDN engineered specifically for the static web. This plugin acts as a static site generator, letting you easily push a static copy of your entire Wordpress site with a single click. Any ongoing content change is automatically pushed, ensuring your static site in the QuantCDN edge is always kept in sync.
+QuantCDN is a CDN engineered for the static web. This plugin works in two modes:
 
-Full support for:
-* Pages and Posts
-* Homepages (static or lists), including pagination
-* Archives (including pagination)
-* 404 error page
-* Custom routes
-* Tags and Categories (including pagination)
-* Attached images & media, CSS, Javascript
-* Custom post and page types
+* **Static Site**: every page, listing, file and redirect is rendered and published to the Quant edge. Content changes are pushed automatically. Visitors never reach WordPress.
+* **CDN Only**: WordPress serves pages behind Quant, and the plugin purges the Quant cache when content changes.
 
-The QuantCDN platform has integrated support for both [forms](https://docs.quantcdn.io/docs/dashboard/forms) and [search](https://docs.quantcdn.io/docs/dashboard/search).
+Static mode publishes:
 
-Requires a [QuantCDN account](https://www.quantcdn.io)
+* Posts, pages and public custom post types
+* The home page, blog listing, category, tag and custom taxonomy pages, author pages, date and post type archives, including every paginated page
+* Media library files with all image sizes, theme assets, and every stylesheet, script, image or document a page references
+* Custom routes, the 404 page, robots.txt and sitemaps (WordPress core, Yoast SEO, Rank Math)
+* Redirects from the Redirection plugin and from changed post slugs
+* Quant Search records, so the Quant Search pages and autocomplete box work on the static site
+
+Also included:
+
+* A React admin under **QuantCDN** with a dashboard, content browser, cache purge, search configuration, settings and diagnostics
+* Sync status in the post lists and the admin bar, with a "Push to Quant" row action
+* Login with your Quant account to pick a project, or paste the project credentials
+* QuantGov support: set the endpoint to `https://api.quantgov.cloud`
+* WP-CLI commands for scripted pushes and purges, with parallel workers
+* Background processing with WP-Cron and an optional scheduled re-push
+* Configuration from `QUANT_*` environment variables for Quant Cloud
+
+The QuantCDN platform provides [forms](https://docs.quantcdn.io/docs/dashboard/forms) and [search](https://docs.quantcdn.io/docs/dashboard/search) for static sites.
+
+Requires a [QuantCDN account](https://www.quantcdn.io).
 
 == Installation ==
 
-1. Upload the plugin files to the `/wp-content/plugins/quant` directory, or install the plugin through the WordPress plugins screen directly.
-2. Activate the plugin through the 'Plugins' screen
-3. Configure on the Settings > QuantCDN screen, as per https://docs.quantcdn.io/docs/integrations/wordpress
+1. Install from the Plugins screen or upload the `quant` directory to `/wp-content/plugins/`.
+2. Activate the plugin.
+3. Open **QuantCDN** in the admin menu. Log in to Quant and choose a project, or enter the organisation, project and token from the Integrations page of the Quant dashboard.
+4. Choose the mode. In Static mode, check **Internal connectivity** under Settings, then open **Content** and press **Push everything**.
 
-== WP-CLI support ==
+== Upgrading from 1.x ==
 
-WP-CLI is a command line tool to interface with Wordpress. It is the recommended way of initially seeding your Wordpress site in Quant, and provides vast performance improvements over using the UI.
+Version 2.0 keeps your settings. On the first page load after the update the plugin copies the 1.x settings (API credentials, automatic push, cache purge on save, webserver URL and host, 404 route, custom routes, relative rewrite domains and cron settings) to the new format. Content pushes continue to work without any action. A notice links to a review page.
 
-This is largely due to the ability to run the seed process with concurrency, which can immediately give a 10x performance boost (or greater) when compared to using the UI.
+The 1.x WP-CLI commands `wp quant info`, `wp quant reset_queue <queue|all>` and `wp quant process_queue <queue|all> --threads=N` keep working.
 
-* Use `wp quant info` to view queue status
-* Use `wp quant reset_queue <queue_name>` to reset a queue
-* Use `wp quant process_queue <queue_name|all> --threads=10` to push content to Quant
+Version 2.0 requires PHP 8.1. Sites on older PHP are not offered the update and stay on 1.6.
+
+== WP-CLI ==
+
+* `wp quant status` - connection, mode and queue counts
+* `wp quant sync --all --process` - queue the whole site and push it
+* `wp quant sync --type=page` - queue one content type (`post`, `page`, `media`, `taxonomy`, `home`, `archives`, `authors`, `theme_assets`, `custom_routes`, `sitemaps`, `redirects`, `search`, or a custom post type)
+* `wp quant sync 123 456 --process` - push specific posts
+* `wp quant queue process --all --threads=5` - process the queue with parallel workers
+* `wp quant queue status|retry|clear|errors`
+* `wp quant purge /path` and `wp quant purge --all`
+* `wp quant unpublish /path`
+* `wp quant search --clear --process` - rebuild the Quant Search index
+
+== Environment variables ==
+
+Set these to configure the plugin without the admin UI (for example on Quant Cloud): `QUANT_API_ENDPOINT`, `QUANT_CUSTOMER`, `QUANT_PROJECT`, `QUANT_TOKEN`, `QUANT_WEBSERVER_URL`, `QUANT_WEBSERVER_HOST`, `QUANT_ENABLED`, `QUANT_PURGE_ON_SAVE`, `QUANT_DISABLE_TLS_VERIFY`, `QUANT_HTTP_REQUEST_TIMEOUT`, `QUANT_MODE`. The same names work as PHP constants in `wp-config.php`. Overridden fields are read-only in the UI.
 
 == Frequently Asked Questions ==
 
-= Where do I register for an account? =
+= Where do I find the project credentials? =
 
-Visit the [QuantCDN dashboard](https://dashboard.quantcdn.io/register) to register.
+In the Quant dashboard, open the project and go to Integrations. Copy the organisation (API customer), project name and token.
 
-= Where do I retrieve the project key from? =
+= The internal connectivity test fails =
 
-Visit the "Integrations" section in the QuantCDN dashboard to retrieve token and other required details.
+The plugin renders pages by requesting them from the web server. Set **Webserver URL** to an address the PHP process can reach (for example `http://localhost`) and **Hostname** to the public domain. In a container, WP-CLI runs without a web server, so point the Webserver URL at the web container.
 
-= How do I use Forms? =
+= How do I use Quant Search? =
 
-Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms) to configure forms via the Quant Dashboard. Form submission data can be received via email or Slack, as well as directly via the Quant Dashboard.
+Enable search for the project in the Quant dashboard, then open **QuantCDN > Search**, turn on search records and create a search page. Place the "Quant Search" block or `[quant_search]` shortcode on any page for more search pages, and the "Quant Search Autocomplete" block or `[quant_search_autocomplete]` shortcode in a header or sidebar.
 
-**Note**: Contact Form 7 requires a small [configuration change](https://docs.quantcdn.io/docs/dashboard/forms#contact-form-7-support-wordpress).
+= Forms on a static site =
 
-== Screenshots ==
+Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms). Contact Form 7 needs `define('WPCF7_LOAD_JS', false);`.
 
 == Changelog ==
 
-= Unreleased =
-* Fix: the API endpoint now has `/v1` appended correctly when the settings are read.
-* Fix: save hooks are registered when "Cache purge on save" is on, even if "Automatic static push" is off.
+= 2.0.0 =
+* Complete rewrite: React admin, service container, REST API, WP-Cron queue.
+* New CDN Only mode for sites that keep WordPress as the origin.
+* Publishes paginated listings, author pages, date archives, sitemaps and referenced assets automatically.
+* Captures slug changes as redirects and unpublishes removed content reliably.
+* Uploads sitemaps and robots.txt as files so they keep their content type; makes localhost and private-IP URLs relative.
+* Quant Search: records with every push, search pages with facets, autocomplete, index rebuild. Algolia on QuantCDN, Typesense on QuantGov.
+* Calls to the Quant API always verify TLS; "Disable SSL verification" applies only to the local webserver.
+* Sync status column, admin bar item and "Push to Quant" row action.
+* QUANT_* environment variable and constant overrides.
+* QuantGov dashboard support for the Quant login.
+* Automatic migration of 1.x settings; 1.x WP-CLI commands kept as aliases.
+* Requires PHP 8.1.
 
-= 1.5.2 =
+= 1.6.0 =
+* Feature: Added new Cache tab for manual CDN cache purging (purge all or selective paths).
+* Feature: Added "Cache purge on save" option to automatically purge CDN cache when content changes.
+* Feature: Renamed "Quant Enabled" to "Automatic static push" for clarity.
+* Feature: Automatic trailing slash handling - purges both /path and /path/ variants.
+* Improvement: Enhanced error handling and validation for cache purge operations.
+* Improvement: Cache purge now works independently of automatic static push.
 * Tested with WordPress 6.8.2.
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
-= 1.5.1 =
-* Tested on latest versions of WordPress.
+== Upgrade Notice ==
 
-= 1.5.0 =
-* Improved support for PHP 8.1 and 8.2.
-
-= 1.4.2 =
-* Feature: Improved support for redirection plugin (add/update/delete tracking).
-* Tested with WordPress 6.1.1.
-
-= 1.4.1 =
-* Feature: Added timestamp_published value to search.
-* Tested with WordPress 6.0.1.
-
-= 1.4.0 =
-* Feature: Add ability to push all content at once via the UI.
-* Feature: Improved support for Divi Builder.
-* Feature: Added support for redirection plugin.
-* Bugfix: Better support for additional custom post types via later action weight.
-* Bugfix: Strip whitespace from custom routes.
-* Bugfix: Resolve cron schedule being added multiple times.
-* Bugfix: Resolve issues with some routes when run via cli.
-
-= 1.3.5 =
-* Tested on WordPress 6.0.
-* Bugfix: Resolve homepage lookup with multi-site blogs.
-* Bugfix: Resolve archives URLs in some setups.
-
-= 1.3.4 =
-* Improved support when using third party plugins (e.g Muffin Builder).
-* Bugfix: Resolve relative path lookup when running on a non-standard port.
-
-= 1.3.3 =
-* Bugfix: wp-cli fixes on some platforms.
-* Bugfix: Issues with case sensitive filesystems.
-
-= 1.3.2 =
-* Improved multisite support: Quant Search (filter content by site)
-* Multisite bugfix: Resolved some media assets not seeding correctly
-* Added configurable HTTP timeout value
-
-= 1.3.1 =
-* Adds option to disable SSL verification if required.
-* Tested up to Wordpress 5.9.1
-
-= 1.3.0 =
-* Adds wp-cli support for vastly improved seeding of sites (with controllable concurrency).
-* Use `wp quant info` to view queue status
-* Use `wp quant reset_queue <queue_name>` to reset a queue
-* Use `wp quant process_queue <queue_name|all> --threads=10` to process one queue (or all) with concurrent threads
-
-= 1.2.3 =
-* Improved theme asset regex.
-* Make content routes consistent (strip trailing slash).
-
-= 1.2.2 =
-* Improved theme asset lookup to exclude node_modules.
-* Improved support for Elementor.
-* Bugfix: Resolved issue with detection of external assets.
-
-= 1.2.1 =
-* New feature: Additional support for relative asset rewriting.
-* Simplified settings screen.
-
-= 1.2.0 =
-* New feature: Improved support for Elementor.
-* New feature: Support seeding entire media library.
-* New feature: Added improved validation to settings screen.
-* Bugfix: Resolved issue where content was not republished when restoring from trash.
-
-= 1.1.0 =
-* New feature: Support for custom post types and taxonomies.
-* New feature: Support custom binary routes.
-* Bugfix: Ensure content is unpublished in Quant when state changes.
-
-= 1.0.2 =
-* Performance improvement with added concurrency.
-
-= 1.0.1 =
-* Added support for QuantSearch.
-* Ensure API calls use the /v1 prefix.
-* Added `author_name` to posted metadata.
-
-= 1.0 =
-Initial release.
+= 2.0.0 =
+Major release. Settings migrate automatically. Requires PHP 8.1. Review QuantCDN > Settings after the update and run "Push everything" once so listings, sitemaps and redirects are published with the new engine.

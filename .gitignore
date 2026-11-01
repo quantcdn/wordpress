@@ -1,0 +1,32 @@
+# Worktrees
+.worktrees/
+
+# Dependencies
+vendor/
+node_modules/
+
+# Test cache
+.phpunit.cache/
+
+# Build output
+/assets/build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config
+.env
+.env.local
+
+# e2e
+tests/e2e/node_modules/
+tests/e2e/output/
+/dist/
+tests/e2e/upgrade/zips/
