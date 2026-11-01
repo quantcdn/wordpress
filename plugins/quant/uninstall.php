@@ -40,6 +40,7 @@ function quant_uninstall_site(): void
         'quant_oauth_token',
         'quant_oauth_user',
         'quant_oauth_organizations',
+        'quant_inline_asset_md5',
         // 1.x
         'wp_quant_settings',
         'wp_quant_seed',
