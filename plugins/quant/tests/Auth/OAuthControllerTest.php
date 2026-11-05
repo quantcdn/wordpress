@@ -59,8 +59,8 @@ class OAuthControllerTest extends TestCase
         Functions\when('wp_cache_delete')->justReturn(true);
         Functions\when('home_url')->justReturn('https://www.example.com');
 
-        // No pause while waiting for another request's refresh, and none before the retry of a refresh.
-        $this->controller = new OAuthController($this->settings, new RefreshLock(150, 0, 2), new TokenStore(), 0);
+        // No pause while waiting for another request's refresh.
+        $this->controller = new OAuthController($this->settings, new RefreshLock(90, 0, 2), new TokenStore());
     }
 
     protected function tearDown(): void
@@ -645,21 +645,24 @@ class OAuthControllerTest extends TestCase
 
         $status = $this->controller->getStatus();
 
-        $this->assertSame([60, 60], $timeouts, 'one retry after the unknown outcome');
+        $this->assertSame([60], $timeouts, 'no retry inside the request');
         $this->assertTrue($status['connected']);
         $token = $this->option('quant_oauth_token');
         $this->assertSame('qcr_old', $token['refresh_token']);
         $this->assertSame('old', $token['access_token']);
         $this->assertArrayNotHasKey('expired', $token);
-        $this->assertEqualsWithDelta(time() + 60, $token['refresh_retry_at'], 5);
+        $this->assertEqualsWithDelta(time() + 45, $token['refresh_retry_at'], 5);
+        $this->assertEqualsWithDelta(time(), $token['refresh_pending_at'], 5);
+        $this->assertSame(hash('sha256', 'qcr_old'), $token['refresh_pending_hash']);
+        $this->assertSame(0, $token['refresh_pending_tries']);
     }
 
     #[Test]
-    public function a_lock_younger_than_150_seconds_is_not_taken_over(): void
+    public function a_lock_younger_than_90_seconds_is_not_taken_over(): void
     {
-        // The holder may still run its refresh: two 60 s requests and the 15 s pause between them.
+        // The holder may still wait on its refresh request of up to 60 s.
         $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
-        $this->db->rows[RefreshLock::OPTION] = (time() - 140) . ':abcd1234';
+        $this->db->rows[RefreshLock::OPTION] = (time() - 75) . ':abcd1234';
         $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
 
         $this->assertTrue($this->controller->getStatus()['connected']);
@@ -667,94 +670,166 @@ class OAuthControllerTest extends TestCase
     }
 
     #[Test]
-    public function a_timeout_then_a_200_recovers_the_rotated_pair(): void
+    public function just_rotated_is_an_unknown_outcome_not_a_final_one(): void
     {
         $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
         $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
+        $this->stubRefreshSequence([['code' => 400, 'body' => json_encode([
+            'error' => 'invalid_grant',
+            'error_description' => 'Refresh token was just rotated; reload your stored tokens.',
+        ])]]);
+
+        $status = $this->controller->getStatus();
+
+        $this->assertTrue($status['connected']);
+        $token = $this->option('quant_oauth_token');
+        $this->assertSame('qcr_old', $token['refresh_token']);
+        $this->assertArrayNotHasKey('expired', $token);
+        $this->assertEqualsWithDelta(time(), $token['refresh_pending_at'], 5);
+    }
+
+    #[Test]
+    public function an_unreadable_200_and_a_5xx_are_unknown_outcomes(): void
+    {
+        foreach ([['code' => 200, 'body' => '<html>proxy</html>'], ['code' => 502, 'body' => 'Bad Gateway']] as $answer) {
+            $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+            $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
+            $posts = $this->stubRefreshSequence([$answer]);
+
+            $this->controller->getStatus();
+
+            $this->assertCount(1, $posts->list, 'no retry inside the request');
+            $this->assertSame(0, $this->option('quant_oauth_token')['refresh_pending_tries']);
+        }
+    }
+
+    #[Test]
+    public function before_45_seconds_the_stored_access_token_is_used_without_a_retry(): void
+    {
+        $this->useOptionStore([
+            'quant_oauth_token' => $this->pendingToken(10, 0),
+            'quant_oauth_organizations' => self::ORGANIZATIONS,
+        ]);
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '{"data":[]}']);
+
+        $this->assertIsArray($this->controller->getProjects());
+
+        $this->assertSame([], $requests->posts);
+        $this->assertSame('Bearer old', $requests->gets[0]['headers']['Authorization']);
+    }
+
+    #[Test]
+    public function a_pending_recovery_retries_once_with_the_same_token_and_recovers(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->pendingToken(60, 0)]);
+        $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
         $posts = $this->stubRefreshSequence([
-            new \WP_Error('http_request_failed', 'cURL error 28: Operation timed out'),
             ['code' => 200, 'body' => json_encode(['access_token' => 'recovered', 'refresh_token' => 'qcr_recovered', 'expires_in' => 7776000])],
         ]);
 
         $this->assertTrue($this->controller->getStatus()['connected']);
 
-        $this->assertSame(['qcr_old', 'qcr_old'], array_column(array_column($posts->list, 'body'), 'refresh_token'));
+        $this->assertCount(1, $posts->list);
+        $this->assertSame('qcr_old', $posts->list[0]['body']['refresh_token']);
         $token = $this->option('quant_oauth_token');
-        $this->assertSame('recovered', $token['access_token']);
         $this->assertSame('qcr_recovered', $token['refresh_token']);
-        $this->assertArrayNotHasKey('refresh_retry_at', $token);
-        $this->assertArrayNotHasKey(RefreshLock::OPTION, $this->db->rows, 'the lock is released after the retry');
+        foreach (['refresh_pending_at', 'refresh_pending_hash', 'refresh_pending_tries', 'refresh_retry_at'] as $field) {
+            $this->assertArrayNotHasKey($field, $token);
+        }
+        $this->assertArrayNotHasKey(RefreshLock::OPTION, $this->db->rows);
     }
 
     #[Test]
-    public function an_unreadable_200_is_retried_once(): void
+    public function an_unknown_recovery_retry_counts_against_the_same_marker(): void
     {
-        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->useOptionStore(['quant_oauth_token' => $this->pendingToken(60, 0)]);
         $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
-        $posts = $this->stubRefreshSequence([
-            ['code' => 200, 'body' => '<html>proxy</html>'],
-            ['code' => 200, 'body' => json_encode(['access_token' => 'recovered', 'refresh_token' => 'qcr_recovered', 'expires_in' => 7776000])],
-        ]);
+        $this->stubRefreshSequence([['code' => 504, 'body' => '']]);
 
         $this->controller->getStatus();
 
-        $this->assertCount(2, $posts->list);
-        $this->assertSame('qcr_recovered', $this->option('quant_oauth_token')['refresh_token']);
+        $token = $this->option('quant_oauth_token');
+        $this->assertSame(1, $token['refresh_pending_tries']);
+        $this->assertEqualsWithDelta(time() - 60, $token['refresh_pending_at'], 5, 'the marker keeps its start time');
+        $this->assertEqualsWithDelta(time() + 45, $token['refresh_retry_at'], 5);
     }
 
     #[Test]
-    public function a_5xx_then_invalid_grant_is_final(): void
+    public function a_recovery_retry_answered_invalid_grant_is_final(): void
     {
-        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->useOptionStore(['quant_oauth_token' => $this->pendingToken(60, 0)]);
         $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
-        $this->stubRefreshSequence([
-            ['code' => 502, 'body' => 'Bad Gateway'],
-            ['code' => 400, 'body' => '{"error":"invalid_grant"}'],
-        ]);
+        $this->stubRefreshSequence([['code' => 400, 'body' => '{"error":"invalid_grant","error_description":"revoked"}']]);
 
         $this->assertFalse($this->controller->getStatus()['connected']);
-        $this->assertNull($this->option('quant_oauth_token')['refresh_token']);
-    }
-
-    #[Test]
-    public function two_unknown_outcomes_keep_the_tokens_with_a_60_second_backoff(): void
-    {
-        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
-        $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
-        $posts = $this->stubRefreshSequence([['code' => 503, 'body' => ''], ['code' => 504, 'body' => '']]);
-
-        $this->controller->getStatus();
-        $this->controller->getStatus();
-
-        $this->assertCount(2, $posts->list, 'one retry, then the backoff stops the second status call');
         $token = $this->option('quant_oauth_token');
-        $this->assertSame('qcr_old', $token['refresh_token']);
-        $this->assertEqualsWithDelta(time() + 60, $token['refresh_retry_at'], 5);
+        $this->assertNull($token['refresh_token']);
+        $this->assertArrayNotHasKey('refresh_pending_at', $token);
     }
 
     #[Test]
-    public function a_definite_failure_is_not_retried_and_backs_off_five_minutes(): void
+    public function a_recovery_gives_up_after_two_retries_or_four_minutes(): void
+    {
+        foreach ([[60, 2], [250, 0]] as [$age, $tries]) {
+            $this->useOptionStore(['quant_oauth_token' => $this->pendingToken($age, $tries)]);
+            $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
+            $posts = $this->stubRefreshSequence([['code' => 200, 'body' => '{}']]);
+
+            $status = $this->controller->getStatus();
+
+            $this->assertSame([], $posts->list);
+            $this->assertTrue($status['connected']);
+            $token = $this->option('quant_oauth_token');
+            $this->assertArrayNotHasKey('refresh_pending_at', $token);
+            $this->assertSame('qcr_old', $token['refresh_token']);
+            $this->assertEqualsWithDelta(time() + 300, $token['refresh_retry_at'], 5);
+        }
+    }
+
+    #[Test]
+    public function a_marker_for_another_refresh_token_does_not_count(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => ['refresh_pending_hash' => hash('sha256', 'qcr_older')] + $this->pendingToken(250, 2)]);
+        $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
+        $posts = $this->stubRefreshSequence([
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
+        ]);
+
+        $this->controller->getStatus();
+
+        $this->assertCount(1, $posts->list);
+        $this->assertSame('qcr_new', $this->option('quant_oauth_token')['refresh_token']);
+    }
+
+    #[Test]
+    public function a_definite_failure_backs_off_five_minutes(): void
     {
         $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
         $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
         $posts = $this->stubRefreshSequence([['code' => 429, 'body' => '{}'], ['code' => 200, 'body' => '{}']]);
 
         $this->controller->getStatus();
-
-        $this->assertCount(1, $posts->list);
-        $this->assertEqualsWithDelta(time() + 300, $this->option('quant_oauth_token')['refresh_retry_at'], 5);
-    }
-
-    #[Test]
-    public function invalid_grant_is_not_retried(): void
-    {
-        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
-        $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
-        $posts = $this->stubRefreshSequence([['code' => 400, 'body' => '{"error":"invalid_grant"}'], ['code' => 200, 'body' => '{}']]);
-
         $this->controller->getStatus();
 
         $this->assertCount(1, $posts->list);
+        $token = $this->option('quant_oauth_token');
+        $this->assertEqualsWithDelta(time() + 300, $token['refresh_retry_at'], 5);
+        $this->assertArrayNotHasKey('refresh_pending_at', $token);
+    }
+
+    /**
+     * A due scoped token with a recovery marker $age seconds old, whose backoff ends at $age = 45.
+     *
+     * @return array<string, mixed>
+     */
+    private function pendingToken(int $age, int $tries): array
+    {
+        return [
+            'refresh_pending_at' => time() - $age,
+            'refresh_pending_hash' => hash('sha256', 'qcr_old'),
+            'refresh_pending_tries' => $tries,
+            'refresh_retry_at' => time() - $age + 45,
+        ] + $this->scopedToken(time() + 3600);
     }
 
     /**

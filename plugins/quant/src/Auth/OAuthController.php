@@ -20,19 +20,28 @@ class OAuthController
     private const REFRESH_MARGIN = 86400;
     /**
      * Long enough to outlast a stall of the portal database: the portal commits a rotation even when the
-     * client has gone, so a refresh that gives up early loses the rotated pair. Two attempts and the pause
-     * between them (60 + 15 + 60 s) stay below the stale age of the refresh lock (150 s), so the lock
-     * always outlives the refresh.
+     * client has gone, so a refresh that gives up early loses the rotated pair. Below the stale age of the
+     * refresh lock (90 s), so the lock always outlives the request.
      */
     private const REFRESH_TIMEOUT = 60;
     /** After a definite passing failure (429, another 4xx), wait this long before the next refresh. */
     private const REFRESH_BACKOFF = 300;
     /**
-     * After a refresh whose outcome is unknown, wait this long. It is short so that the next page view
-     * lands inside the 5-minute window in which the portal recovers a lost rotation.
+     * Lost-rotation recovery. The portal answers the previous refresh token with "just rotated" for 30 s
+     * after a rotation, recovers the rotation (a new pair, once) from 30 s to 5 min while its access token
+     * is unused, and revokes the chain after that. After an unknown outcome the plugin therefore waits
+     * RECOVERY_START seconds, then retries with the same refresh token until RECOVERY_END, at most
+     * RECOVERY_RETRIES times.
      */
-    private const UNKNOWN_REFRESH_BACKOFF = 60;
-    /** The error code of a refresh whose outcome is unknown: a timeout, a network error, a 5xx, an unreadable 200. */
+    private const RECOVERY_START = 45;
+    private const RECOVERY_END = 240;
+    private const RECOVERY_RETRIES = 2;
+    /** The token fields of a pending recovery. */
+    private const RECOVERY_FIELDS = ['refresh_pending_at', 'refresh_pending_hash', 'refresh_pending_tries'];
+    /**
+     * The error code of a refresh whose outcome is unknown: a timeout, a network error, a 5xx, an
+     * unreadable 200, or "just rotated".
+     */
     private const UNKNOWN_REFRESH = 'refresh_unknown';
     /** Refresh errors that a later try cannot fix: the user must log in again. */
     private const FINAL_REFRESH_ERRORS = ['invalid_grant', 'invalid_client'];
@@ -46,9 +55,7 @@ class OAuthController
     public function __construct(
         private readonly Settings $settings,
         private readonly RefreshLock $refreshLock = new RefreshLock(),
-        private readonly TokenStore $tokenStore = new TokenStore(),
-        /** Seconds between a refresh with an unknown outcome and its one retry. */
-        private readonly int $refreshRetryDelay = 15
+        private readonly TokenStore $tokenStore = new TokenStore()
     ) {}
 
     /**
@@ -694,6 +701,11 @@ class OAuthController
                 return $stored['token'];
             }
 
+            $abandoned = self::abandonedRecovery($stored['token']);
+            if ($abandoned !== null) {
+                return $this->save((string) $stored['raw'], $abandoned);
+            }
+
             return $this->performRefresh($stored['token'], (string) $stored['raw']);
         } finally {
             $this->refreshLock->release();
@@ -712,9 +724,79 @@ class OAuthController
      */
     private function performRefresh(array $token, string $raw): array
     {
-        $outcome = self::refreshOutcome($token, $this->requestRefreshWithRetry((string) $token['refresh_token']));
+        return $this->save($raw, self::refreshOutcome($token, $this->requestRefresh((string) $token['refresh_token'])));
+    }
 
-        return $this->tokenStore->replace($raw, $outcome) ? $outcome : $this->tokenStore->read()['token'];
+    /**
+     * Compare-and-swap $token over the row that read as $raw. Returns what is stored afterwards.
+     *
+     * @param array<string, mixed> $token
+     * @return array<string, mixed>
+     */
+    private function save(string $raw, array $token): array
+    {
+        return $this->tokenStore->replace($raw, $token) ? $token : $this->tokenStore->read()['token'];
+    }
+
+    /**
+     * When the recovery of a lost rotation has run out (its window has passed, or it has used its
+     * retries), the token to store instead of a refresh: the marker cleared and the normal backoff.
+     * Null when there is no such recovery.
+     *
+     * @param array<string, mixed> $token
+     * @return array<string, mixed>|null
+     */
+    private static function abandonedRecovery(array $token): ?array
+    {
+        if (!self::recoveryPendingFor($token)) {
+            return null;
+        }
+
+        $age = time() - (int) $token['refresh_pending_at'];
+        if ($age <= self::RECOVERY_END && (int) ($token['refresh_pending_tries'] ?? 0) < self::RECOVERY_RETRIES) {
+            return null;
+        }
+
+        return ['refresh_retry_at' => time() + self::REFRESH_BACKOFF] + self::withoutRecovery($token);
+    }
+
+    /**
+     * Whether the token has a recovery marker for the refresh token it stores now.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function recoveryPendingFor(array $token): bool
+    {
+        return is_numeric($token['refresh_pending_at'] ?? null)
+            && ($token['refresh_pending_hash'] ?? null) === hash('sha256', (string) ($token['refresh_token'] ?? ''));
+    }
+
+    /**
+     * After an unknown outcome: keep the tokens, record (or count) the recovery, and wait until the
+     * portal can recover the rotation.
+     *
+     * @param array<string, mixed> $token
+     * @return array<string, mixed>
+     */
+    private static function pendingRecovery(array $token): array
+    {
+        $pending = self::recoveryPendingFor($token);
+
+        return [
+            'refresh_pending_at' => $pending ? (int) $token['refresh_pending_at'] : time(),
+            'refresh_pending_hash' => hash('sha256', (string) $token['refresh_token']),
+            'refresh_pending_tries' => $pending ? (int) ($token['refresh_pending_tries'] ?? 0) + 1 : 0,
+            'refresh_retry_at' => time() + self::RECOVERY_START,
+        ] + $token;
+    }
+
+    /**
+     * @param array<string, mixed> $token
+     * @return array<string, mixed>
+     */
+    private static function withoutRecovery(array $token): array
+    {
+        return array_diff_key($token, array_flip(self::RECOVERY_FIELDS));
     }
 
     /**
@@ -734,36 +816,19 @@ class OAuthController
             return $refreshed;
         }
 
+        if ($response->get_error_code() === self::UNKNOWN_REFRESH) {
+            // The portal may have rotated the pair without this request seeing the answer.
+            return self::pendingRecovery($token);
+        }
+
         if (in_array($response->get_error_code(), self::FINAL_REFRESH_ERRORS, true)) {
             // The portal no longer accepts this refresh token: show Login again. Publishing is not
             // affected, because it uses the project token.
-            return ['refresh_token' => null, 'expired' => true] + $token;
+            return ['refresh_token' => null, 'expired' => true] + self::withoutRecovery($token);
         }
 
-        // A passing failure, or an outcome that is still unknown after the retry: keep the stored tokens,
-        // do not mark them expired, and wait before the next try.
-        $backoff = $response->get_error_code() === self::UNKNOWN_REFRESH ? self::UNKNOWN_REFRESH_BACKOFF : self::REFRESH_BACKOFF;
-
-        return ['refresh_retry_at' => time() + $backoff] + $token;
-    }
-
-    /**
-     * POST the refresh grant. When the outcome is unknown, wait and send the same refresh token once more.
-     *
-     * @return array<string, mixed>|WP_Error
-     */
-    private function requestRefreshWithRetry(string $refreshToken): array|WP_Error
-    {
-        $response = $this->requestRefresh($refreshToken);
-        if (!is_wp_error($response) || $response->get_error_code() !== self::UNKNOWN_REFRESH) {
-            return $response;
-        }
-
-        // The portal may have rotated the pair without this request seeing the answer. Presented again
-        // soon, the same refresh token makes the portal recover that rotation once. The lock stays held.
-        sleep($this->refreshRetryDelay);
-
-        return $this->requestRefresh($refreshToken);
+        // A definite passing failure: keep the stored tokens and wait before the next try.
+        return ['refresh_retry_at' => time() + self::REFRESH_BACKOFF] + self::withoutRecovery($token);
     }
 
     /**
@@ -808,7 +873,24 @@ class OAuthController
             return self::UNKNOWN_REFRESH;
         }
 
-        return $statusCode === 400 && is_array($data) && is_string($data['error'] ?? null) ? $data['error'] : 'refresh_failed';
+        if ($statusCode !== 400 || !is_array($data) || !is_string($data['error'] ?? null)) {
+            return 'refresh_failed';
+        }
+
+        return self::isJustRotated($data) ? self::UNKNOWN_REFRESH : $data['error'];
+    }
+
+    /**
+     * Whether a 400 answer says the refresh token was just rotated: the portal saw this request's token
+     * rotate within the last 30 s, maybe by this site's own lost request. Not final.
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function isJustRotated(array $data): bool
+    {
+        return $data['error'] === 'invalid_grant'
+            && is_string($data['error_description'] ?? null)
+            && stripos($data['error_description'], 'just rotated') !== false;
     }
 
     private static function refreshError(string $code): WP_Error
