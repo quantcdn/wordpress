@@ -58,7 +58,7 @@ class OAuthControllerTest extends TestCase
         Functions\when('home_url')->justReturn('https://www.example.com');
 
         // No pause while waiting for another request's refresh.
-        $this->controller = new OAuthController($this->settings, new RefreshLock(30, 0, 2));
+        $this->controller = new OAuthController($this->settings, new RefreshLock(90, 0, 2));
     }
 
     protected function tearDown(): void
@@ -449,7 +449,7 @@ class OAuthControllerTest extends TestCase
     public function a_stale_lock_is_taken_over(): void
     {
         $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
-        $this->db->rows[RefreshLock::OPTION] = (string) (time() - 60);
+        $this->db->rows[RefreshLock::OPTION] = (time() - 120) . ':abcd1234';
         $requests = $this->stubPortal(
             ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
             static fn(): array => ['code' => 200, 'body' => '[]']
@@ -626,6 +626,42 @@ class OAuthControllerTest extends TestCase
 
         $this->assertCount(1, $requests->posts);
         $this->assertArrayNotHasKey('refresh_failed_at', $this->option('quant_oauth_token'));
+    }
+
+    #[Test]
+    public function a_refresh_with_an_unknown_outcome_keeps_the_tokens(): void
+    {
+        // A timeout after the request was sent: the portal may have rotated, or not. Keep what is stored.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+        $timeouts = [];
+        Functions\when('wp_remote_post')->alias(static function (string $url, array $args) use ($requests, &$timeouts) {
+            $requests->posts[] = $args;
+            $timeouts[] = $args['timeout'];
+            return new \WP_Error('http_request_failed', 'cURL error 28: Operation timed out after 60000 milliseconds');
+        });
+
+        $status = $this->controller->getStatus();
+
+        $this->assertSame([60], $timeouts);
+        $this->assertTrue($status['connected']);
+        $token = $this->option('quant_oauth_token');
+        $this->assertSame('qcr_old', $token['refresh_token']);
+        $this->assertSame('old', $token['access_token']);
+        $this->assertArrayNotHasKey('expired', $token);
+        $this->assertEqualsWithDelta(time(), $token['refresh_failed_at'], 5);
+    }
+
+    #[Test]
+    public function a_lock_younger_than_90_seconds_is_not_taken_over(): void
+    {
+        // The holder may still wait on a 60 s refresh request.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->db->rows[RefreshLock::OPTION] = (time() - 75) . ':abcd1234';
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+
+        $this->assertTrue($this->controller->getStatus()['connected']);
+        $this->assertSame([], $requests->posts);
     }
 
     #[Test]

@@ -22,12 +22,13 @@ final class RefreshLock
     private ?string $held = null;
 
     /**
-     * @param int $staleAfter Seconds after which a lock counts as abandoned. Keep it above the refresh timeout.
+     * @param int $staleAfter Seconds after which a lock counts as abandoned. Keep it above the refresh timeout (60 s).
+     *                        A waiting request does not wait this long: it gives up after $polls checks.
      * @param int $pollMicros Pause between checks while another request holds the lock.
      * @param int $polls      Checks before a waiting request gives up.
      */
     public function __construct(
-        private readonly int $staleAfter = 30,
+        private readonly int $staleAfter = 90,
         private readonly int $pollMicros = 250000,
         private readonly int $polls = 20
     ) {}

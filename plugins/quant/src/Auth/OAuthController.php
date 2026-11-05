@@ -18,8 +18,12 @@ class OAuthController
     private const STATE_EXPIRY = 600; // 10 minutes
     /** Refresh an expiring token this long before it expires. */
     private const REFRESH_MARGIN = 86400;
-    /** Below the stale age of the refresh lock, so a slow refresh never outlives its lock. */
-    private const REFRESH_TIMEOUT = 15;
+    /**
+     * Long enough to outlast a stall of the portal database: the portal commits a rotation even when the
+     * client has gone, so a refresh that gives up early loses the rotated pair. Below the stale age of
+     * the refresh lock (90 s), so the lock always outlives the request.
+     */
+    private const REFRESH_TIMEOUT = 60;
     /** After a refresh fails for a passing reason (network, 5xx, 429), wait this long before the next try. */
     private const REFRESH_BACKOFF = 300;
     /** Refresh errors that a later try cannot fix: the user must log in again. */
@@ -726,7 +730,8 @@ class OAuthController
             return ['refresh_token' => null, 'expired' => true] + $token;
         }
 
-        // A network or server failure: keep the tokens, and wait before the next try.
+        // A network or server failure, or a timeout whose outcome is unknown: keep the stored tokens, do
+        // not mark them expired, and wait before the next try.
         return ['refresh_failed_at' => time()] + $token;
     }
 
