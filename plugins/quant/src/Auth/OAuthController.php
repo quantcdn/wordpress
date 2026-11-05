@@ -236,12 +236,25 @@ class OAuthController
             return $userData;
         }
 
+        return self::tokenFromResponse($data, 'full_access') + ['user' => $userData];
+    }
+
+    /**
+     * The stored form of a token response. A response without expires_in (a legacy, non-expiring token)
+     * stores expires_at = null: the token does not expire.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private static function tokenFromResponse(array $data, string $defaultScope): array
+    {
+        $expiresIn = $data['expires_in'] ?? null;
+
         return [
-            'access_token' => $data['access_token'],
-            'token_type' => $data['token_type'] ?? 'Bearer',
-            'expires_in' => $data['expires_in'] ?? 86400,
-            'scope' => $data['scope'] ?? 'full_access',
-            'user' => $userData,
+            'access_token' => (string) $data['access_token'],
+            'token_type' => is_string($data['token_type'] ?? null) ? $data['token_type'] : 'Bearer',
+            'expires_at' => is_numeric($expiresIn) ? time() + (int) $expiresIn : null,
+            'scope' => is_string($data['scope'] ?? null) ? $data['scope'] : $defaultScope,
         ];
     }
 
@@ -281,26 +294,29 @@ class OAuthController
      */
     private function storeOAuthData(array $tokenData): void
     {
-        // Store the access token securely
-        update_option('quant_oauth_token', [
-            'access_token' => $tokenData['access_token'],
-            'token_type' => $tokenData['token_type'],
-            'expires_at' => time() + ($tokenData['expires_in'] ?? 86400),
-            'scope' => $tokenData['scope'],
-        ], false); // Don't autoload
+        $user = $tokenData['user'] ?? null;
+        unset($tokenData['user']);
+        update_option('quant_oauth_token', $tokenData, false); // Don't autoload
+        $this->storeUserData($user);
+    }
 
-        // Store user and organization data
-        if (isset($tokenData['user'])) {
-            update_option('quant_oauth_user', [
-                'id' => $tokenData['user']['id'] ?? null,
-                'email' => $tokenData['user']['email'] ?? '',
-                'name' => $tokenData['user']['name'] ?? '',
-            ], false);
+    /**
+     * Store the user and organization data of the callback.
+     */
+    private function storeUserData(mixed $user): void
+    {
+        if (!is_array($user)) {
+            return;
+        }
 
-            // Store available organizations
-            if (isset($tokenData['user']['organizations'])) {
-                update_option('quant_oauth_organizations', $tokenData['user']['organizations'], false);
-            }
+        update_option('quant_oauth_user', [
+            'id' => $user['id'] ?? null,
+            'email' => $user['email'] ?? '',
+            'name' => $user['name'] ?? '',
+        ], false);
+
+        if (isset($user['organizations'])) {
+            update_option('quant_oauth_organizations', $user['organizations'], false);
         }
     }
 
@@ -309,7 +325,7 @@ class OAuthController
      */
     public function getStatus(): array
     {
-        $token = get_option('quant_oauth_token');
+        $token = self::storedToken();
         $user = get_option('quant_oauth_user');
         $organizations = get_option('quant_oauth_organizations', []);
         $credentials = $this->settings->getCredentials();
@@ -320,7 +336,7 @@ class OAuthController
         }
 
         $isConnected = !empty($token['access_token']);
-        $isExpired = $isConnected && isset($token['expires_at']) && $token['expires_at'] < time();
+        $isExpired = $isConnected && self::isExpired($token);
         $hasProject = !empty($credentials['organization']) && !empty($credentials['project']);
 
         return [
@@ -342,14 +358,13 @@ class OAuthController
      */
     public function getProjects(): array|WP_Error
     {
-        $token = get_option('quant_oauth_token');
+        $token = self::storedToken();
 
         if (empty($token['access_token'])) {
             return new WP_Error('not_connected', __('Not connected to Quant.', 'quant'), ['status' => 401]);
         }
 
-        // Check if token is expired
-        if (isset($token['expires_at']) && $token['expires_at'] < time()) {
+        if (self::isExpired($token)) {
             return new WP_Error('token_expired', __('OAuth token has expired. Please reconnect.', 'quant'), ['status' => 401]);
         }
 
@@ -563,6 +578,38 @@ class OAuthController
     {
         /** This filter is documented in v2.0.0; it sets the platform API used to list projects. */
         return rtrim((string) apply_filters('quant_cloud_api_url', $this->getPortalUrl() . '/api/v2'), '/');
+    }
+
+    /**
+     * The stored OAuth token, or an empty array.
+     *
+     * @return array<string, mixed>
+     */
+    private static function storedToken(): array
+    {
+        $token = get_option('quant_oauth_token');
+
+        return is_array($token) ? $token : [];
+    }
+
+    /**
+     * Whether the plugin treats a stored token as expired.
+     *
+     * A token without a refresh token is a legacy token: the plugin never expires it, whatever its
+     * expires_at says (2.0.1 stored connect time + 24 h for tokens that do not expire). The portal is the
+     * authority for those; a 401 from it asks the user to reconnect.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function isExpired(array $token): bool
+    {
+        if (!empty($token['expired'])) {
+            return true;
+        }
+
+        return !empty($token['refresh_token'])
+            && is_numeric($token['expires_at'] ?? null)
+            && (int) $token['expires_at'] <= time();
     }
 
     /** Base64url without padding (RFC 7636 appendix A). */

@@ -215,7 +215,8 @@ class OAuthControllerTest extends TestCase
             return match ($option) {
                 'quant_oauth_token' => [
                     'access_token' => 'test-token',
-                    'expires_at' => time() - 3600, // Expired
+                    'expires_at' => time() - 3600,
+                    'expired' => true,
                 ],
                 default => $default,
             };
@@ -293,18 +294,116 @@ class OAuthControllerTest extends TestCase
         $this->assertSame('acme', $result[0]['organization']['machine_name']);
     }
 
+    #[Test]
+    public function a_legacy_token_response_stores_no_expiry_and_stays_connected(): void
+    {
+        $this->useOptionStore([]);
+        $this->stubConnectResponses(['access_token' => 'legacy', 'token_type' => 'Bearer', 'scope' => 'full_access']);
+
+        $this->connect();
+
+        $this->assertNull($this->options['quant_oauth_token']['expires_at']);
+        $this->assertNull($this->options['quant_oauth_token']['refresh_token'] ?? null);
+        $this->assertSame('full_access', $this->options['quant_oauth_token']['scope']);
+        $this->assertSame('me@example.com', $this->options['quant_oauth_user']['email']);
+
+        $status = $this->controller->getStatus();
+        $this->assertTrue($status['connected']);
+        $this->assertFalse($status['expired']);
+    }
+
+    #[Test]
+    public function a_token_stored_by_2_0_1_is_still_connected_after_its_24_hours(): void
+    {
+        // 2.0.1 stored connect time + 86400 for a legacy token, and no refresh token.
+        $this->useOptionStore(['quant_oauth_token' => [
+            'access_token' => 'legacy',
+            'token_type' => 'Bearer',
+            'expires_at' => time() - 30 * 86400,
+            'scope' => 'full_access',
+        ]]);
+
+        $status = $this->controller->getStatus();
+
+        $this->assertTrue($status['connected']);
+        $this->assertFalse($status['expired']);
+    }
+
+    #[Test]
+    public function get_projects_accepts_a_token_stored_by_2_0_1(): void
+    {
+        $this->stubProjectsRef([['id' => 1, 'name' => 'Acme', 'machine_name' => 'acme']],
+            static fn(): array => ['code' => 200, 'body' => '{"data":[]}'], ['expires_at' => time() - 86400]);
+
+        $result = $this->controller->getProjects();
+
+        $this->assertIsArray($result);
+        $this->assertSame('acme', $result[0]['organization']['machine_name']);
+    }
+
+    /** @var array<string, mixed> */
+    private array $options = [];
+
+    /**
+     * Back get_option/update_option/delete_option with $this->options.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function useOptionStore(array $options): void
+    {
+        $this->options = $options;
+        Functions\when('get_option')->alias(fn(string $key, $default = false) => array_key_exists($key, $this->options) ? $this->options[$key] : $default);
+        Functions\when('update_option')->alias(function (string $key, $value): bool {
+            $this->options[$key] = $value;
+            return true;
+        });
+        Functions\when('delete_option')->alias(function (string $key): bool {
+            $existed = array_key_exists($key, $this->options);
+            unset($this->options[$key]);
+            return $existed;
+        });
+    }
+
+    /**
+     * Stub the portal answers of the callback: the token exchange, then the user lookup.
+     *
+     * @param array<string, mixed> $tokenBody
+     */
+    private function stubConnectResponses(array $tokenBody): void
+    {
+        Functions\when('__')->returnArg();
+        Functions\when('apply_filters')->returnArg(2);
+        Functions\when('is_wp_error')->alias(static fn($v): bool => $v instanceof \WP_Error);
+        Functions\when('wp_remote_post')->justReturn(['code' => 200, 'body' => json_encode($tokenBody)]);
+        Functions\when('wp_remote_get')->justReturn(['code' => 200, 'body' => json_encode([
+            'id' => 7, 'email' => 'me@example.com', 'name' => 'Me', 'organizations' => [['id' => 1, 'machine_name' => 'acme']],
+        ])]);
+        Functions\when('wp_remote_retrieve_response_code')->alias(static fn(array $r): int => $r['code']);
+        Functions\when('wp_remote_retrieve_body')->alias(static fn(array $r): string => $r['body']);
+    }
+
+    /** Run the token exchange and store its result, as the callback does. */
+    private function connect(): void
+    {
+        $tokens = (new \ReflectionMethod($this->controller, 'exchangeCodeForToken'))->invoke($this->controller, 'the-code');
+        $this->assertIsArray($tokens);
+        (new \ReflectionMethod($this->controller, 'storeOAuthData'))->invoke($this->controller, $tokens);
+    }
+
     /**
      * stubProjects() with the requested-URL list returned by reference.
      *
      * @param mixed $organizations
+     * @param array<string, mixed> $token Overrides of the stored token.
      * @return array<string>
      */
-    private function &stubProjectsRef(mixed $organizations, callable $respond): array
+    private function &stubProjectsRef(mixed $organizations, callable $respond, array $token = []): array
     {
         $this->requestedUrls = [];
         $urls = &$this->requestedUrls;
+        $token += ['access_token' => 'tok', 'expires_at' => time() + 3600];
         Functions\when('get_option')->alias(static fn(string $key, $default = false) => match ($key) {
-            'quant_oauth_token' => ['access_token' => 'tok', 'expires_at' => time() + 3600],
+            'quant_oauth_token' => $token,
             'quant_oauth_organizations' => $organizations,
             default => $default,
         });
