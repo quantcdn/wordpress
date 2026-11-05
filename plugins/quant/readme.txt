@@ -5,7 +5,7 @@ Tags: static, cdn, static site generator, jamstack, search
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 2.0.0
+Stable tag: 2.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -92,6 +92,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 
 == Changelog ==
 
+= 2.0.1 =
+* The Quant login (OAuth) sends PKCE (S256). The Quant dashboard will require it, so update before you connect a site.
+
 = 2.0.0 =
 * Complete rewrite: React admin, service container, REST API, WP-Cron queue.
 * New CDN Only mode for sites that keep WordPress as the origin.
@@ -117,6 +120,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
 == Upgrade Notice ==
+
+= 2.0.1 =
+Security update for the Quant login. Update before you connect a site to Quant: the dashboard will require it.
 
 = 2.0.0 =
 Major release. Settings migrate automatically. Requires PHP 8.2. Review QuantCDN > Settings after the update and run "Push everything" once so listings, sitemaps and redirects are published with the new engine.
