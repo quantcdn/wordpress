@@ -20,12 +20,20 @@ class OAuthController
     private const REFRESH_MARGIN = 86400;
     /**
      * Long enough to outlast a stall of the portal database: the portal commits a rotation even when the
-     * client has gone, so a refresh that gives up early loses the rotated pair. Below the stale age of
-     * the refresh lock (90 s), so the lock always outlives the request.
+     * client has gone, so a refresh that gives up early loses the rotated pair. Two attempts and the pause
+     * between them (60 + 15 + 60 s) stay below the stale age of the refresh lock (150 s), so the lock
+     * always outlives the refresh.
      */
     private const REFRESH_TIMEOUT = 60;
-    /** After a refresh fails for a passing reason (network, 5xx, 429), wait this long before the next try. */
+    /** After a definite passing failure (429, another 4xx), wait this long before the next refresh. */
     private const REFRESH_BACKOFF = 300;
+    /**
+     * After a refresh whose outcome is unknown, wait this long. It is short so that the next page view
+     * lands inside the 5-minute window in which the portal recovers a lost rotation.
+     */
+    private const UNKNOWN_REFRESH_BACKOFF = 60;
+    /** The error code of a refresh whose outcome is unknown: a timeout, a network error, a 5xx, an unreadable 200. */
+    private const UNKNOWN_REFRESH = 'refresh_unknown';
     /** Refresh errors that a later try cannot fix: the user must log in again. */
     private const FINAL_REFRESH_ERRORS = ['invalid_grant', 'invalid_client'];
 
@@ -38,7 +46,9 @@ class OAuthController
     public function __construct(
         private readonly Settings $settings,
         private readonly RefreshLock $refreshLock = new RefreshLock(),
-        private readonly TokenStore $tokenStore = new TokenStore()
+        private readonly TokenStore $tokenStore = new TokenStore(),
+        /** Seconds between a refresh with an unknown outcome and its one retry. */
+        private readonly int $refreshRetryDelay = 15
     ) {}
 
     /**
@@ -702,7 +712,7 @@ class OAuthController
      */
     private function performRefresh(array $token, string $raw): array
     {
-        $outcome = self::refreshOutcome($token, $this->requestRefresh((string) $token['refresh_token']));
+        $outcome = self::refreshOutcome($token, $this->requestRefreshWithRetry((string) $token['refresh_token']));
 
         return $this->tokenStore->replace($raw, $outcome) ? $outcome : $this->tokenStore->read()['token'];
     }
@@ -730,14 +740,36 @@ class OAuthController
             return ['refresh_token' => null, 'expired' => true] + $token;
         }
 
-        // A network or server failure, or a timeout whose outcome is unknown: keep the stored tokens, do
-        // not mark them expired, and wait before the next try.
-        return ['refresh_failed_at' => time()] + $token;
+        // A passing failure, or an outcome that is still unknown after the retry: keep the stored tokens,
+        // do not mark them expired, and wait before the next try.
+        $backoff = $response->get_error_code() === self::UNKNOWN_REFRESH ? self::UNKNOWN_REFRESH_BACKOFF : self::REFRESH_BACKOFF;
+
+        return ['refresh_retry_at' => time() + $backoff] + $token;
     }
 
     /**
-     * POST the refresh grant. Returns the response data, or an error whose code is the OAuth error
-     * of an HTTP 400 answer (invalid_grant, invalid_client) or refresh_failed.
+     * POST the refresh grant. When the outcome is unknown, wait and send the same refresh token once more.
+     *
+     * @return array<string, mixed>|WP_Error
+     */
+    private function requestRefreshWithRetry(string $refreshToken): array|WP_Error
+    {
+        $response = $this->requestRefresh($refreshToken);
+        if (!is_wp_error($response) || $response->get_error_code() !== self::UNKNOWN_REFRESH) {
+            return $response;
+        }
+
+        // The portal may have rotated the pair without this request seeing the answer. Presented again
+        // soon, the same refresh token makes the portal recover that rotation once. The lock stays held.
+        sleep($this->refreshRetryDelay);
+
+        return $this->requestRefresh($refreshToken);
+    }
+
+    /**
+     * POST the refresh grant once. Returns the response data, or an error: the OAuth error code of an
+     * HTTP 400 answer (invalid_grant, invalid_client), refresh_unknown when the outcome is unknown, or
+     * refresh_failed.
      *
      * @return array<string, mixed>|WP_Error
      */
@@ -753,7 +785,8 @@ class OAuthController
         ]);
 
         if (is_wp_error($response)) {
-            return $response;
+            // A timeout or a network error: the request may have reached the portal.
+            return self::refreshError(self::UNKNOWN_REFRESH);
         }
 
         $statusCode = (int) wp_remote_retrieve_response_code($response);
@@ -763,9 +796,24 @@ class OAuthController
             return $data;
         }
 
-        $error = $statusCode === 400 && is_array($data) && is_string($data['error'] ?? null) ? $data['error'] : 'refresh_failed';
+        return self::refreshError(self::refreshErrorCode($statusCode, $data));
+    }
 
-        return new WP_Error($error, __('Could not refresh the Quant login.', 'quant'));
+    /**
+     * The error code of a refresh answer that is not a usable 200.
+     */
+    private static function refreshErrorCode(int $statusCode, mixed $data): string
+    {
+        if ($statusCode === 200 || $statusCode >= 500) {
+            return self::UNKNOWN_REFRESH;
+        }
+
+        return $statusCode === 400 && is_array($data) && is_string($data['error'] ?? null) ? $data['error'] : 'refresh_failed';
+    }
+
+    private static function refreshError(string $code): WP_Error
+    {
+        return new WP_Error($code, __('Could not refresh the Quant login.', 'quant'));
     }
 
     /**
@@ -790,11 +838,11 @@ class OAuthController
      */
     private static function canRefresh(array $token): bool
     {
-        $failedAt = $token['refresh_failed_at'] ?? null;
+        $retryAt = $token['refresh_retry_at'] ?? null;
 
         return !empty($token['refresh_token'])
             && empty($token['expired'])
-            && !(is_numeric($failedAt) && (int) $failedAt > time() - self::REFRESH_BACKOFF)
+            && !(is_numeric($retryAt) && (int) $retryAt > time())
             && self::isThisSite($token);
     }
 
