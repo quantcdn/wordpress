@@ -84,7 +84,8 @@ final class RefreshLock
     {
         global $wpdb;
 
-        $stamp = (string) time();
+        // The time the lock was taken, and a random part so that no two holders write the same value.
+        $stamp = time() . ':' . bin2hex(random_bytes(4));
         $inserted = $wpdb->query($wpdb->prepare(
             "INSERT IGNORE INTO `{$wpdb->options}` (`option_name`, `option_value`, `autoload`) VALUES (%s, %s, 'no')",
             self::OPTION,

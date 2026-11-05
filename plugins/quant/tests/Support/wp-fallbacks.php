@@ -21,3 +21,22 @@ if (!function_exists('wp_unslash')) {
         return is_string($value) ? stripslashes($value) : $value;
     }
 }
+
+if (!function_exists('maybe_serialize')) {
+    function maybe_serialize($data)
+    {
+        return is_array($data) || is_object($data) ? serialize($data) : $data;
+    }
+}
+
+if (!function_exists('maybe_unserialize')) {
+    function maybe_unserialize($data)
+    {
+        if (!is_string($data)) {
+            return $data;
+        }
+        $value = @unserialize($data);
+
+        return $value === false && $data !== 'b:0;' ? $data : $value;
+    }
+}

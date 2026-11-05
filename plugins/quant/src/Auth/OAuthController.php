@@ -20,6 +20,10 @@ class OAuthController
     private const REFRESH_MARGIN = 86400;
     /** Below the stale age of the refresh lock, so a slow refresh never outlives its lock. */
     private const REFRESH_TIMEOUT = 15;
+    /** After a refresh fails for a passing reason (network, 5xx, 429), wait this long before the next try. */
+    private const REFRESH_BACKOFF = 300;
+    /** Refresh errors that a later try cannot fix: the user must log in again. */
+    private const FINAL_REFRESH_ERRORS = ['invalid_grant', 'invalid_client'];
 
     /** The PKCE verifier of the authorization this callback answers (set by validateCallback). */
     private ?string $codeVerifier = null;
@@ -29,7 +33,8 @@ class OAuthController
 
     public function __construct(
         private readonly Settings $settings,
-        private readonly RefreshLock $refreshLock = new RefreshLock()
+        private readonly RefreshLock $refreshLock = new RefreshLock(),
+        private readonly TokenStore $tokenStore = new TokenStore()
     ) {}
 
     /**
@@ -264,6 +269,7 @@ class OAuthController
             'expires_at' => is_numeric($expiresIn) ? time() + (int) $expiresIn : null,
             'scope' => is_string($data['scope'] ?? null) ? $data['scope'] : $defaultScope,
             'refresh_token' => is_string($data['refresh_token'] ?? null) && $data['refresh_token'] !== '' ? $data['refresh_token'] : null,
+            'site' => self::siteFingerprint(),
         ];
     }
 
@@ -589,18 +595,6 @@ class OAuthController
     }
 
     /**
-     * The stored token, read past the object cache: another request may have just rotated it.
-     *
-     * @return array<string, mixed>
-     */
-    private static function freshToken(): array
-    {
-        wp_cache_delete('quant_oauth_token', 'options');
-
-        return self::storedToken();
-    }
-
-    /**
      * Run $call with a valid OAuth access token. If the portal answers 401, refresh once and run it again.
      *
      * @param callable(string): (array|WP_Error) $call
@@ -648,7 +642,7 @@ class OAuthController
             $token = $this->refreshToken();
         }
 
-        return self::usableAccessToken($token) ?? self::expiredError();
+        return self::usableAccessToken($token) ?? self::expiredError($token);
     }
 
     /**
@@ -657,9 +651,10 @@ class OAuthController
      */
     private function tokenAfterRejection(string $rejectedAccessToken): string|WP_Error
     {
-        $accessToken = self::usableAccessToken($this->refreshToken($rejectedAccessToken));
+        $token = $this->refreshToken($rejectedAccessToken);
+        $accessToken = self::usableAccessToken($token);
 
-        return $accessToken === null || $accessToken === $rejectedAccessToken ? self::expiredError() : $accessToken;
+        return $accessToken === null || $accessToken === $rejectedAccessToken ? self::expiredError($token) : $accessToken;
     }
 
     /**
@@ -675,14 +670,17 @@ class OAuthController
     {
         if (!$this->refreshLock->acquire()) {
             $this->refreshLock->waitForRelease();
-            return self::freshToken();
+            return $this->tokenStore->read()['token'];
         }
 
         try {
             // Re-read under the lock: another request may have refreshed since this one read the token.
-            $token = self::freshToken();
+            $stored = $this->tokenStore->read();
+            if (!self::needsRefresh($stored['token'], $rejectedAccessToken)) {
+                return $stored['token'];
+            }
 
-            return self::needsRefresh($token, $rejectedAccessToken) ? $this->performRefresh($token) : $token;
+            return $this->performRefresh($stored['token'], (string) $stored['raw']);
         } finally {
             $this->refreshLock->release();
         }
@@ -691,28 +689,45 @@ class OAuthController
     /**
      * Exchange the refresh token and save the result before the lock is released.
      *
+     * The save is a compare-and-swap against $raw, the row this request read. When the row has changed
+     * since (another request saved a rotation, the user disconnected or connected again), nothing is
+     * written and the stored token wins.
+     *
      * @param array<string, mixed> $token
      * @return array<string, mixed>
      */
-    private function performRefresh(array $token): array
+    private function performRefresh(array $token, string $raw): array
     {
-        $data = $this->requestRefresh((string) $token['refresh_token']);
+        $outcome = self::refreshOutcome($token, $this->requestRefresh((string) $token['refresh_token']));
 
-        if (is_array($data)) {
-            $token = self::tokenFromResponse($data, (string) ($token['scope'] ?? 'full_access'));
-        } elseif ($data->get_error_code() === 'invalid_grant') {
-            // The portal no longer accepts this refresh token: show Login again. Publishing is not
-            // affected, because it uses the project token.
-            $token['refresh_token'] = null;
-            $token['expired'] = true;
-        } else {
-            // A network or server failure: keep the tokens and try again on a later request.
-            return $token;
+        return $this->tokenStore->replace($raw, $outcome) ? $outcome : $this->tokenStore->read()['token'];
+    }
+
+    /**
+     * The token to store after a refresh attempt.
+     *
+     * @param array<string, mixed> $token
+     * @param array<string, mixed>|WP_Error $response
+     * @return array<string, mixed>
+     */
+    private static function refreshOutcome(array $token, array|WP_Error $response): array
+    {
+        if (is_array($response)) {
+            $refreshed = self::tokenFromResponse($response, (string) ($token['scope'] ?? 'full_access'));
+            // A response without a refresh token did not rotate it: keep the one that still works.
+            $refreshed['refresh_token'] ??= $token['refresh_token'];
+
+            return $refreshed;
         }
 
-        update_option('quant_oauth_token', $token, false);
+        if (in_array($response->get_error_code(), self::FINAL_REFRESH_ERRORS, true)) {
+            // The portal no longer accepts this refresh token: show Login again. Publishing is not
+            // affected, because it uses the project token.
+            return ['refresh_token' => null, 'expired' => true] + $token;
+        }
 
-        return $token;
+        // A network or server failure: keep the tokens, and wait before the next try.
+        return ['refresh_failed_at' => time()] + $token;
     }
 
     /**
@@ -759,20 +774,33 @@ class OAuthController
             return self::isDue($token);
         }
 
-        return !empty($token['refresh_token'])
-            && empty($token['expired'])
-            && ($token['access_token'] ?? null) === $rejectedAccessToken;
+        return self::canRefresh($token) && ($token['access_token'] ?? null) === $rejectedAccessToken;
     }
 
     /**
-     * Whether a token has a refresh token and expires within the refresh margin.
+     * Whether a refresh may run on this token: it has a refresh token, has not been given up, is not in
+     * the backoff after a failed try, and belongs to this site.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function canRefresh(array $token): bool
+    {
+        $failedAt = $token['refresh_failed_at'] ?? null;
+
+        return !empty($token['refresh_token'])
+            && empty($token['expired'])
+            && !(is_numeric($failedAt) && (int) $failedAt > time() - self::REFRESH_BACKOFF)
+            && self::isThisSite($token);
+    }
+
+    /**
+     * Whether a token may be refreshed and expires within the refresh margin.
      *
      * @param array<string, mixed> $token
      */
     private static function isDue(array $token): bool
     {
-        return !empty($token['refresh_token'])
-            && empty($token['expired'])
+        return self::canRefresh($token)
             && is_numeric($token['expires_at'] ?? null)
             && (int) $token['expires_at'] - self::REFRESH_MARGIN <= time();
     }
@@ -789,9 +817,39 @@ class OAuthController
         return is_string($accessToken) && $accessToken !== '' && !self::isExpired($token) ? $accessToken : null;
     }
 
-    private static function expiredError(): WP_Error
+    /**
+     * The error that asks the user to log in again.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function expiredError(array $token = []): WP_Error
     {
+        if (!self::isThisSite($token)) {
+            return new WP_Error(
+                'site_changed',
+                __('This Quant login belongs to another copy of this site. Reconnect this site to Quant.', 'quant'),
+                ['status' => 401]
+            );
+        }
+
         return new WP_Error('token_expired', __('OAuth token has expired. Please reconnect.', 'quant'), ['status' => 401]);
+    }
+
+    /**
+     * Whether a token was stored by this site. A copy of the database (production to staging) carries the
+     * same refresh token; only one copy may use it, or the copies revoke each other's logins. Tokens
+     * from before 2.0.2 have no fingerprint and count as this site's.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function isThisSite(array $token): bool
+    {
+        return !isset($token['site']) || hash_equals((string) $token['site'], self::siteFingerprint());
+    }
+
+    private static function siteFingerprint(): string
+    {
+        return hash('sha256', (string) home_url());
     }
 
     /**
@@ -801,11 +859,13 @@ class OAuthController
      * expires_at says (2.0.1 stored connect time + 24 h for tokens that do not expire). The portal is the
      * authority for those; a 401 from it asks the user to reconnect.
      *
+     * A token stored by another copy of the site counts as expired here.
+     *
      * @param array<string, mixed> $token
      */
     private static function isExpired(array $token): bool
     {
-        if (!empty($token['expired'])) {
+        if (!empty($token['expired']) || !self::isThisSite($token)) {
             return true;
         }
 

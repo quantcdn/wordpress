@@ -55,6 +55,7 @@ class OAuthControllerTest extends TestCase
         $this->db = new FakeOptionsDb();
         $GLOBALS['wpdb'] = $this->db;
         Functions\when('wp_cache_delete')->justReturn(true);
+        Functions\when('home_url')->justReturn('https://www.example.com');
 
         // No pause while waiting for another request's refresh.
         $this->controller = new OAuthController($this->settings, new RefreshLock(30, 0, 2));
@@ -314,10 +315,10 @@ class OAuthControllerTest extends TestCase
 
         $this->connect();
 
-        $this->assertNull($this->options['quant_oauth_token']['expires_at']);
-        $this->assertNull($this->options['quant_oauth_token']['refresh_token'] ?? null);
-        $this->assertSame('full_access', $this->options['quant_oauth_token']['scope']);
-        $this->assertSame('me@example.com', $this->options['quant_oauth_user']['email']);
+        $this->assertNull($this->option('quant_oauth_token')['expires_at']);
+        $this->assertNull($this->option('quant_oauth_token')['refresh_token'] ?? null);
+        $this->assertSame('full_access', $this->option('quant_oauth_token')['scope']);
+        $this->assertSame('me@example.com', $this->option('quant_oauth_user')['email']);
 
         $status = $this->controller->getStatus();
         $this->assertTrue($status['connected']);
@@ -364,10 +365,11 @@ class OAuthControllerTest extends TestCase
 
         $this->connect();
 
-        $token = $this->options['quant_oauth_token'];
+        $token = $this->option('quant_oauth_token');
         $this->assertSame('qcr_one', $token['refresh_token']);
         $this->assertEqualsWithDelta(time() + 7776000, $token['expires_at'], 5);
         $this->assertSame('projects:read', $token['scope']);
+        $this->assertSame(hash('sha256', 'https://www.example.com'), $token['site']);
         $this->assertTrue($this->controller->getStatus()['connected']);
     }
 
@@ -388,12 +390,12 @@ class OAuthControllerTest extends TestCase
             $requests->posts[0]['body']
         );
         $this->assertSame('https://dashboard.quantcdn.io/oauth/token', $requests->postUrls[0]);
-        $token = $this->options['quant_oauth_token'];
+        $token = $this->option('quant_oauth_token');
         $this->assertSame('new', $token['access_token']);
         $this->assertSame('qcr_new', $token['refresh_token']);
         $this->assertEqualsWithDelta(time() + 7776000, $token['expires_at'], 5);
         $this->assertSame('Bearer new', $requests->gets[0]['headers']['Authorization']);
-        $this->assertSame([], $this->db->rows, 'the lock is released');
+        $this->assertArrayNotHasKey(RefreshLock::OPTION, $this->db->rows, 'the lock is released');
     }
 
     #[Test]
@@ -417,7 +419,7 @@ class OAuthControllerTest extends TestCase
 
         $this->assertSame([], $requests->posts);
         $this->assertTrue($status['connected'], 'the unexpired token stays in use');
-        $this->assertSame('qcr_old', $this->options['quant_oauth_token']['refresh_token']);
+        $this->assertSame('qcr_old', $this->option('quant_oauth_token')['refresh_token']);
         $this->assertArrayHasKey(RefreshLock::OPTION, $this->db->rows, 'the other request keeps its lock');
     }
 
@@ -428,11 +430,14 @@ class OAuthControllerTest extends TestCase
         $this->db->rows[RefreshLock::OPTION] = (string) time();
         $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
         // The other request saves its rotation and releases the lock while this one waits.
-        Functions\when('wp_cache_delete')->alias(function (): bool {
-            unset($this->db->rows[RefreshLock::OPTION]);
-            $this->options['quant_oauth_token'] = $this->scopedToken(time() + 7776000, 'rotated', 'qcr_rotated');
-            return true;
-        });
+        // The first SELECT of the lock sees it held; by the next one the holder has saved and let go.
+        $lockReads = 0;
+        $this->db->beforeSelect = function (string $name) use (&$lockReads): void {
+            if ($name === RefreshLock::OPTION && ++$lockReads === 2) {
+                unset($this->db->rows[RefreshLock::OPTION]);
+                $this->setOption('quant_oauth_token', $this->scopedToken(time() + 7776000, 'rotated', 'qcr_rotated'));
+            }
+        };
 
         $this->controller->getProjects();
 
@@ -453,8 +458,8 @@ class OAuthControllerTest extends TestCase
         $this->controller->getStatus();
 
         $this->assertCount(1, $requests->posts);
-        $this->assertSame('qcr_new', $this->options['quant_oauth_token']['refresh_token']);
-        $this->assertSame([], $this->db->rows);
+        $this->assertSame('qcr_new', $this->option('quant_oauth_token')['refresh_token']);
+        $this->assertArrayNotHasKey(RefreshLock::OPTION, $this->db->rows);
     }
 
     #[Test]
@@ -470,8 +475,8 @@ class OAuthControllerTest extends TestCase
 
         $this->assertFalse($status['connected']);
         $this->assertTrue($status['expired']);
-        $this->assertNull($this->options['quant_oauth_token']['refresh_token']);
-        $this->assertSame([], $this->db->rows, 'the lock is released');
+        $this->assertNull($this->option('quant_oauth_token')['refresh_token']);
+        $this->assertArrayNotHasKey(RefreshLock::OPTION, $this->db->rows, 'the lock is released');
 
         $projects = $this->controller->getProjects();
         $this->assertInstanceOf(\WP_Error::class, $projects);
@@ -487,7 +492,7 @@ class OAuthControllerTest extends TestCase
         $result = $this->controller->getProjects();
 
         $this->assertIsArray($result);
-        $this->assertSame('qcr_old', $this->options['quant_oauth_token']['refresh_token']);
+        $this->assertSame('qcr_old', $this->option('quant_oauth_token')['refresh_token']);
         $this->assertSame('Bearer old', $requests->gets[0]['headers']['Authorization']);
     }
 
@@ -509,7 +514,7 @@ class OAuthControllerTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertCount(1, $requests->posts);
         $this->assertCount(2, $requests->gets);
-        $this->assertSame('qcr_new', $this->options['quant_oauth_token']['refresh_token']);
+        $this->assertSame('qcr_new', $this->option('quant_oauth_token')['refresh_token']);
     }
 
     #[Test]
@@ -525,6 +530,178 @@ class OAuthControllerTest extends TestCase
         $this->assertSame('token_expired', $result->get_error_code());
         $this->assertSame([], $requests->posts);
     }
+
+    #[Test]
+    public function invalid_grant_keeps_a_rotation_that_another_request_saved(): void
+    {
+        // M1: this request read a stale row; meanwhile another request saved a rotation.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $rotated = $this->scopedToken(time() + 7776000, 'rotated', 'qcr_rotated');
+        $this->stubPortal(['code' => 400, 'body' => '{"error":"invalid_grant"}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+        $this->onRefreshPost(fn() => $this->setOption('quant_oauth_token', $rotated));
+
+        $status = $this->controller->getStatus();
+
+        $this->assertTrue($status['connected']);
+        $this->assertSame($rotated, $this->option('quant_oauth_token'));
+    }
+
+    #[Test]
+    public function a_successful_refresh_does_not_overwrite_a_row_that_changed(): void
+    {
+        // M1: the compare-and-swap also guards the save of a successful refresh.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $rotated = $this->scopedToken(time() + 7776000, 'rotated', 'qcr_rotated');
+        $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
+            static fn(): array => ['code' => 200, 'body' => '[]']
+        );
+        $this->onRefreshPost(fn() => $this->setOption('quant_oauth_token', $rotated));
+
+        $this->controller->getStatus();
+
+        $this->assertSame($rotated, $this->option('quant_oauth_token'));
+    }
+
+    #[Test]
+    public function a_token_from_another_copy_of_the_site_is_not_refreshed_and_asks_for_reconnect(): void
+    {
+        // M2: a database copied from production to staging carries production's refresh token.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600) + ['site' => hash('sha256', 'https://prod.example.com')]]);
+        Functions\when('sanitize_text_field')->returnArg();
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+
+        $status = $this->controller->getStatus();
+        $result = $this->controller->selectProject($this->selectRequest());
+
+        $this->assertFalse($status['connected']);
+        $this->assertTrue($status['expired']);
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('site_changed', $result->get_error_code());
+        $this->assertSame([], $requests->posts);
+        $this->assertSame([], $requests->gets);
+        $this->assertSame('qcr_old', $this->option('quant_oauth_token')['refresh_token']);
+    }
+
+    #[Test]
+    public function a_token_of_this_site_is_refreshed(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600) + ['site' => hash('sha256', 'https://www.example.com')]]);
+        $requests = $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
+            static fn(): array => ['code' => 200, 'body' => '[]']
+        );
+
+        $this->assertTrue($this->controller->getStatus()['connected']);
+        $this->assertCount(1, $requests->posts);
+        $this->assertSame(hash('sha256', 'https://www.example.com'), $this->option('quant_oauth_token')['site']);
+    }
+
+    #[Test]
+    public function a_failed_refresh_waits_before_the_next_try(): void
+    {
+        // L1: a passing failure records the time and backs off.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $requests = $this->stubPortal(['code' => 429, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+
+        $this->controller->getStatus();
+        $status = $this->controller->getStatus();
+
+        $this->assertCount(1, $requests->posts);
+        $this->assertTrue($status['connected']);
+        $this->assertEqualsWithDelta(time(), $this->option('quant_oauth_token')['refresh_failed_at'], 5);
+        $this->assertSame('qcr_old', $this->option('quant_oauth_token')['refresh_token']);
+    }
+
+    #[Test]
+    public function the_backoff_ends_after_five_minutes(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600) + ['refresh_failed_at' => time() - 301]]);
+        $requests = $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
+            static fn(): array => ['code' => 200, 'body' => '[]']
+        );
+
+        $this->controller->getStatus();
+
+        $this->assertCount(1, $requests->posts);
+        $this->assertArrayNotHasKey('refresh_failed_at', $this->option('quant_oauth_token'));
+    }
+
+    #[Test]
+    public function invalid_client_is_final(): void
+    {
+        // L1: invalid_client cannot pass by itself; treat it as invalid_grant.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->stubPortal(['code' => 400, 'body' => '{"error":"invalid_client"}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+
+        $status = $this->controller->getStatus();
+
+        $this->assertFalse($status['connected']);
+        $this->assertNull($this->option('quant_oauth_token')['refresh_token']);
+    }
+
+    #[Test]
+    public function a_refresh_does_not_bring_back_a_token_after_a_disconnect(): void
+    {
+        // L2: the user disconnects while the refresh is at the portal.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
+            static fn(): array => ['code' => 200, 'body' => '[]']
+        );
+        $this->onRefreshPost(fn() => $this->controller->disconnect());
+        $this->settings->shouldReceive('setCredentials');
+
+        $status = $this->controller->getStatus();
+
+        $this->assertFalse($status['connected']);
+        $this->assertArrayNotHasKey('quant_oauth_token', $this->db->rows);
+    }
+
+    #[Test]
+    public function a_refresh_does_not_overwrite_a_new_connect(): void
+    {
+        // L2: the user connects again while the refresh is at the portal.
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->stubPortal(['code' => 400, 'body' => '{"error":"invalid_grant"}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+        $connected = $this->scopedToken(time() + 7776000, 'reconnected', 'qcr_reconnected');
+        $this->onRefreshPost(fn() => (new \ReflectionMethod($this->controller, 'storeOAuthData'))->invoke($this->controller, $connected));
+
+        $this->assertTrue($this->controller->getStatus()['connected']);
+        $this->assertSame($connected, $this->option('quant_oauth_token'));
+    }
+
+    #[Test]
+    public function a_refresh_response_without_a_refresh_token_keeps_the_old_one(): void
+    {
+        // L4
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'expires_in' => 7776000])],
+            static fn(): array => ['code' => 200, 'body' => '[]']
+        );
+
+        $this->controller->getStatus();
+
+        $this->assertSame('new', $this->option('quant_oauth_token')['access_token']);
+        $this->assertSame('qcr_old', $this->option('quant_oauth_token')['refresh_token']);
+    }
+
+    /**
+     * Run $action when the refresh grant is sent, as another request (or the user) would meanwhile.
+     */
+    private function onRefreshPost(callable $action): void
+    {
+        $previous = $this->refreshResponse;
+        Functions\when('wp_remote_post')->alias(static function () use ($action, $previous): array {
+            $action();
+            return $previous;
+        });
+    }
+
+    /** @var array{code: int, body: string} */
+    private array $refreshResponse = ['code' => 500, 'body' => ''];
 
     /**
      * A stored scoped token.
@@ -551,6 +728,7 @@ class OAuthControllerTest extends TestCase
     private function stubPortal(array $refreshResponse, callable $respond): \stdClass
     {
         $requests = (object) ['posts' => [], 'postUrls' => [], 'gets' => []];
+        $this->refreshResponse = $refreshResponse;
         Functions\when('__')->returnArg();
         Functions\when('apply_filters')->returnArg(2);
         Functions\when('is_wp_error')->alias(static fn($v): bool => $v instanceof \WP_Error);
@@ -583,27 +761,37 @@ class OAuthControllerTest extends TestCase
         return $request;
     }
 
-    /** @var array<string, mixed> */
-    private array $options = [];
-
     /**
-     * Back get_option/update_option/delete_option with $this->options.
+     * Back get_option/update_option/delete_option with the rows of the fake options table, so that the
+     * options API and the direct SQL of TokenStore and RefreshLock see the same data.
      *
      * @param array<string, mixed> $options
      */
     private function useOptionStore(array $options): void
     {
-        $this->options = $options;
-        Functions\when('get_option')->alias(fn(string $key, $default = false) => array_key_exists($key, $this->options) ? $this->options[$key] : $default);
+        foreach ($options as $key => $value) {
+            $this->setOption($key, $value);
+        }
+        Functions\when('get_option')->alias(fn(string $key, $default = false) => array_key_exists($key, $this->db->rows) ? $this->option($key) : $default);
         Functions\when('update_option')->alias(function (string $key, $value): bool {
-            $this->options[$key] = $value;
+            $this->setOption($key, $value);
             return true;
         });
         Functions\when('delete_option')->alias(function (string $key): bool {
-            $existed = array_key_exists($key, $this->options);
-            unset($this->options[$key]);
+            $existed = array_key_exists($key, $this->db->rows);
+            unset($this->db->rows[$key]);
             return $existed;
         });
+    }
+
+    private function option(string $key): mixed
+    {
+        return array_key_exists($key, $this->db->rows) ? maybe_unserialize($this->db->rows[$key]) : null;
+    }
+
+    private function setOption(string $key, mixed $value): void
+    {
+        $this->db->rows[$key] = (string) maybe_serialize($value);
     }
 
     /**
