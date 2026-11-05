@@ -92,6 +92,44 @@ class OAuthControllerTest extends TestCase
     }
 
     #[Test]
+    public function initiate_oauth_sends_an_s256_challenge_of_the_stored_verifier(): void
+    {
+        $stored = null;
+        Functions\when('set_transient')->alias(function ($key, $value) use (&$stored) {
+            $stored = $value;
+            return true;
+        });
+
+        $result = $this->controller->initiateOAuth();
+        parse_str((string) parse_url($result['redirect_url'], PHP_URL_QUERY), $query);
+
+        $this->assertSame('S256', $query['code_challenge_method']);
+        $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/', $stored['code_verifier']);
+        $expected = rtrim(strtr(base64_encode(hash('sha256', $stored['code_verifier'], true)), '+/', '-_'), '=');
+        $this->assertSame($expected, $query['code_challenge']);
+    }
+
+    #[Test]
+    public function the_token_exchange_sends_the_verifier_of_the_answered_state(): void
+    {
+        Functions\when('get_transient')->justReturn(['user_id' => 1, 'created' => time(), 'code_verifier' => 'verifier-123']);
+        Functions\when('__')->returnArg();
+        $sent = null;
+        Functions\when('wp_remote_post')->alias(function ($url, $args) use (&$sent) {
+            $sent = $args['body'];
+            return new \WP_Error('stop', 'stop here');
+        });
+        Functions\when('is_wp_error')->alias(fn ($v) => $v instanceof \WP_Error);
+
+        $validate = new \ReflectionMethod($this->controller, 'validateCallback');
+        $this->assertNull($validate->invoke($this->controller, 'the-code', 'the-state', ''));
+        (new \ReflectionMethod($this->controller, 'exchangeCodeForToken'))->invoke($this->controller, 'the-code');
+
+        $this->assertSame('verifier-123', $sent['code_verifier']);
+        $this->assertSame('the-code', $sent['code']);
+    }
+
+    #[Test]
     public function get_status_returns_not_connected_when_no_token(): void
     {
         Functions\when('get_option')->justReturn(false);

@@ -17,6 +17,9 @@ class OAuthController
     private const STATE_TRANSIENT_PREFIX = 'quant_oauth_state_';
     private const STATE_EXPIRY = 600; // 10 minutes
 
+    /** The PKCE verifier of the authorization this callback answers (set by validateCallback). */
+    private ?string $codeVerifier = null;
+
     public function __construct(
         private readonly Settings $settings
     ) {}
@@ -101,10 +104,14 @@ class OAuthController
         $state = bin2hex(random_bytes(16));
         $userId = get_current_user_id();
 
+        // PKCE (RFC 7636, S256): the verifier stays on this site; the portal sees only its hash. A stolen
+        // authorization code is useless without it.
+        $codeVerifier = self::base64Url(random_bytes(32));
+
         // Store state in transient for validation
         set_transient(
             self::STATE_TRANSIENT_PREFIX . $state,
-            ['user_id' => $userId, 'created' => time()],
+            ['user_id' => $userId, 'created' => time(), 'code_verifier' => $codeVerifier],
             self::STATE_EXPIRY
         );
 
@@ -118,6 +125,8 @@ class OAuthController
             'response_type' => 'code',
             'state' => $state,
             'scope' => 'full_access',
+            'code_challenge' => self::base64Url(hash('sha256', $codeVerifier, true)),
+            'code_challenge_method' => 'S256',
         ]);
 
         return [
@@ -179,6 +188,8 @@ class OAuthController
             return __('No authorization code received.', 'quant');
         }
 
+        $this->codeVerifier = is_string($storedState['code_verifier'] ?? null) ? $storedState['code_verifier'] : null;
+
         return null;
     }
 
@@ -195,7 +206,7 @@ class OAuthController
                 'client_id' => self::CLIENT_ID,
                 'code' => $code,
                 'redirect_uri' => $callbackUrl,
-            ],
+            ] + ($this->codeVerifier !== null ? ['code_verifier' => $this->codeVerifier] : []),
             'timeout' => 30,
         ]);
 
@@ -552,5 +563,11 @@ class OAuthController
     {
         /** This filter is documented in v2.0.0; it sets the platform API used to list projects. */
         return rtrim((string) apply_filters('quant_cloud_api_url', $this->getPortalUrl() . '/api/v2'), '/');
+    }
+
+    /** Base64url without padding (RFC 7636 appendix A). */
+    private static function base64Url(string $bytes): string
+    {
+        return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
     }
 }
