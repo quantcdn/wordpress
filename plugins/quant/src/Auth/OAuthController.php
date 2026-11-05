@@ -16,12 +16,20 @@ class OAuthController
     private const PORTAL_URL = 'https://dashboard.quantcdn.io';
     private const STATE_TRANSIENT_PREFIX = 'quant_oauth_state_';
     private const STATE_EXPIRY = 600; // 10 minutes
+    /** Refresh an expiring token this long before it expires. */
+    private const REFRESH_MARGIN = 86400;
+    /** Below the stale age of the refresh lock, so a slow refresh never outlives its lock. */
+    private const REFRESH_TIMEOUT = 15;
 
     /** The PKCE verifier of the authorization this callback answers (set by validateCallback). */
     private ?string $codeVerifier = null;
 
+    /** Set when the portal answered 401 to a request made with the OAuth token. */
+    private bool $unauthorized = false;
+
     public function __construct(
-        private readonly Settings $settings
+        private readonly Settings $settings,
+        private readonly RefreshLock $refreshLock = new RefreshLock()
     ) {}
 
     /**
@@ -255,6 +263,7 @@ class OAuthController
             'token_type' => is_string($data['token_type'] ?? null) ? $data['token_type'] : 'Bearer',
             'expires_at' => is_numeric($expiresIn) ? time() + (int) $expiresIn : null,
             'scope' => is_string($data['scope'] ?? null) ? $data['scope'] : $defaultScope,
+            'refresh_token' => is_string($data['refresh_token'] ?? null) && $data['refresh_token'] !== '' ? $data['refresh_token'] : null,
         ];
     }
 
@@ -326,6 +335,9 @@ class OAuthController
     public function getStatus(): array
     {
         $token = self::storedToken();
+        if (self::isDue($token)) {
+            $token = $this->refreshToken();
+        }
         $user = get_option('quant_oauth_user');
         $organizations = get_option('quant_oauth_organizations', []);
         $credentials = $this->settings->getCredentials();
@@ -358,19 +370,10 @@ class OAuthController
      */
     public function getProjects(): array|WP_Error
     {
-        $token = self::storedToken();
-
-        if (empty($token['access_token'])) {
-            return new WP_Error('not_connected', __('Not connected to Quant.', 'quant'), ['status' => 401]);
-        }
-
-        if (self::isExpired($token)) {
-            return new WP_Error('token_expired', __('OAuth token has expired. Please reconnect.', 'quant'), ['status' => 401]);
-        }
-
         $organizations = get_option('quant_oauth_organizations', []);
+        $organizations = is_array($organizations) ? $organizations : [];
 
-        return $this->projectsForOrganizations((string) $token['access_token'], is_array($organizations) ? $organizations : []);
+        return $this->withAccessToken(fn(string $accessToken) => $this->projectsForOrganizations($accessToken, $organizations));
     }
 
     /**
@@ -424,27 +427,11 @@ class OAuthController
      */
     private function fetchProjectsForOrganization(string $accessToken, string $orgMachineName): array|WP_Error
     {
-        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . rawurlencode($orgMachineName) . '/projects', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $accessToken,
-                'Accept' => 'application/json',
-            ],
-            'timeout' => 30,
-        ]);
-
-        if (is_wp_error($response)) {
-            return $response;
-        }
-
-        $statusCode = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if ($statusCode !== 200 || !is_array($data)) {
-            return new WP_Error('fetch_projects_failed', __('Failed to fetch projects.', 'quant'));
-        }
-
-        return $data['data'] ?? $data;
+        return $this->portalGet(
+            $this->getCloudApiUrl() . '/organizations/' . rawurlencode($orgMachineName) . '/projects',
+            $accessToken,
+            new WP_Error('fetch_projects_failed', __('Failed to fetch projects.', 'quant'))
+        );
     }
 
     /**
@@ -452,7 +439,20 @@ class OAuthController
      */
     private function fetchProjectDetails(string $accessToken, string $orgMachineName, string $projectMachineName): array|WP_Error
     {
-        $response = wp_remote_get($this->getCloudApiUrl() . '/organizations/' . rawurlencode($orgMachineName) . '/projects/' . rawurlencode($projectMachineName) . '?with_token=1', [
+        return $this->portalGet(
+            $this->getCloudApiUrl() . '/organizations/' . rawurlencode($orgMachineName) . '/projects/' . rawurlencode($projectMachineName) . '?with_token=1',
+            $accessToken,
+            new WP_Error('fetch_project_failed', __('Failed to fetch project details.', 'quant'))
+        );
+    }
+
+    /**
+     * GET a portal API URL with the OAuth token. Returns the response data, or $failure.
+     * A 401 sets $this->unauthorized.
+     */
+    private function portalGet(string $url, string $accessToken, WP_Error $failure): array|WP_Error
+    {
+        $response = wp_remote_get($url, [
             'headers' => [
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Accept' => 'application/json',
@@ -464,12 +464,12 @@ class OAuthController
             return $response;
         }
 
-        $statusCode = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
+        $statusCode = (int) wp_remote_retrieve_response_code($response);
+        $data = json_decode((string) wp_remote_retrieve_body($response), true);
+        $this->unauthorized = $this->unauthorized || $statusCode === 401;
 
         if ($statusCode !== 200 || !is_array($data)) {
-            return new WP_Error('fetch_project_failed', __('Failed to fetch project details.', 'quant'));
+            return $failure;
         }
 
         return $data['data'] ?? $data;
@@ -481,17 +481,13 @@ class OAuthController
      */
     public function selectProject(\WP_REST_Request $request): array|WP_Error
     {
-        $token = get_option('quant_oauth_token');
-
-        if (empty($token['access_token'])) {
-            return new WP_Error('not_connected', __('Not connected to Quant.', 'quant'), ['status' => 401]);
-        }
-
         $organization = sanitize_text_field($request->get_param('organization'));
         $project = sanitize_text_field($request->get_param('project'));
 
         // Fetch project details to get the write token
-        $projectDetails = $this->fetchProjectDetails($token['access_token'], $organization, $project);
+        $projectDetails = $this->withAccessToken(
+            fn(string $accessToken) => $this->fetchProjectDetails($accessToken, $organization, $project)
+        );
 
         if (is_wp_error($projectDetails)) {
             return $projectDetails;
@@ -590,6 +586,212 @@ class OAuthController
         $token = get_option('quant_oauth_token');
 
         return is_array($token) ? $token : [];
+    }
+
+    /**
+     * The stored token, read past the object cache: another request may have just rotated it.
+     *
+     * @return array<string, mixed>
+     */
+    private static function freshToken(): array
+    {
+        wp_cache_delete('quant_oauth_token', 'options');
+
+        return self::storedToken();
+    }
+
+    /**
+     * Run $call with a valid OAuth access token. If the portal answers 401, refresh once and run it again.
+     *
+     * @param callable(string): (array|WP_Error) $call
+     */
+    private function withAccessToken(callable $call): array|WP_Error
+    {
+        $accessToken = $this->validAccessToken();
+        if (is_wp_error($accessToken)) {
+            return $accessToken;
+        }
+
+        $this->takeUnauthorized();
+        $result = $call($accessToken);
+        if (!is_wp_error($result) || !$this->takeUnauthorized()) {
+            return $result;
+        }
+
+        $retryToken = $this->tokenAfterRejection($accessToken);
+
+        return is_wp_error($retryToken) ? $retryToken : $call($retryToken);
+    }
+
+    /**
+     * Whether the portal answered 401 since the last call; resets the flag.
+     */
+    private function takeUnauthorized(): bool
+    {
+        $unauthorized = $this->unauthorized;
+        $this->unauthorized = false;
+
+        return $unauthorized;
+    }
+
+    /**
+     * The OAuth access token to send to the portal. Refreshes a token that expires soon.
+     */
+    private function validAccessToken(): string|WP_Error
+    {
+        $token = self::storedToken();
+        if (empty($token['access_token'])) {
+            return new WP_Error('not_connected', __('Not connected to Quant.', 'quant'), ['status' => 401]);
+        }
+
+        if (self::isDue($token)) {
+            $token = $this->refreshToken();
+        }
+
+        return self::usableAccessToken($token) ?? self::expiredError();
+    }
+
+    /**
+     * A replacement for an access token that the portal rejected with a 401, or an error that asks the
+     * user to reconnect.
+     */
+    private function tokenAfterRejection(string $rejectedAccessToken): string|WP_Error
+    {
+        $accessToken = self::usableAccessToken($this->refreshToken($rejectedAccessToken));
+
+        return $accessToken === null || $accessToken === $rejectedAccessToken ? self::expiredError() : $accessToken;
+    }
+
+    /**
+     * Refresh the OAuth token, one request at a time. Returns the token as stored afterwards.
+     *
+     * With $rejectedAccessToken, refresh when that is still the stored access token; otherwise refresh
+     * when the stored token is due. A request that cannot take the lock waits for the refresh of the
+     * other request and returns its result.
+     *
+     * @return array<string, mixed>
+     */
+    private function refreshToken(?string $rejectedAccessToken = null): array
+    {
+        if (!$this->refreshLock->acquire()) {
+            $this->refreshLock->waitForRelease();
+            return self::freshToken();
+        }
+
+        try {
+            // Re-read under the lock: another request may have refreshed since this one read the token.
+            $token = self::freshToken();
+
+            return self::needsRefresh($token, $rejectedAccessToken) ? $this->performRefresh($token) : $token;
+        } finally {
+            $this->refreshLock->release();
+        }
+    }
+
+    /**
+     * Exchange the refresh token and save the result before the lock is released.
+     *
+     * @param array<string, mixed> $token
+     * @return array<string, mixed>
+     */
+    private function performRefresh(array $token): array
+    {
+        $data = $this->requestRefresh((string) $token['refresh_token']);
+
+        if (is_array($data)) {
+            $token = self::tokenFromResponse($data, (string) ($token['scope'] ?? 'full_access'));
+        } elseif ($data->get_error_code() === 'invalid_grant') {
+            // The portal no longer accepts this refresh token: show Login again. Publishing is not
+            // affected, because it uses the project token.
+            $token['refresh_token'] = null;
+            $token['expired'] = true;
+        } else {
+            // A network or server failure: keep the tokens and try again on a later request.
+            return $token;
+        }
+
+        update_option('quant_oauth_token', $token, false);
+
+        return $token;
+    }
+
+    /**
+     * POST the refresh grant. Returns the response data, or an error whose code is the OAuth error
+     * of an HTTP 400 answer (invalid_grant, invalid_client) or refresh_failed.
+     *
+     * @return array<string, mixed>|WP_Error
+     */
+    private function requestRefresh(string $refreshToken): array|WP_Error
+    {
+        $response = wp_remote_post($this->getPortalUrl() . '/oauth/token', [
+            'body' => [
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $refreshToken,
+                'client_id' => self::CLIENT_ID,
+            ],
+            'timeout' => self::REFRESH_TIMEOUT,
+        ]);
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $statusCode = (int) wp_remote_retrieve_response_code($response);
+        $data = json_decode((string) wp_remote_retrieve_body($response), true);
+
+        if ($statusCode === 200 && is_array($data) && !empty($data['access_token'])) {
+            return $data;
+        }
+
+        $error = $statusCode === 400 && is_array($data) && is_string($data['error'] ?? null) ? $data['error'] : 'refresh_failed';
+
+        return new WP_Error($error, __('Could not refresh the Quant login.', 'quant'));
+    }
+
+    /**
+     * Whether a refresh should run on this token.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function needsRefresh(array $token, ?string $rejectedAccessToken): bool
+    {
+        if ($rejectedAccessToken === null) {
+            return self::isDue($token);
+        }
+
+        return !empty($token['refresh_token'])
+            && empty($token['expired'])
+            && ($token['access_token'] ?? null) === $rejectedAccessToken;
+    }
+
+    /**
+     * Whether a token has a refresh token and expires within the refresh margin.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function isDue(array $token): bool
+    {
+        return !empty($token['refresh_token'])
+            && empty($token['expired'])
+            && is_numeric($token['expires_at'] ?? null)
+            && (int) $token['expires_at'] - self::REFRESH_MARGIN <= time();
+    }
+
+    /**
+     * The access token of a stored token, or null when there is none or it has expired.
+     *
+     * @param array<string, mixed> $token
+     */
+    private static function usableAccessToken(array $token): ?string
+    {
+        $accessToken = $token['access_token'] ?? null;
+
+        return is_string($accessToken) && $accessToken !== '' && !self::isExpired($token) ? $accessToken : null;
+    }
+
+    private static function expiredError(): WP_Error
+    {
+        return new WP_Error('token_expired', __('OAuth token has expired. Please reconnect.', 'quant'), ['status' => 401]);
     }
 
     /**

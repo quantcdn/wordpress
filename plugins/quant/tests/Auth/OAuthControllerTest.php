@@ -12,15 +12,21 @@ use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use Brain\Monkey;
 use Brain\Monkey\Functions;
 use Quant\Auth\OAuthController;
+use Quant\Auth\RefreshLock;
 use Quant\Core\Settings;
+use Quant\Tests\Support\FakeOptionsDb;
 
 #[CoversClass(OAuthController::class)]
+#[CoversClass(RefreshLock::class)]
 class OAuthControllerTest extends TestCase
 {
     use MockeryPHPUnitIntegration;
 
+    private const ORGANIZATIONS = [['id' => 1, 'name' => 'Acme', 'machine_name' => 'acme']];
+
     private OAuthController $controller;
     private Settings $settings;
+    private FakeOptionsDb $db;
 
     protected function setUp(): void
     {
@@ -46,11 +52,17 @@ class OAuthControllerTest extends TestCase
             'endpoint' => 'https://api.quantcdn.io',
         ])->byDefault();
 
-        $this->controller = new OAuthController($this->settings);
+        $this->db = new FakeOptionsDb();
+        $GLOBALS['wpdb'] = $this->db;
+        Functions\when('wp_cache_delete')->justReturn(true);
+
+        // No pause while waiting for another request's refresh.
+        $this->controller = new OAuthController($this->settings, new RefreshLock(30, 0, 2));
     }
 
     protected function tearDown(): void
     {
+        unset($GLOBALS['wpdb']);
         Monkey\tearDown();
         parent::tearDown();
     }
@@ -339,6 +351,236 @@ class OAuthControllerTest extends TestCase
 
         $this->assertIsArray($result);
         $this->assertSame('acme', $result[0]['organization']['machine_name']);
+    }
+
+    #[Test]
+    public function a_scoped_token_response_stores_the_refresh_token_and_expiry(): void
+    {
+        $this->useOptionStore([]);
+        $this->stubConnectResponses([
+            'access_token' => 'scoped', 'token_type' => 'Bearer', 'scope' => 'projects:read',
+            'refresh_token' => 'qcr_one', 'expires_in' => 7776000,
+        ]);
+
+        $this->connect();
+
+        $token = $this->options['quant_oauth_token'];
+        $this->assertSame('qcr_one', $token['refresh_token']);
+        $this->assertEqualsWithDelta(time() + 7776000, $token['expires_at'], 5);
+        $this->assertSame('projects:read', $token['scope']);
+        $this->assertTrue($this->controller->getStatus()['connected']);
+    }
+
+    #[Test]
+    public function a_due_token_refreshes_and_the_rotated_tokens_are_saved(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600), 'quant_oauth_organizations' => self::ORGANIZATIONS]);
+        $requests = $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000, 'scope' => 'projects:read'])],
+            static fn(): array => ['code' => 200, 'body' => '{"data":[]}']
+        );
+
+        $result = $this->controller->getProjects();
+
+        $this->assertIsArray($result);
+        $this->assertSame(
+            ['grant_type' => 'refresh_token', 'refresh_token' => 'qcr_old', 'client_id' => 'wordpress-quant'],
+            $requests->posts[0]['body']
+        );
+        $this->assertSame('https://dashboard.quantcdn.io/oauth/token', $requests->postUrls[0]);
+        $token = $this->options['quant_oauth_token'];
+        $this->assertSame('new', $token['access_token']);
+        $this->assertSame('qcr_new', $token['refresh_token']);
+        $this->assertEqualsWithDelta(time() + 7776000, $token['expires_at'], 5);
+        $this->assertSame('Bearer new', $requests->gets[0]['headers']['Authorization']);
+        $this->assertSame([], $this->db->rows, 'the lock is released');
+    }
+
+    #[Test]
+    public function a_token_far_from_expiry_is_not_refreshed(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 30 * 86400)]);
+        $requests = $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '[]']);
+
+        $this->assertTrue($this->controller->getStatus()['connected']);
+        $this->assertSame([], $requests->posts);
+    }
+
+    #[Test]
+    public function a_held_lock_prevents_a_second_refresh(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->db->rows[RefreshLock::OPTION] = (string) time();
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+
+        $status = $this->controller->getStatus();
+
+        $this->assertSame([], $requests->posts);
+        $this->assertTrue($status['connected'], 'the unexpired token stays in use');
+        $this->assertSame('qcr_old', $this->options['quant_oauth_token']['refresh_token']);
+        $this->assertArrayHasKey(RefreshLock::OPTION, $this->db->rows, 'the other request keeps its lock');
+    }
+
+    #[Test]
+    public function a_waiting_request_uses_the_tokens_the_lock_holder_saved(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600), 'quant_oauth_organizations' => self::ORGANIZATIONS]);
+        $this->db->rows[RefreshLock::OPTION] = (string) time();
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '[]']);
+        // The other request saves its rotation and releases the lock while this one waits.
+        Functions\when('wp_cache_delete')->alias(function (): bool {
+            unset($this->db->rows[RefreshLock::OPTION]);
+            $this->options['quant_oauth_token'] = $this->scopedToken(time() + 7776000, 'rotated', 'qcr_rotated');
+            return true;
+        });
+
+        $this->controller->getProjects();
+
+        $this->assertSame([], $requests->posts);
+        $this->assertSame('Bearer rotated', $requests->gets[0]['headers']['Authorization']);
+    }
+
+    #[Test]
+    public function a_stale_lock_is_taken_over(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->db->rows[RefreshLock::OPTION] = (string) (time() - 60);
+        $requests = $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
+            static fn(): array => ['code' => 200, 'body' => '[]']
+        );
+
+        $this->controller->getStatus();
+
+        $this->assertCount(1, $requests->posts);
+        $this->assertSame('qcr_new', $this->options['quant_oauth_token']['refresh_token']);
+        $this->assertSame([], $this->db->rows);
+    }
+
+    #[Test]
+    public function invalid_grant_clears_the_refresh_token_and_asks_for_login(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600)]);
+        $this->stubPortal(
+            ['code' => 400, 'body' => '{"error":"invalid_grant","error_description":"revoked"}'],
+            static fn(): array => ['code' => 200, 'body' => '[]']
+        );
+
+        $status = $this->controller->getStatus();
+
+        $this->assertFalse($status['connected']);
+        $this->assertTrue($status['expired']);
+        $this->assertNull($this->options['quant_oauth_token']['refresh_token']);
+        $this->assertSame([], $this->db->rows, 'the lock is released');
+
+        $projects = $this->controller->getProjects();
+        $this->assertInstanceOf(\WP_Error::class, $projects);
+        $this->assertSame('token_expired', $projects->get_error_code());
+    }
+
+    #[Test]
+    public function a_failed_refresh_keeps_the_tokens_while_they_are_valid(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 3600), 'quant_oauth_organizations' => self::ORGANIZATIONS]);
+        $requests = $this->stubPortal(['code' => 503, 'body' => 'busy'], static fn(): array => ['code' => 200, 'body' => '{"data":[]}']);
+
+        $result = $this->controller->getProjects();
+
+        $this->assertIsArray($result);
+        $this->assertSame('qcr_old', $this->options['quant_oauth_token']['refresh_token']);
+        $this->assertSame('Bearer old', $requests->gets[0]['headers']['Authorization']);
+    }
+
+    #[Test]
+    public function a_401_forces_one_refresh_and_one_retry(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 30 * 86400)]);
+        $this->stubSelectProject();
+        $requests = $this->stubPortal(
+            ['code' => 200, 'body' => json_encode(['access_token' => 'new', 'refresh_token' => 'qcr_new', 'expires_in' => 7776000])],
+            static fn(string $url, array $args): array => $args['headers']['Authorization'] === 'Bearer new'
+                ? ['code' => 200, 'body' => '{"data":{"write_token":"wt"}}']
+                : ['code' => 401, 'body' => '{}']
+        );
+
+        $result = $this->controller->selectProject($this->selectRequest());
+
+        $this->assertIsArray($result);
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $requests->posts);
+        $this->assertCount(2, $requests->gets);
+        $this->assertSame('qcr_new', $this->options['quant_oauth_token']['refresh_token']);
+    }
+
+    #[Test]
+    public function a_401_on_a_legacy_token_asks_for_login_without_a_refresh(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => ['access_token' => 'legacy', 'expires_at' => null]]);
+        Functions\when('sanitize_text_field')->returnArg();
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 401, 'body' => '{}']);
+
+        $result = $this->controller->selectProject($this->selectRequest());
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('token_expired', $result->get_error_code());
+        $this->assertSame([], $requests->posts);
+    }
+
+    /**
+     * A stored scoped token.
+     *
+     * @return array<string, mixed>
+     */
+    private function scopedToken(int $expiresAt, string $access = 'old', string $refresh = 'qcr_old'): array
+    {
+        return [
+            'access_token' => $access,
+            'token_type' => 'Bearer',
+            'expires_at' => $expiresAt,
+            'scope' => 'projects:read',
+            'refresh_token' => $refresh,
+        ];
+    }
+
+    /**
+     * Stub the portal: every POST (the refresh grant) gets $refreshResponse, every GET gets $respond().
+     * Returns the record of the requests.
+     *
+     * @param array{code: int, body: string} $refreshResponse
+     */
+    private function stubPortal(array $refreshResponse, callable $respond): \stdClass
+    {
+        $requests = (object) ['posts' => [], 'postUrls' => [], 'gets' => []];
+        Functions\when('__')->returnArg();
+        Functions\when('apply_filters')->returnArg(2);
+        Functions\when('is_wp_error')->alias(static fn($v): bool => $v instanceof \WP_Error);
+        Functions\when('wp_remote_post')->alias(static function (string $url, array $args) use ($requests, $refreshResponse): array {
+            $requests->posts[] = $args;
+            $requests->postUrls[] = $url;
+            return $refreshResponse;
+        });
+        Functions\when('wp_remote_get')->alias(static function (string $url, array $args) use ($requests, $respond): array {
+            $requests->gets[] = $args;
+            return $respond($url, $args);
+        });
+        Functions\when('wp_remote_retrieve_response_code')->alias(static fn(array $r): int => $r['code']);
+        Functions\when('wp_remote_retrieve_body')->alias(static fn(array $r): string => $r['body']);
+
+        return $requests;
+    }
+
+    private function stubSelectProject(): void
+    {
+        Functions\when('sanitize_text_field')->returnArg();
+        $this->settings->shouldReceive('setCredentials')->once();
+    }
+
+    private function selectRequest(): \WP_REST_Request
+    {
+        $request = Mockery::mock(\WP_REST_Request::class);
+        $request->shouldReceive('get_param')->andReturnUsing(static fn(string $key): string => $key === 'organization' ? 'acme' : 'site');
+
+        return $request;
     }
 
     /** @var array<string, mixed> */
