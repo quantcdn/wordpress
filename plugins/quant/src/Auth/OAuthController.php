@@ -375,12 +375,9 @@ class OAuthController
         }
 
         $isConnected = !empty($token['access_token']);
-        $isExpired = $isConnected && self::isExpired($token);
         $hasProject = !empty($credentials['organization']) && !empty($credentials['project']);
 
-        return [
-            'connected' => $isConnected && !$isExpired,
-            'expired' => $isExpired,
+        return self::connectionState($token) + [
             'has_project' => $hasProject,
             'user' => $isConnected ? [
                 'email' => $user['email'] ?? '',
@@ -938,6 +935,22 @@ class OAuthController
         return self::canRefresh($token)
             && is_numeric($token['expires_at'] ?? null)
             && (int) $token['expires_at'] - self::REFRESH_MARGIN <= time();
+    }
+
+    /**
+     * The connected / expired / renewing flags of a stored token. A lost refresh that a later request
+     * recovers is "renewing", not a reason to reconnect.
+     *
+     * @param array<string, mixed> $token
+     * @return array{connected: bool, expired: bool, renewing: bool}
+     */
+    private static function connectionState(array $token): array
+    {
+        $hasToken = !empty($token['access_token']);
+        $renewing = $hasToken && self::recoveryPendingFor($token);
+        $expired = $hasToken && !$renewing && self::isExpired($token);
+
+        return ['connected' => $hasToken && !$expired, 'expired' => $expired, 'renewing' => $renewing];
     }
 
     /**

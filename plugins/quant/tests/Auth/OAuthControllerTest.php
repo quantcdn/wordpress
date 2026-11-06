@@ -538,6 +538,10 @@ class OAuthControllerTest extends TestCase
         $this->assertInstanceOf(\WP_Error::class, $result);
         $this->assertSame('token_renewing', $result->get_error_code());
         $this->assertSame([], $requests->posts, 'no refresh before the recovery window');
+        $status = $this->controller->getStatus();
+        $this->assertTrue($status['renewing']);
+        $this->assertFalse($status['expired'], 'getStatus agrees: no reconnect prompt');
+        $this->assertTrue($status['connected']);
     }
 
     #[Test]
