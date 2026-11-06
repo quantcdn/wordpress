@@ -3,7 +3,7 @@
  * Plugin Name: QuantCDN
  * Plugin URI: https://www.quantcdn.io/integrations/wordpress
  * Description: Static site generation and CDN integration for WordPress
- * Version: 2.0.1
+ * Version: 2.0.2
  * Requires PHP: 8.2
  * Requires at least: 6.0
  * Author: QuantCDN
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('QUANT_VERSION', '2.0.1');
+define('QUANT_VERSION', '2.0.2');
 define('QUANT_PLUGIN_FILE', __FILE__);
 define('QUANT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('QUANT_PLUGIN_URL', plugin_dir_url(__FILE__));

@@ -5,7 +5,7 @@ Tags: static, cdn, static site generator, jamstack, search
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -92,6 +92,11 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 
 == Changelog ==
 
+= 2.0.2 =
+* Fixed: a site connected through the Quant login showed as disconnected 24 hours after it connected, and the project list failed. Tokens without an expiry no longer expire in the plugin.
+* The Quant login supports refresh tokens. The plugin renews an expiring login token by itself, one request at a time. If Quant no longer accepts the login, QuantCDN > Settings asks you to log in again; publishing continues with the project token.
+* A copy of a site (for example a production database restored to staging) no longer shares the login of the original. The copy asks you to reconnect it, so it cannot log the original site out.
+
 = 2.0.1 =
 * The Quant login (OAuth) sends PKCE (S256). The Quant dashboard will require it, so update before you connect a site.
 
@@ -120,6 +125,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
 == Upgrade Notice ==
+
+= 2.0.2 =
+Fixes the Quant login showing as disconnected after 24 hours, and adds refresh tokens. Update before the Quant dashboard moves the plugin to expiring login tokens.
 
 = 2.0.1 =
 Security update for the Quant login. Update before you connect a site to Quant: the dashboard will require it.
