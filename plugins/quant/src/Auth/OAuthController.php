@@ -967,6 +967,16 @@ class OAuthController
             );
         }
 
+        if (self::recoveryPendingFor($token)) {
+            // The portal has no clear answer to a refresh yet. A later request recovers it; a reconnect
+            // is not necessary.
+            return new WP_Error(
+                'token_renewing',
+                __('The Quant login is being renewed. Try again in a few minutes.', 'quant'),
+                ['status' => 503]
+            );
+        }
+
         return new WP_Error('token_expired', __('OAuth token has expired. Please reconnect.', 'quant'), ['status' => 401]);
     }
 

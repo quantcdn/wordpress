@@ -520,6 +520,27 @@ class OAuthControllerTest extends TestCase
     }
 
     #[Test]
+    public function a_pending_recovery_says_renewing_not_reconnect(): void
+    {
+        // Found in the e2e run: after a lost refresh response the old access token is dead, and for
+        // 45 s the plugin told the user to reconnect, though a later request recovers the login.
+        $token = $this->scopedToken(time() + 3600) + [
+            'refresh_pending_at' => time() - 5,
+            'refresh_pending_hash' => hash('sha256', 'qcr_old'),
+            'refresh_pending_tries' => 0,
+            'refresh_retry_at' => time() + 40,
+        ];
+        $this->useOptionStore(['quant_oauth_token' => $token, 'quant_oauth_organizations' => self::ORGANIZATIONS]);
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 401, 'body' => '{}']);
+
+        $result = $this->controller->getProjects();
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('token_renewing', $result->get_error_code());
+        $this->assertSame([], $requests->posts, 'no refresh before the recovery window');
+    }
+
+    #[Test]
     public function a_401_on_a_legacy_token_asks_for_login_without_a_refresh(): void
     {
         $this->useOptionStore(['quant_oauth_token' => ['access_token' => 'legacy', 'expires_at' => null]]);
