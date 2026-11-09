@@ -35,6 +35,21 @@
 		opacity: 0.8;
 	}
 
+	// The instantsearch.css theme draws hits as cards a quarter of the row
+	// wide; the hits here are full-width rows (.quant-search__hit).
+	.ais-Hits-list {
+		display: block;
+		margin: 0;
+	}
+
+	.ais-Hits-item {
+		width: 100%;
+		margin: 0;
+		padding: 0;
+		border: 0;
+		box-shadow: none;
+	}
+
 	&__hit {
 		padding: 1rem 0;
 		border-bottom: 1px solid rgba(0, 0, 0, 0.1);
