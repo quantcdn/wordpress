@@ -281,6 +281,16 @@ export function Search() {
 				settings: response.settings,
 			} ) );
 			setSavedEnabled( !! response.settings?.enabled );
+			if ( response.push_needed ) {
+				notify(
+					'warning',
+					__(
+						'Search settings saved. The search form is part of every page, so pages on the edge keep the old form until you push them again. On the Content page, select Push everything.',
+						'quant'
+					)
+				);
+				return;
+			}
 			notify( 'success', __( 'Search settings saved.', 'quant' ) );
 		} catch ( e ) {
 			notify( 'error', e.message || __( 'Failed to save', 'quant' ) );

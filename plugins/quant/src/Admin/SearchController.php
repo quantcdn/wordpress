@@ -130,8 +130,30 @@ class SearchController
         ];
 
         $this->settings->setSearchSettings($settings);
+        $saved = $this->settings->getSearchSettings();
 
-        return ['success' => true, 'settings' => $this->settings->getSearchSettings()];
+        return [
+            'success' => true,
+            'settings' => $saved,
+            'push_needed' => $this->settings->isStaticMode() && self::searchFormChanged($current, $saved),
+        ];
+    }
+
+    /**
+     * Whether the search form on every page changes: it is sent to a Quant Search page only while records and
+     * the replace option are on, and the target is the default page. Pages already on the edge keep the old
+     * form until they are pushed again.
+     *
+     * @param array<string, mixed> $before
+     * @param array<string, mixed> $after
+     */
+    private static function searchFormChanged(array $before, array $after): bool
+    {
+        $target = static fn(array $search): string => !empty($search['enabled']) && !empty($search['replace_wp_search'])
+            ? 'page:' . (string) ($search['default_page'] ?? '')
+            : 'off';
+
+        return $target($before) !== $target($after);
     }
 
     /**
