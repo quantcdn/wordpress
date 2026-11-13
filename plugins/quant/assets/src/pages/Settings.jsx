@@ -17,6 +17,7 @@ import {
 } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
+import { projectListView } from './projectList';
 
 const SCHEDULE_TYPES = [
 	[ 'home', __( 'Home page', 'quant' ) ],
@@ -82,6 +83,7 @@ function ConnectionCard( {
 } ) {
 	const [ projects, setProjects ] = useState( [] );
 	const [ projectsLoading, setProjectsLoading ] = useState( false );
+	const [ projectsLoaded, setProjectsLoaded ] = useState( false );
 	const [ projectsError, setProjectsError ] = useState( null );
 	const [ selectedOrg, setSelectedOrg ] = useState( '' );
 	const [ selectedProject, setSelectedProject ] = useState( '' );
@@ -103,6 +105,7 @@ function ConnectionCard( {
 			);
 		} finally {
 			setProjectsLoading( false );
+			setProjectsLoaded( true );
 		}
 	}, [] );
 
@@ -231,6 +234,13 @@ function ConnectionCard( {
 		);
 	}
 
+	const listView = projectListView( {
+		loading: projectsLoading,
+		loaded: projectsLoaded,
+		error: projectsError,
+		count: projects.length,
+	} );
+
 	if ( oauthStatus.has_project && ! changing ) {
 		return (
 			<SectionCard title={ __( 'Connect to Quant', 'quant' ) }>
@@ -290,7 +300,7 @@ function ConnectionCard( {
 		);
 	}
 
-	if ( ! projectsLoading && ( projectsError || projects.length === 0 ) ) {
+	if ( listView === 'empty' ) {
 		return (
 			<SectionCard title={ __( 'Connect to Quant', 'quant' ) }>
 				<Notice status="warning" isDismissible={ false }>
@@ -350,7 +360,7 @@ function ConnectionCard( {
 					  )
 			}
 		>
-			{ projectsLoading ? (
+			{ listView === 'loading' ? (
 				<Spinner />
 			) : (
 				<>

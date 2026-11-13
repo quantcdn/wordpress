@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from '@wordpress/element';
 import { Button, Card, CardBody } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
+import { shouldRetry, retryDelay } from './retry';
 import './Progress.scss';
 
 const DEFAULT_INTERVAL = 2000;
@@ -33,6 +34,7 @@ export function Progress( {
 	const [ state, setState ] = useState( 'active' ); // active | done | stopped | error
 	const [ error, setError ] = useState( null );
 	const [ runId, setRunId ] = useState( 0 );
+	const [ retrying, setRetrying ] = useState( false );
 
 	const stopRef = useRef( false );
 	const onCompleteRef = useRef( onComplete );
@@ -53,6 +55,7 @@ export function Progress( {
 		let cancelled = false;
 		let timer = null;
 		let started = false;
+		let failures = 0;
 
 		const tick = async () => {
 			if ( stopRef.current ) {
@@ -84,6 +87,8 @@ export function Progress( {
 					return;
 				}
 
+				failures = 0;
+				setRetrying( false );
 				setStatus( response );
 				if ( ! started ) {
 					started = true;
@@ -99,9 +104,16 @@ export function Progress( {
 
 				timer = setTimeout( tick, pollInterval );
 			} catch ( err ) {
-				if ( cancelled ) {
+				if ( cancelled || stopRef.current ) {
 					return;
 				}
+				failures += 1;
+				if ( shouldRetry( err, failures ) ) {
+					setRetrying( true );
+					timer = setTimeout( tick, retryDelay( failures ) );
+					return;
+				}
+				setRetrying( false );
 				setError(
 					err.message || __( 'Failed to process the queue', 'quant' )
 				);
@@ -178,7 +190,15 @@ export function Progress( {
 						<h3 className="quant-progress__title">
 							{ titles[ barState ] }
 						</h3>
-						{ state === 'active' && status && (
+						{ state === 'active' && retrying && (
+							<span className="quant-progress__processing">
+								{ __(
+									'The server did not answer. Trying again…',
+									'quant'
+								) }
+							</span>
+						) }
+						{ state === 'active' && ! retrying && status && (
 							<span className="quant-progress__processing">
 								{ sprintf(
 									/* translators: %d: number of pending items */

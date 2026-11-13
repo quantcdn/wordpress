@@ -44,6 +44,7 @@ jobs:
       - run: npm ci
       - run: npm run lint:js
       - run: npm run lint:css
+      - run: npm run test:unit
       - run: npm run build
       - name: Built assets are committed
         run: git diff --exit-code -- assets/build || (echo "Run npm run build and commit assets/build" && exit 1)

@@ -115,6 +115,50 @@ final class SearchPageRepositoryTest extends TestCase
     }
 
     #[Test]
+    public function first_enabled_page_skips_a_disabled_first_page(): void
+    {
+        $this->options[SearchPageRepository::OPTION] = [
+            ['id' => 'old', 'label' => 'Old', 'route' => '/old-search', 'status' => false],
+            ['id' => 'site', 'label' => 'Site', 'route' => '/search', 'status' => true],
+        ];
+
+        $page = $this->repository->defaultPage(['enabled' => true, 'replace_wp_search' => true, 'default_page' => '']);
+
+        $this->assertSame('site', $page['id'] ?? null);
+    }
+
+    #[Test]
+    public function first_enabled_page_is_null_when_every_page_is_disabled(): void
+    {
+        $this->options[SearchPageRepository::OPTION] = [
+            ['id' => 'old', 'label' => 'Old', 'route' => '/old-search', 'status' => false],
+            ['id' => 'site', 'label' => 'Site', 'route' => '/search', 'status' => false],
+        ];
+
+        $this->assertNull($this->repository->defaultPage(['enabled' => true, 'replace_wp_search' => true, 'default_page' => '']));
+    }
+
+    #[Test]
+    public function a_disabled_chosen_default_page_is_null_not_another_page(): void
+    {
+        $this->options[SearchPageRepository::OPTION] = [
+            ['id' => 'old', 'label' => 'Old', 'route' => '/old-search', 'status' => false],
+            ['id' => 'site', 'label' => 'Site', 'route' => '/search', 'status' => true],
+        ];
+
+        $this->assertNull($this->repository->defaultPage(['enabled' => true, 'replace_wp_search' => true, 'default_page' => 'old']));
+    }
+
+    #[Test]
+    public function there_is_no_default_page_while_the_option_is_off(): void
+    {
+        $this->options[SearchPageRepository::OPTION] = [['id' => 'site', 'label' => 'Site', 'route' => '/search', 'status' => true]];
+
+        $this->assertNull($this->repository->defaultPage(['enabled' => true, 'replace_wp_search' => false, 'default_page' => '']));
+        $this->assertNull($this->repository->defaultPage(['enabled' => false, 'replace_wp_search' => true, 'default_page' => '']));
+    }
+
+    #[Test]
     public function it_ignores_corrupt_option_values(): void
     {
         $this->options[SearchPageRepository::OPTION] = 'garbage';

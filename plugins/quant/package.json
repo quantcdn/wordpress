@@ -1,6 +1,6 @@
 {
 	"name": "quant-wordpress-admin",
-	"version": "2.0.2",
+	"version": "2.0.3",
 	"description": "QuantCDN WordPress Admin UI",
 	"scripts": {
 		"build": "wp-scripts build",
@@ -9,7 +9,8 @@
 		"lint:js:fix": "wp-scripts lint-js assets/src --fix",
 		"lint:css": "wp-scripts lint-style 'assets/src/**/*.scss'",
 		"format": "wp-scripts format assets/src",
-		"test": "npm run lint:js"
+		"test:unit": "wp-scripts test-unit-js",
+		"test": "npm run lint:js && npm run test:unit"
 	},
 	"devDependencies": {
 		"@wordpress/scripts": "^27.0.0"

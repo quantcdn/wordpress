@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { resetPlugin, configurePlugin, optionJson, mockState, mockRequests, wp, postIdBySlug } = require('../lib/wp');
+const { resetPlugin, configurePlugin, optionJson, mockState, mockRequests, wp, wpEval, postIdBySlug } = require('../lib/wp');
 const { processQueue, waitForMock } = require('../lib/queue');
 const { gotoQuant, rest, screenshot, acceptDialogs, notice } = require('../lib/admin');
 
@@ -99,5 +99,12 @@ test.describe('Quant Search', () => {
     const redirect = await page.request.get('/?s=hello', { maxRedirects: 0 });
     expect(redirect.status()).toBe(302);
     expect(redirect.headers().location).toMatch(/\/site-search\/?\?keys=hello$/);
+
+    // The core Search block (block theme headers) goes there too, through the WordPress HTML API.
+    const block = wpEval(`$_GET['keys'] = '$0 hello'; echo do_blocks('<!-- wp:search {"label":"Search","buttonText":"Search"} /-->');`);
+    expect(block).toMatch(/<form[^>]*action="[^"]*\/site-search\/?"/);
+    expect(block).toContain('name="keys"');
+    expect(block).toContain('value="$0 hello"');
+    expect(block).not.toContain('name="s"');
   });
 });

@@ -323,9 +323,10 @@ export function Dashboard() {
 								{ sprintf(
 									/* translators: %s: time of the next cron run */
 									__( 'Next background run: %s', 'quant' ),
-									new Date(
-										status.next_cron * 1000
-									).toLocaleTimeString()
+									status.next_cron_label ||
+										new Date(
+											status.next_cron * 1000
+										).toLocaleTimeString()
 								) }
 							</p>
 						) }

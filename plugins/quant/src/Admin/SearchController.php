@@ -130,8 +130,34 @@ class SearchController
         ];
 
         $this->settings->setSearchSettings($settings);
+        $saved = $this->settings->getSearchSettings();
 
-        return ['success' => true, 'settings' => $this->settings->getSearchSettings()];
+        return [
+            'success' => true,
+            'settings' => $saved,
+            'push_needed' => $this->pushNeeded($this->formTarget($current), $this->formTarget($saved)),
+        ];
+    }
+
+    /**
+     * Where the search form on every page goes: the route of the resolved default search page, or null when the
+     * form is not replaced. Pages already on the edge keep the old form until they are pushed again.
+     *
+     * @param array<string, mixed>|null $search The search settings; the saved ones when null.
+     */
+    private function formTarget(?array $search = null): ?string
+    {
+        $page = $this->pages->defaultPage($search ?? $this->settings->getSearchSettings());
+
+        return $page === null ? null : (string) $page['route'];
+    }
+
+    /**
+     * Whether a change of the form target needs a push (Static mode; CDN Only pages come from WordPress).
+     */
+    private function pushNeeded(?string $before, ?string $after): bool
+    {
+        return $before !== $after && $this->settings->isStaticMode();
     }
 
     /**
@@ -184,6 +210,7 @@ class SearchController
             return new WP_Error('invalid_page', __('A search page needs a label.', 'quant'), ['status' => 400]);
         }
 
+        $before = $this->formTarget();
         $result = $this->pageSync->save($input);
         if ($result instanceof WP_Error) {
             $result->add_data(['status' => 400]);
@@ -191,6 +218,8 @@ class SearchController
         }
 
         $result['url'] = (int) $result['page_id'] > 0 ? get_permalink((int) $result['page_id']) : null;
+        // A new route, status or first page can change where the search form goes.
+        $result['push_needed'] = $this->pushNeeded($before, $this->formTarget());
 
         return $result;
     }
@@ -201,11 +230,12 @@ class SearchController
     public function deletePage(WP_REST_Request $request): array|WP_Error
     {
         $id = sanitize_key((string) $request->get_param('id'));
+        $before = $this->formTarget();
         if (!$this->pageSync->delete($id)) {
             return new WP_Error('not_found', __('Search page not found.', 'quant'), ['status' => 404]);
         }
 
-        return ['success' => true];
+        return ['success' => true, 'push_needed' => $this->pushNeeded($before, $this->formTarget())];
     }
 
     /**

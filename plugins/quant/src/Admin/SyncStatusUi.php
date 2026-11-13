@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Admin;
 
 use Quant\Core\Settings;
+use Quant\Core\SiteTime;
 use Quant\Sync\DatabaseQueue;
 use Quant\Sync\SyncAction;
 use Quant\Sync\SyncJob;
@@ -145,7 +146,7 @@ class SyncStatusUi
         }
 
         return match ($status['status']) {
-            'completed' => [__('Synced', 'quant') . ($status['processed_at'] ? ' ' . mysql2date(get_option('date_format') . ' ' . get_option('time_format'), $status['processed_at']) : ''), 'synced'],
+            'completed' => [__('Synced', 'quant') . ($status['processed_at'] ? ' ' . SiteTime::fromUtc($status['processed_at']) : ''), 'synced'],
             'failed' => [__('Failed', 'quant'), 'failed'],
             default => [__('Pending', 'quant'), 'pending'],
         };

@@ -35,6 +35,7 @@ class Frontend
         add_shortcode('quant_search_autocomplete', [$this, 'renderAutocompleteShortcode']);
         add_action('init', [$this, 'registerBlocks']);
         add_filter('get_search_form', [$this, 'replaceSearchForm'], 20, 1);
+        add_filter('render_block_core/search', [$this, 'replaceSearchBlock'], 20, 1);
         add_action('template_redirect', [$this, 'redirectNativeSearch'], 1);
     }
 
@@ -156,10 +157,90 @@ class Frontend
             $action,
             esc_html__('Search for:', 'quant'),
             esc_attr__('Search …', 'quant'),
-            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public search term echoed back into the search box.
-            esc_attr(isset($_GET['keys']) && is_string($_GET['keys']) ? sanitize_text_field(wp_unslash($_GET['keys'])) : ''),
+            esc_attr(self::requestedKeys()),
             esc_html__('Search', 'quant')
         );
+    }
+
+    /**
+     * Point the core Search block at the default search page.
+     *
+     * The Search block (block themes put it in the header) builds its own form, so the get_search_form filter
+     * does not reach it, and on the static copy `/?s=` only shows the home page. This keeps the block's markup
+     * and styles and changes two things: the form action becomes the search page, and the `s` field becomes
+     * `keys` (with the current search term), the query parameter of a Quant Search page.
+     */
+    public function replaceSearchBlock(string $content): string
+    {
+        $page = $this->defaultPage();
+        if ($page === null || $content === '') {
+            return $content;
+        }
+
+        $action = home_url($page['route']);
+        $keys = self::requestedKeys();
+
+        // WordPress 6.2+ has the HTML API; 6.0 and 6.1 use the patterns, which match core's double-quoted markup.
+        return class_exists('WP_HTML_Tag_Processor')
+            ? self::rewriteWithTagProcessor($content, $action, $keys)
+            : self::rewriteWithPatterns($content, $action, $keys);
+    }
+
+    private static function rewriteWithTagProcessor(string $content, string $action, string $keys): string
+    {
+        $html = new \WP_HTML_Tag_Processor($content);
+        if ($html->next_tag(['tag_name' => 'form'])) {
+            $html->set_attribute('action', esc_url_raw($action));
+        }
+        while ($html->next_tag(['tag_name' => 'input'])) {
+            if ($html->get_attribute('name') === 's') {
+                $html->set_attribute('name', 'keys');
+                $html->set_attribute('value', $keys);
+            }
+        }
+
+        return $html->get_updated_html();
+    }
+
+    private static function rewriteWithPatterns(string $content, string $action, string $keys): string
+    {
+        $content = (string) preg_replace_callback(
+            '/<form\b[^>]*>/i',
+            static fn(array $tag): string => self::withAttribute($tag[0], 'action', esc_url($action)),
+            $content,
+            1
+        );
+
+        return (string) preg_replace_callback(
+            '/<input\b[^>]*\sname="s"[^>]*>/i',
+            static fn(array $tag): string => self::withAttribute(self::withAttribute($tag[0], 'name', 'keys'), 'value', esc_attr($keys)),
+            $content
+        );
+    }
+
+    /**
+     * Set one double-quoted attribute on an opening tag. $value must be escaped already. The value is spliced in
+     * with substr_replace, never as a regex replacement, so `$0` or `\1` in a search term stays literal text.
+     */
+    private static function withAttribute(string $tag, string $name, string $value): string
+    {
+        $attribute = ' ' . $name . '="' . $value . '"';
+        if (preg_match('/\s' . preg_quote($name, '/') . '="[^"]*"/i', $tag, $match, PREG_OFFSET_CAPTURE) === 1) {
+            return substr_replace($tag, $attribute, $match[0][1], strlen($match[0][0]));
+        }
+
+        $nameEnd = strcspn($tag, " \t\n\r/>", 1) + 1;
+
+        return substr_replace($tag, $attribute, $nameEnd, 0);
+    }
+
+    /**
+     * The search term of the current request (the `keys` parameter), for the search box.
+     */
+    private static function requestedKeys(): string
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public search term echoed back into the search box.
+        return isset($_GET['keys']) && is_string($_GET['keys']) ? sanitize_text_field(wp_unslash($_GET['keys'])) : '';
     }
 
     /**
@@ -242,14 +323,7 @@ class Frontend
      */
     private function defaultPage(): ?array
     {
-        $search = $this->settings->getSearchSettings();
-        if (empty($search['enabled']) || empty($search['replace_wp_search'])) {
-            return null;
-        }
-
-        $page = $search['default_page'] !== '' ? $this->pages->find((string) $search['default_page']) : ($this->pages->all()[0] ?? null);
-
-        return $page !== null && !empty($page['status']) ? $page : null;
+        return $this->pages->defaultPage($this->settings->getSearchSettings());
     }
 
     /**
