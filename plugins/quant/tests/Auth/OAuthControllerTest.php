@@ -191,23 +191,106 @@ class OAuthControllerTest extends TestCase
     }
 
     #[Test]
-    public function disconnect_clears_oauth_data(): void
+    public function disconnect_revokes_the_login_and_clears_oauth_data(): void
     {
-        Functions\when('delete_option')->justReturn(true);
-
-        $this->settings->shouldReceive('getCredentials')->andReturn([
-            'organization' => '',
-            'project' => '',
-            'token' => '',
-            'endpoint' => 'https://api.quantcdn.io',
+        $this->useOptionStore([
+            'quant_oauth_token' => $this->scopedToken(time() + 3600),
+            'quant_oauth_project_limit' => 'acme/site',
         ]);
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '{}']);
         $this->settings->shouldReceive('setCredentials')->once();
 
         $result = $this->controller->disconnect();
 
-        $this->assertIsArray($result);
-        $this->assertArrayHasKey('success', $result);
         $this->assertTrue($result['success']);
+        $this->assertCount(1, $requests->revokes);
+        $this->assertSame('Bearer old', $requests->revokes[0]['headers']['Authorization']);
+        $this->assertNull($this->option('quant_oauth_token'));
+        $this->assertNull($this->option('quant_oauth_project_limit'));
+    }
+
+    #[Test]
+    public function disconnect_without_a_login_sends_no_revoke(): void
+    {
+        $this->useOptionStore([]);
+        $requests = $this->stubPortal(['code' => 200, 'body' => '{}'], static fn(): array => ['code' => 200, 'body' => '{}']);
+        $this->settings->shouldReceive('setCredentials')->once();
+
+        $this->assertTrue($this->controller->disconnect()['success']);
+        $this->assertSame([], $requests->revokes);
+    }
+
+    #[Test]
+    public function select_project_limits_the_login_before_it_reads_the_write_token(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 30 * 86400)]);
+        $this->stubSelectProject();
+        Functions\when('wp_json_encode')->alias('json_encode');
+        $requests = $this->stubPortal(['code' => 500, 'body' => ''], static function () use (&$requests): array {
+            // The limit was sent before this write-token read.
+            return ['code' => count($requests->limits) === 1 ? 200 : 500, 'body' => '{"data":{"write_token":"wt"}}'];
+        });
+
+        $result = $this->controller->selectProject($this->selectRequest());
+
+        $this->assertIsArray($result);
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $requests->limits);
+        $this->assertCount(1, $requests->gets);
+        $this->assertSame('Bearer old', $requests->limits[0]['headers']['Authorization']);
+        $this->assertSame(['organization' => 'acme', 'project' => 'site'], json_decode($requests->limits[0]['body'], true));
+        $this->assertSame('acme/site', $this->option('quant_oauth_project_limit'));
+        $this->assertTrue($this->controller->getStatus()['project_limited']);
+    }
+
+    #[Test]
+    public function an_older_portal_without_the_limit_keeps_the_organization_login(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 30 * 86400)]);
+        $this->stubSelectProject();
+        Functions\when('wp_json_encode')->alias('json_encode');
+        $requests = $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '{"data":{"write_token":"wt"}}']);
+        $requests->limitResponse = ['code' => 403, 'body' => '{"code":"CLIENT_NOT_ELIGIBLE"}'];
+
+        $result = $this->controller->selectProject($this->selectRequest());
+
+        $this->assertIsArray($result);
+        $this->assertTrue($result['success']);
+        $this->assertSame('', $this->option('quant_oauth_project_limit'));
+    }
+
+    #[Test]
+    public function a_login_limited_to_another_project_asks_for_a_new_login(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 30 * 86400)]);
+        Functions\when('sanitize_text_field')->returnArg();
+        Functions\when('wp_json_encode')->alias('json_encode');
+        $this->settings->shouldNotReceive('setCredentials');
+        $requests = $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '{"data":{"write_token":"wt"}}']);
+        $requests->limitResponse = ['code' => 409, 'body' => '{"code":"TOKEN_ALREADY_LIMITED"}'];
+
+        $result = $this->controller->selectProject($this->selectRequest());
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('project_limit_conflict', $result->get_error_code());
+        $this->assertSame([], $requests->gets, 'no write-token read');
+    }
+
+    #[Test]
+    public function a_failed_limit_reads_no_write_token(): void
+    {
+        $this->useOptionStore(['quant_oauth_token' => $this->scopedToken(time() + 30 * 86400)]);
+        Functions\when('sanitize_text_field')->returnArg();
+        Functions\when('wp_json_encode')->alias('json_encode');
+        $this->settings->shouldNotReceive('setCredentials');
+        $requests = $this->stubPortal(['code' => 500, 'body' => ''], static fn(): array => ['code' => 200, 'body' => '{"data":{"write_token":"wt"}}']);
+        $requests->limitResponse = ['code' => 404, 'body' => '{"code":"PROJECT_NOT_FOUND"}'];
+
+        $result = $this->controller->selectProject($this->selectRequest());
+
+        $this->assertInstanceOf(\WP_Error::class, $result);
+        $this->assertSame('project_limit_failed', $result->get_error_code());
+        $this->assertSame([], $requests->gets);
     }
 
     #[Test]
@@ -939,7 +1022,11 @@ class OAuthControllerTest extends TestCase
     private function onRefreshPost(callable $action): void
     {
         $previous = $this->refreshResponse;
-        Functions\when('wp_remote_post')->alias(static function () use ($action, $previous): array {
+        Functions\when('wp_remote_post')->alias(static function (string $url) use ($action, $previous): array {
+            // Only the refresh grant runs the action; the project limit and the revoke answer 200.
+            if (!str_ends_with($url, '/oauth/token')) {
+                return ['code' => 200, 'body' => '{}'];
+            }
             $action();
             return $previous;
         });
@@ -972,12 +1059,23 @@ class OAuthControllerTest extends TestCase
      */
     private function stubPortal(array $refreshResponse, callable $respond): \stdClass
     {
-        $requests = (object) ['posts' => [], 'postUrls' => [], 'gets' => []];
+        // posts: the refresh grant. limits: POST /api/oauth/token/project (answer: $requests->limitResponse).
+        // revokes: POST /api/oauth/revoke.
+        $requests = (object) ['posts' => [], 'postUrls' => [], 'gets' => [], 'limits' => [], 'revokes' => [],
+            'limitResponse' => ['code' => 200, 'body' => '{"projects":[1]}']];
         $this->refreshResponse = $refreshResponse;
         Functions\when('__')->returnArg();
         Functions\when('apply_filters')->returnArg(2);
         Functions\when('is_wp_error')->alias(static fn($v): bool => $v instanceof \WP_Error);
         Functions\when('wp_remote_post')->alias(static function (string $url, array $args) use ($requests, $refreshResponse): array {
+            if (str_ends_with($url, '/api/oauth/token/project')) {
+                $requests->limits[] = $args;
+                return $requests->limitResponse;
+            }
+            if (str_ends_with($url, '/api/oauth/revoke')) {
+                $requests->revokes[] = $args;
+                return ['code' => 200, 'body' => '{}'];
+            }
             $requests->posts[] = $args;
             $requests->postUrls[] = $url;
             return $refreshResponse;
