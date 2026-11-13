@@ -95,11 +95,12 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 = 2.0.3 =
 * Fixed: on a Quant Search page, each result showed as a narrow card a quarter of the results column wide (one word per line in a block theme). Results are full-width rows again, with a line between rows and the thumbnail held in its row.
 * Fixed: the core Search block (the header search of block themes) now goes to the Quant Search page when "Send the WordPress search form to a Quant Search page" is on, so search works on the static site.
-* Saving a change to where the search form goes now tells you to push everything, because pages on the edge keep the old form until they are pushed again.
+* Saving a change to where the search form goes (the search settings, or the route, status or removal of the default search page) now tells you to push everything, because pages on the edge keep the old form until they are pushed again.
 * Fixed: one failed request (for example a 502 from a busy server) stopped the whole push progress. The progress card now tries again up to four times before it stops.
 * Fixed: the Settings page showed "No organizations or projects" for a moment after login, before the project list loaded. It now shows a spinner until the list loads.
 * Fixed: the search Records count did not change after "Rebuild index" until you pressed Refresh.
 * Fixed: "Last Synced", the sync status column and "Next background run" now show the time in the site time zone, with the zone. "Last Synced" was off by the difference between UTC and the browser time zone.
+* REST: last_synced is now ISO 8601 UTC; last_synced_label and next_cron_label added.
 
 = 2.0.2 =
 * Fixed: a site connected through the Quant login showed as disconnected 24 hours after it connected, and the project list failed. Tokens without an expiry no longer expire in the plugin.
