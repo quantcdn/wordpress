@@ -209,25 +209,33 @@ export function Search() {
 	const notify = ( st, message ) => setNotice( { status: st, message } );
 	const handleProgressDismiss = useCallback( () => setProgressRun( 0 ), [] );
 
+	// A status read can end after the page unmounts: it then sets no state and
+	// starts no follow-up read.
+	const mountedRef = useRef( true );
+	const refreshTimerRef = useRef( null );
+	useEffect( () => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+			clearTimeout( refreshTimerRef.current );
+		};
+	}, [] );
+
 	const loadStatus = useCallback(
 		() =>
 			apiFetch( { path: '/quant/v1/search/status' } )
+				.catch( () => ( { configured: false } ) )
 				.then( ( data ) => {
-					setStatus( data );
+					if ( mountedRef.current ) {
+						setStatus( data );
+					}
 					return data;
-				} )
-				.catch( () => {
-					const failed = { configured: false };
-					setStatus( failed );
-					return failed;
 				} ),
 		[]
 	);
 
-	// Records before the last Rebuild, and the follow-up status reads.
+	// Records before the last Rebuild, for the follow-up status reads.
 	const recordsBeforeRef = useRef( null );
-	const refreshTimerRef = useRef( null );
-	useEffect( () => () => clearTimeout( refreshTimerRef.current ), [] );
 
 	const refreshAfterRun = useCallback( () => {
 		clearTimeout( refreshTimerRef.current );
@@ -235,6 +243,7 @@ export function Search() {
 			loadStatus().then( ( current ) => {
 				const next = step + 1;
 				if (
+					mountedRef.current &&
 					next < REFRESH_DELAYS.length &&
 					indexMayStillChange(
 						recordsBeforeRef.current,
