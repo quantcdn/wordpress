@@ -5,7 +5,7 @@ Tags: static, cdn, static site generator, jamstack, search
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 2.0.2
+Stable tag: 2.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -92,6 +92,15 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 
 == Changelog ==
 
+= 2.0.3 =
+* Fixed: on a Quant Search page, each result showed as a narrow card a quarter of the results column wide (one word per line in a block theme). Results are full-width rows again, with a line between rows and the thumbnail held in its row.
+* Fixed: the core Search block (the header search of block themes) now goes to the Quant Search page when "Send the WordPress search form to a Quant Search page" is on, so search works on the static site.
+* Saving a change to where the search form goes now tells you to push everything, because pages on the edge keep the old form until they are pushed again.
+* Fixed: one failed request (for example a 502 from a busy server) stopped the whole push progress. The progress card now tries again up to four times before it stops.
+* Fixed: the Settings page showed "No organizations or projects" for a moment after login, before the project list loaded. It now shows a spinner until the list loads.
+* Fixed: the search Records count did not change after "Rebuild index" until you pressed Refresh.
+* Fixed: "Last Synced", the sync status column and "Next background run" now show the time in the site time zone, with the zone. "Last Synced" was off by the difference between UTC and the browser time zone.
+
 = 2.0.2 =
 * Fixed: a site connected through the Quant login showed as disconnected 24 hours after it connected, and the project list failed. Tokens without an expiry no longer expire in the plugin.
 * The Quant login supports refresh tokens. The plugin renews an expiring login token by itself, one request at a time. If Quant no longer accepts the login, QuantCDN > Settings asks you to log in again; publishing continues with the project token.
@@ -125,6 +134,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
 == Upgrade Notice ==
+
+= 2.0.3 =
+Fixes the Quant Search results layout and the header search in block themes, and makes the push progress try again after a failed request. If you use "Send the WordPress search form to a Quant Search page", run "Push everything" once after the update.
 
 = 2.0.2 =
 Fixes the Quant login showing as disconnected after 24 hours, and adds refresh tokens. Update before the Quant dashboard moves the plugin to expiring login tokens.
