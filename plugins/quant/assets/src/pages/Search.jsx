@@ -231,21 +231,25 @@ export function Search() {
 
 	const refreshAfterRun = useCallback( () => {
 		clearTimeout( refreshTimerRef.current );
-		const read = ( step ) => {
+		const read = ( step, previous ) => {
 			loadStatus().then( ( current ) => {
 				const next = step + 1;
 				if (
 					next < REFRESH_DELAYS.length &&
-					indexMayStillChange( recordsBeforeRef.current, current )
+					indexMayStillChange(
+						recordsBeforeRef.current,
+						previous,
+						current
+					)
 				) {
 					refreshTimerRef.current = setTimeout(
-						() => read( next ),
+						() => read( next, current?.stats?.entries ?? null ),
 						REFRESH_DELAYS[ next ]
 					);
 				}
 			} );
 		};
-		read( 0 );
+		read( 0, recordsBeforeRef.current );
 	}, [ loadStatus ] );
 
 	useEffect( () => {
