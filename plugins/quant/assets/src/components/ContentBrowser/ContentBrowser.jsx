@@ -434,7 +434,8 @@ export function ContentBrowser( {
 								</td>
 								{ ! specialType && (
 									<td className="quant-content-browser__col-synced">
-										{ formatDate( item.last_synced ) }
+										{ item.last_synced_label ||
+											formatDate( item.last_synced ) }
 									</td>
 								) }
 								<td className="quant-content-browser__col-actions">

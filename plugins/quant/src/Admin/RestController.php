@@ -6,6 +6,7 @@ namespace Quant\Admin;
 
 use Quant\Api\ContentApiInterface;
 use Quant\Core\Settings;
+use Quant\Core\SiteTime;
 use Quant\Redirects\RedirectProvider;
 use Quant\Sync\DatabaseQueue;
 use Quant\Sync\InternalFetcher;
@@ -102,6 +103,7 @@ class RestController
         }
 
         $queue = $this->queue->getStatus();
+        $nextCron = wp_next_scheduled('quant_process_queue') ?: null;
 
         return [
             'connected' => $connected,
@@ -117,7 +119,8 @@ class RestController
                 'completed' => $queue->total - $queue->pending - $queue->processing - $queue->failed,
                 'total' => $queue->total,
             ],
-            'next_cron' => wp_next_scheduled('quant_process_queue') ?: null,
+            'next_cron' => $nextCron,
+            'next_cron_label' => $nextCron === null ? null : SiteTime::time($nextCron),
             'cron_disabled' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
         ];
     }
@@ -777,7 +780,8 @@ class RestController
                 'failed' => 'failed',
                 default => 'never',
             };
-            $items[$i]['last_synced'] = $status['processed_at'] ?? null;
+            $items[$i]['last_synced'] = SiteTime::isoFromUtc($status['processed_at'] ?? null);
+            $items[$i]['last_synced_label'] = SiteTime::fromUtc($status['processed_at'] ?? null);
         }
 
         return $items;
