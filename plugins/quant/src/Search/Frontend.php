@@ -35,6 +35,7 @@ class Frontend
         add_shortcode('quant_search_autocomplete', [$this, 'renderAutocompleteShortcode']);
         add_action('init', [$this, 'registerBlocks']);
         add_filter('get_search_form', [$this, 'replaceSearchForm'], 20, 1);
+        add_filter('render_block_core/search', [$this, 'replaceSearchBlock'], 20, 1);
         add_action('template_redirect', [$this, 'redirectNativeSearch'], 1);
     }
 
@@ -156,10 +157,54 @@ class Frontend
             $action,
             esc_html__('Search for:', 'quant'),
             esc_attr__('Search …', 'quant'),
-            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public search term echoed back into the search box.
-            esc_attr(isset($_GET['keys']) && is_string($_GET['keys']) ? sanitize_text_field(wp_unslash($_GET['keys'])) : ''),
+            esc_attr(self::requestedKeys()),
             esc_html__('Search', 'quant')
         );
+    }
+
+    /**
+     * Point the core Search block at the default search page.
+     *
+     * The Search block (block themes put it in the header) builds its own form, so the get_search_form filter
+     * does not reach it, and on the static copy `/?s=` only shows the home page. This keeps the block's markup
+     * and styles and changes two things: the form action becomes the search page, and the `s` field becomes
+     * `keys`, the query parameter of a Quant Search page. Core writes these attributes with double quotes.
+     */
+    public function replaceSearchBlock(string $content): string
+    {
+        $page = $this->defaultPage();
+        if ($page === null || $content === '') {
+            return $content;
+        }
+
+        $action = esc_url(home_url($page['route']));
+        $content = (string) preg_replace_callback(
+            '/<form\b[^>]*>/i',
+            static fn(array $tag): string => (string) preg_replace('/\baction="[^"]*"/i', 'action="' . $action . '"', $tag[0], 1),
+            $content,
+            1
+        );
+
+        $keys = esc_attr(self::requestedKeys());
+
+        return (string) preg_replace_callback(
+            '/<input\b[^>]*\bname="s"[^>]*>/i',
+            static fn(array $tag): string => (string) preg_replace(
+                ['/\bname="s"/i', '/\bvalue="[^"]*"/i'],
+                ['name="keys"', 'value="' . $keys . '"'],
+                $tag[0]
+            ),
+            $content
+        );
+    }
+
+    /**
+     * The search term of the current request (the `keys` parameter), for the search box.
+     */
+    private static function requestedKeys(): string
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public search term echoed back into the search box.
+        return isset($_GET['keys']) && is_string($_GET['keys']) ? sanitize_text_field(wp_unslash($_GET['keys'])) : '';
     }
 
     /**
