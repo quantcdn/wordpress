@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from '@wordpress/element';
+import { useState, useEffect, useCallback, useRef } from '@wordpress/element';
 import {
 	Card,
 	CardHeader,
@@ -16,6 +16,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { SearchPageEditor } from '../components/SearchPageEditor/SearchPageEditor';
 import { Progress } from '../components/Progress/Progress';
+import { REFRESH_DELAYS, indexMayStillChange } from './indexRefresh';
 
 /**
  * Project search status: enabled flag and index statistics.
@@ -211,10 +212,41 @@ export function Search() {
 	const loadStatus = useCallback(
 		() =>
 			apiFetch( { path: '/quant/v1/search/status' } )
-				.then( setStatus )
-				.catch( () => setStatus( { configured: false } ) ),
+				.then( ( data ) => {
+					setStatus( data );
+					return data;
+				} )
+				.catch( () => {
+					const failed = { configured: false };
+					setStatus( failed );
+					return failed;
+				} ),
 		[]
 	);
+
+	// Records before the last Rebuild, and the follow-up status reads.
+	const recordsBeforeRef = useRef( null );
+	const refreshTimerRef = useRef( null );
+	useEffect( () => () => clearTimeout( refreshTimerRef.current ), [] );
+
+	const refreshAfterRun = useCallback( () => {
+		clearTimeout( refreshTimerRef.current );
+		const read = ( step ) => {
+			loadStatus().then( ( current ) => {
+				const next = step + 1;
+				if (
+					next < REFRESH_DELAYS.length &&
+					indexMayStillChange( recordsBeforeRef.current, current )
+				) {
+					refreshTimerRef.current = setTimeout(
+						() => read( next ),
+						REFRESH_DELAYS[ next ]
+					);
+				}
+			} );
+		};
+		read( 0 );
+	}, [ loadStatus ] );
 
 	useEffect( () => {
 		loadStatus();
@@ -259,6 +291,7 @@ export function Search() {
 
 	const reindex = async () => {
 		setBusy( true );
+		recordsBeforeRef.current = status?.stats?.entries ?? null;
 		try {
 			const response = await apiFetch( {
 				path: '/quant/v1/search/reindex',
@@ -384,7 +417,7 @@ export function Search() {
 				<Progress
 					key={ progressRun }
 					autoProcess
-					onFinished={ loadStatus }
+					onFinished={ refreshAfterRun }
 					onComplete={ handleProgressDismiss }
 				/>
 			) }
