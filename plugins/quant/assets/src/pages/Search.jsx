@@ -207,6 +207,21 @@ export function Search() {
 	const [ savedEnabled, setSavedEnabled ] = useState( false );
 
 	const notify = ( st, message ) => setNotice( { status: st, message } );
+	// A save that changes where the search form goes needs a push of every page.
+	const notifySaved = ( response, message ) =>
+		response?.push_needed
+			? notify(
+					'warning',
+					sprintf(
+						/* translators: %s: what was saved, for example "Search settings saved." */
+						__(
+							'%s The search form is part of every page, so pages on the edge keep the old form until you push them again. On the Content page, select Push everything.',
+							'quant'
+						),
+						message
+					)
+			  )
+			: notify( 'success', message );
 	const handleProgressDismiss = useCallback( () => setProgressRun( 0 ), [] );
 
 	// A status read can end after the page unmounts: it then sets no state and
@@ -294,17 +309,7 @@ export function Search() {
 				settings: response.settings,
 			} ) );
 			setSavedEnabled( !! response.settings?.enabled );
-			if ( response.push_needed ) {
-				notify(
-					'warning',
-					__(
-						'Search settings saved. The search form is part of every page, so pages on the edge keep the old form until you push them again. On the Content page, select Push everything.',
-						'quant'
-					)
-				);
-				return;
-			}
-			notify( 'success', __( 'Search settings saved.', 'quant' ) );
+			notifySaved( response, __( 'Search settings saved.', 'quant' ) );
 		} catch ( e ) {
 			notify( 'error', e.message || __( 'Failed to save', 'quant' ) );
 		} finally {
@@ -373,8 +378,8 @@ export function Search() {
 				saved,
 			] );
 			setEditing( null );
-			notify(
-				'success',
+			notifySaved(
+				saved,
 				__(
 					'Search page saved. Its WordPress page was queued for publishing.',
 					'quant'
@@ -404,12 +409,12 @@ export function Search() {
 			return;
 		}
 		try {
-			await apiFetch( {
+			const response = await apiFetch( {
 				path: `/quant/v1/search/pages/${ page.id }`,
 				method: 'DELETE',
 			} );
 			setPages( ( prev ) => prev.filter( ( p ) => p.id !== page.id ) );
-			notify( 'success', __( 'Search page deleted.', 'quant' ) );
+			notifySaved( response, __( 'Search page deleted.', 'quant' ) );
 		} catch ( e ) {
 			notify( 'error', e.message || __( 'Delete failed', 'quant' ) );
 		}
