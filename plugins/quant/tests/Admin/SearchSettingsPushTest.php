@@ -114,6 +114,18 @@ final class SearchSettingsPushTest extends TestCase
     }
 
     #[Test]
+    public function first_enabled_page_skips_a_disabled_first_page_in_the_route_compare(): void
+    {
+        $this->pageList[0]['status'] = false; // site (/search) is disabled; books (/books) is the first enabled page.
+        $this->save(['enabled' => true, 'replace_wp_search' => true, 'default_page' => '']);
+
+        // Choosing books gives the same route as "First enabled page": no push.
+        $this->assertFalse($this->save(['enabled' => true, 'replace_wp_search' => true, 'default_page' => 'books'])['push_needed']);
+        // Choosing the disabled site page turns the form replacement off: push.
+        $this->assertTrue($this->save(['enabled' => true, 'replace_wp_search' => true, 'default_page' => 'site'])['push_needed']);
+    }
+
+    #[Test]
     public function other_search_settings_do_not_need_a_push(): void
     {
         $this->save(['enabled' => true, 'replace_wp_search' => true]);

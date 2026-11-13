@@ -61,8 +61,8 @@ class SearchPageRepository
 
     /**
      * The page that the WordPress search form goes to, or null when the form is not replaced: search records and
-     * "Send the WordPress search form to a Quant Search page" are on, and the chosen page (or the first page)
-     * is enabled.
+     * "Send the WordPress search form to a Quant Search page" are on, and the chosen page is enabled. With no
+     * chosen page ("First enabled page"), the first enabled page.
      *
      * @param array<string, mixed> $search The search settings (Settings::getSearchSettings()).
      * @return array<string, mixed>|null
@@ -74,9 +74,19 @@ class SearchPageRepository
         }
 
         $id = (string) ($search['default_page'] ?? '');
-        $page = $id !== '' ? $this->find($id) : ($this->all()[0] ?? null);
+        if ($id !== '') {
+            $page = $this->find($id);
 
-        return $page !== null && !empty($page['status']) ? $page : null;
+            return $page !== null && !empty($page['status']) ? $page : null;
+        }
+
+        foreach ($this->all() as $page) {
+            if (!empty($page['status'])) {
+                return $page;
+            }
+        }
+
+        return null;
     }
 
     /**
