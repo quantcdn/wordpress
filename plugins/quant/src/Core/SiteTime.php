@@ -40,7 +40,7 @@ final class SiteTime
      */
     public static function dateTime(int $timestamp): string
     {
-        return (string) wp_date(get_option('date_format', 'F j, Y') . ' ' . get_option('time_format', 'g:i a') . ' T', $timestamp);
+        return (string) wp_date(self::withZone(get_option('date_format', 'F j, Y') . ' ' . get_option('time_format', 'g:i a')), $timestamp);
     }
 
     /**
@@ -48,7 +48,17 @@ final class SiteTime
      */
     public static function time(int $timestamp): string
     {
-        return (string) wp_date(get_option('time_format', 'g:i a') . ' T', $timestamp);
+        return (string) wp_date(self::withZone((string) get_option('time_format', 'g:i a')), $timestamp);
+    }
+
+    /**
+     * The format with ' T' (the zone) added, unless it already shows a zone: an unescaped T, e, O or P.
+     */
+    private static function withZone(string $format): string
+    {
+        $plain = (string) preg_replace('/\\\\./s', '', $format);
+
+        return strpbrk($plain, 'TeOP') === false ? $format . ' T' : $format;
     }
 
     private static function utcTimestamp(?string $utc): ?int

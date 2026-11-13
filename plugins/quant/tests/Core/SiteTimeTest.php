@@ -18,13 +18,16 @@ use Quant\Core\SiteTime;
 #[CoversClass(SiteTime::class)]
 final class SiteTimeTest extends TestCase
 {
+    /** @var array<string, string> */
+    private array $options = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         Monkey\setUp();
 
-        $options = ['date_format' => 'Y-m-d', 'time_format' => 'H:i'];
-        Functions\when('get_option')->alias(static fn(string $key, $default = false) => $options[$key] ?? $default);
+        $this->options = ['date_format' => 'Y-m-d', 'time_format' => 'H:i'];
+        Functions\when('get_option')->alias(fn(string $key, $default = false) => $this->options[$key] ?? $default);
         // wp_date() formats in the site's time zone (Settings > General); here the site is in Sydney.
         Functions\when('wp_date')->alias(
             static fn(string $format, int $timestamp): string => (new \DateTimeImmutable('@' . $timestamp))
@@ -56,6 +59,33 @@ final class SiteTimeTest extends TestCase
     public function the_next_background_run_shows_the_time_and_the_zone(): void
     {
         $this->assertSame('21:00 AEDT', SiteTime::time((int) strtotime('2026-11-14 10:00:00 UTC')));
+    }
+
+    #[Test]
+    public function a_time_format_that_shows_the_zone_gets_no_second_zone(): void
+    {
+        $at = (int) strtotime('2026-11-14 10:00:00 UTC');
+
+        $this->options['time_format'] = 'H:i T';
+        $this->assertSame('21:00 AEDT', SiteTime::time($at));
+
+        $this->options['time_format'] = 'H:i P';
+        $this->assertSame('21:00 +11:00', SiteTime::time($at));
+
+        $this->options['time_format'] = 'H:i O';
+        $this->assertSame('21:00 +1100', SiteTime::time($at));
+
+        $this->options['time_format'] = 'H:i e';
+        $this->assertSame('21:00 Australia/Sydney', SiteTime::time($at));
+    }
+
+    #[Test]
+    public function an_escaped_zone_letter_is_text_and_the_zone_is_added(): void
+    {
+        // "\T" is a literal T (as in ISO dates), not the zone.
+        $this->options['time_format'] = '\\TH:i';
+
+        $this->assertSame('T21:00 AEDT', SiteTime::time((int) strtotime('2026-11-14 10:00:00 UTC')));
     }
 
     #[Test]
