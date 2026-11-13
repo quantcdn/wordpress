@@ -101,6 +101,56 @@ final class SearchBlockFormTest extends TestCase
     }
 
     #[Test]
+    public function the_search_landmark_wrapper_is_covered(): void
+    {
+        // WordPress 7.1 with the html5 search-element theme support: <search> wraps a form with no role.
+        $block = '<search class="wp-block-search__button-outside wp-block-search"><form method="get" action="https://example.com/">'
+            . '<input class="wp-block-search__input" id="wp-block-search__input-2" placeholder="" value="" type="search" name="s" required />'
+            . '<button class="wp-block-search__button" type="submit">Search</button></form></search>';
+
+        $html = $this->frontend()->replaceSearchBlock($block);
+
+        $this->assertStringStartsWith('<search class="wp-block-search__button-outside wp-block-search"><form method="get" action="https://example.com/search">', $html);
+        $this->assertStringContainsString('name="keys"', $html);
+    }
+
+    #[Test]
+    public function the_button_only_expandable_block_is_covered(): void
+    {
+        $block = '<form role="search" method="get" action="https://example.com/" class="wp-block-search__button-only wp-block-search__searchfield-hidden wp-block-search"'
+            . ' data-wp-interactive="core/search" data-wp-context=\'{"isSearchInputVisible":false}\''
+            . ' data-wp-class--wp-block-search__searchfield-hidden="!context.isSearchInputVisible">'
+            . '<input data-wp-bind--aria-hidden="!context.isSearchInputVisible" aria-hidden="true" tabindex="-1" class="wp-block-search__input" id="wp-block-search__input-3" placeholder="" value="" type="search" name="s" required />'
+            . '<button aria-expanded="false" class="wp-block-search__button wp-element-button" type="button">Search</button></form>';
+
+        $html = $this->frontend()->replaceSearchBlock($block);
+
+        $this->assertStringContainsString('action="https://example.com/search"', $html);
+        $this->assertStringContainsString('name="keys"', $html);
+        $this->assertStringContainsString('data-wp-context=\'{"isSearchInputVisible":false}\'', $html);
+        $this->assertStringContainsString('aria-hidden="true" tabindex="-1"', $html);
+    }
+
+    #[Test]
+    public function a_hidden_post_type_field_is_left_alone(): void
+    {
+        $block = str_replace('required />', 'required /><input type="hidden" name="post_type" value="post" />', self::BLOCK);
+
+        $html = $this->frontend()->replaceSearchBlock($block);
+
+        $this->assertStringContainsString('<input type="hidden" name="post_type" value="post" />', $html);
+        $this->assertSame(1, substr_count($html, 'name="keys"'));
+    }
+
+    #[Test]
+    public function the_form_goes_to_the_route_of_the_default_page(): void
+    {
+        $html = $this->frontend(['id' => 'site', 'route' => '/find', 'status' => true])->replaceSearchBlock(self::BLOCK);
+
+        $this->assertStringContainsString('action="https://example.com/find"', $html);
+    }
+
+    #[Test]
     public function the_block_is_unchanged_when_the_option_is_off(): void
     {
         $this->search['replace_wp_search'] = false;
