@@ -43,6 +43,19 @@ final class SearchStylesTest extends TestCase
         $this->assertMatchesRegularExpression('/\bmargin:\s*0\b/', $list, 'No negative gutter.');
     }
 
+    public function testRowsAreSeparatedOnTheItemsNotOnTheOnlyChildHit(): void
+    {
+        // The hit template renders one <article class="quant-search__hit"> per <li class="ais-Hits-item">, so a
+        // :last-child rule on the hit matches every hit and removes every separator.
+        $this->assertMatchesRegularExpression('/\bborder-top:\s*1px solid\b/', $this->block('.ais-Hits-item + .ais-Hits-item'));
+        $this->assertStringNotContainsString('&:last-child', (string) file_get_contents(self::STYLESHEET));
+    }
+
+    public function testAHitHoldsItsFloatedImage(): void
+    {
+        $this->assertMatchesRegularExpression('/\bdisplay:\s*flow-root\b/', $this->block('&__hit'));
+    }
+
     /**
      * The declarations of a rule nested directly in the .quant-search block, so it outranks the theme's
      * single-class rule wherever the theme loads.
