@@ -60,6 +60,26 @@ class SearchPageRepository
     }
 
     /**
+     * The page that the WordPress search form goes to, or null when the form is not replaced: search records and
+     * "Send the WordPress search form to a Quant Search page" are on, and the chosen page (or the first page)
+     * is enabled.
+     *
+     * @param array<string, mixed> $search The search settings (Settings::getSearchSettings()).
+     * @return array<string, mixed>|null
+     */
+    public function defaultPage(array $search): ?array
+    {
+        if (empty($search['enabled']) || empty($search['replace_wp_search'])) {
+            return null;
+        }
+
+        $id = (string) ($search['default_page'] ?? '');
+        $page = $id !== '' ? $this->find($id) : ($this->all()[0] ?? null);
+
+        return $page !== null && !empty($page['status']) ? $page : null;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function find(string $id): ?array

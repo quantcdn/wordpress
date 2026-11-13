@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Tests\Search;
 
 use Brain\Monkey;
+use Brain\Monkey\Functions;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -76,6 +77,30 @@ final class SearchBlockFormTest extends TestCase
     }
 
     #[Test]
+    public function regex_replacement_tokens_in_the_search_term_stay_literal(): void
+    {
+        // WordPress adds slashes to $_GET, so the term "$0 \1 ${1}" arrives as below.
+        $_GET['keys'] = '$0 \\\\1 ${1}';
+
+        $html = $this->frontend()->replaceSearchBlock(self::BLOCK);
+
+        $this->assertStringContainsString('value="$0 \\1 ${1}"', $html);
+        $this->assertSame(1, substr_count($html, 'value='), 'The input has one value attribute.');
+        $this->assertStringContainsString('action="https://example.com/search"', $html);
+    }
+
+    #[Test]
+    public function a_quote_in_the_search_term_is_escaped(): void
+    {
+        Functions\when('esc_attr')->alias(static fn(string $v): string => htmlspecialchars($v, ENT_QUOTES));
+        $_GET['keys'] = 'a" onfocus="x';
+
+        $html = $this->frontend()->replaceSearchBlock(self::BLOCK);
+
+        $this->assertStringContainsString('value="a&quot; onfocus=&quot;x"', $html);
+    }
+
+    #[Test]
     public function the_block_is_unchanged_when_the_option_is_off(): void
     {
         $this->search['replace_wp_search'] = false;
@@ -97,7 +122,7 @@ final class SearchBlockFormTest extends TestCase
         $settings = Mockery::mock(Settings::class);
         $settings->allows('getSearchSettings')->andReturnUsing(fn(): array => $this->search);
 
-        $pages = Mockery::mock(SearchPageRepository::class);
+        $pages = Mockery::mock(SearchPageRepository::class)->makePartial();
         $pages->allows('all')->andReturn([$page ?? ['id' => 'site', 'route' => '/search', 'status' => true]]);
 
         return new Frontend($settings, $pages, Mockery::mock(SearchRecordBuilder::class), Mockery::mock(ContentApiInterface::class));
