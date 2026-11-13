@@ -29,8 +29,14 @@ describe( 'indexMayStillChange', () => {
 		expect( indexMayStillChange( 24, { configured: false } ) ).toBe( true );
 	} );
 
-	it( 'reads at most a few times over about half a minute', () => {
-		expect( REFRESH_DELAYS.length ).toBeLessThanOrEqual( 5 );
-		expect( Math.max( ...REFRESH_DELAYS ) ).toBeLessThanOrEqual( 60000 );
+	it( 'reads at 0, 3, 10 and 30 s (each delay follows the previous read)', () => {
+		const at = REFRESH_DELAYS.reduce(
+			( times, delay ) => [
+				...times,
+				( times.length ? times[ times.length - 1 ] : 0 ) + delay,
+			],
+			[]
+		);
+		expect( at ).toEqual( [ 0, 3000, 10000, 30000 ] );
 	} );
 } );
