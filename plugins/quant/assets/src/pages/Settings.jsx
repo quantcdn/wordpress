@@ -149,6 +149,19 @@ function ConnectionCard( {
 		}
 	};
 
+	// A login limited to its project cannot list projects: log in again to pick another one.
+	const loginAgain = async () => {
+		try {
+			await apiFetch( {
+				path: '/quant/v1/oauth/disconnect',
+				method: 'POST',
+			} );
+		} catch ( error ) {
+			// The new login replaces the old one either way.
+		}
+		await connect();
+	};
+
 	const selectProject = async () => {
 		setBusy( true );
 		try {
@@ -269,6 +282,10 @@ function ConnectionCard( {
 						<Button
 							variant="secondary"
 							onClick={ () => {
+								if ( oauthStatus.project_limited ) {
+									loginAgain();
+									return;
+								}
 								setChanging( true );
 								fetchProjects();
 							} }

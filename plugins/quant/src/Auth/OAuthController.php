@@ -49,6 +49,13 @@ class OAuthController
     /** The PKCE verifier of the authorization this callback answers (set by validateCallback). */
     private ?string $codeVerifier = null;
 
+    /**
+     * The project ("org/project") that the OAuth token is limited to, or "". After the project choice the
+     * plugin limits its token to that project (POST /api/oauth/token/project), as the Drupal module does: an
+     * organization-wide token could read the write token of every project in the organization.
+     */
+    private const PROJECT_LIMIT_OPTION = 'quant_oauth_project_limit';
+
     /** Set when the portal answered 401 to a request made with the OAuth token. */
     private bool $unauthorized = false;
 
@@ -333,6 +340,7 @@ class OAuthController
         $user = $tokenData['user'] ?? null;
         unset($tokenData['user']);
         update_option('quant_oauth_token', $tokenData, false); // Don't autoload
+        delete_option(self::PROJECT_LIMIT_OPTION); // A new login is not limited yet.
         $this->storeUserData($user);
     }
 
@@ -384,6 +392,8 @@ class OAuthController
                 'name' => $user['name'] ?? '',
             ] : null,
             'organization' => $hasProject ? $credentials['organization'] : null,
+            // A limited login cannot list projects: "Change Project" needs a new login.
+            'project_limited' => $isConnected && (string) get_option(self::PROJECT_LIMIT_OPTION, '') !== '',
             'project' => $hasProject ? $credentials['project'] : null,
             'organizations_count' => count($organizations),
         ];
@@ -508,6 +518,14 @@ class OAuthController
         $organization = sanitize_text_field($request->get_param('organization'));
         $project = sanitize_text_field($request->get_param('project'));
 
+        // Limit the login to this project first: the portal gives the write token only to a limited login.
+        $limit = $this->withAccessToken(
+            fn(string $accessToken) => $this->limitTokenToProject($accessToken, $organization, $project)
+        );
+        if (is_wp_error($limit)) {
+            return $limit;
+        }
+
         // Fetch project details to get the write token
         $projectDetails = $this->withAccessToken(
             fn(string $accessToken) => $this->fetchProjectDetails($accessToken, $organization, $project)
@@ -531,6 +549,7 @@ class OAuthController
         $credentials['token'] = $writeToken;
 
         $this->settings->setCredentials($credentials);
+        update_option(self::PROJECT_LIMIT_OPTION, $limit['limited'] ? $organization . '/' . $project : '', false);
 
         return [
             'success' => true,
@@ -544,7 +563,11 @@ class OAuthController
      */
     public function disconnect(): array
     {
+        // End the login at Quant, so the site (or a copy of its database) holds no working token.
+        $this->revokeToken();
+
         // Clear OAuth data
+        delete_option(self::PROJECT_LIMIT_OPTION);
         delete_option('quant_oauth_token');
         delete_option('quant_oauth_user');
         delete_option('quant_oauth_organizations');
@@ -557,6 +580,69 @@ class OAuthController
         $this->settings->setCredentials($credentials);
 
         return ['success' => true];
+    }
+
+    /**
+     * POST /api/oauth/token/project. ["limited" => true] when the token is limited to the project;
+     * ["limited" => false] when the portal does not offer the limit for this client (403
+     * CLIENT_NOT_ELIGIBLE): older portals, where the plugin keeps the organization-wide login.
+     *
+     * @return array{limited: bool}|WP_Error
+     */
+    private function limitTokenToProject(string $accessToken, string $organization, string $project): array|WP_Error
+    {
+        $response = wp_remote_post($this->getPortalUrl() . '/api/oauth/token/project', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ],
+            'body' => (string) wp_json_encode(['organization' => $organization, 'project' => $project]),
+            'timeout' => 30,
+        ]);
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $statusCode = (int) wp_remote_retrieve_response_code($response);
+        $data = json_decode((string) wp_remote_retrieve_body($response), true);
+        $this->unauthorized = $this->unauthorized || $statusCode === 401;
+
+        return self::limitOutcome($statusCode, is_array($data) ? (string) ($data['code'] ?? '') : '');
+    }
+
+    /** @return array{limited: bool}|WP_Error */
+    private static function limitOutcome(int $statusCode, string $code): array|WP_Error
+    {
+        if ($statusCode === 200) {
+            return ['limited' => true];
+        }
+        if ($statusCode === 403 && $code === 'CLIENT_NOT_ELIGIBLE') {
+            return ['limited' => false];
+        }
+        if ($statusCode === 409) {
+            return new WP_Error(
+                'project_limit_conflict',
+                __('This Quant login is for another project. Disconnect, then log in again to choose a different project.', 'quant'),
+                ['status' => 409]
+            );
+        }
+
+        return new WP_Error('project_limit_failed', __('Could not limit the Quant login to this project.', 'quant'), ['status' => 502]);
+    }
+
+    /** POST /api/oauth/revoke with the stored token. Best effort: Disconnect also works offline. */
+    private function revokeToken(): void
+    {
+        $accessToken = (string) (self::storedToken()['access_token'] ?? '');
+        if ($accessToken === '') {
+            return;
+        }
+
+        wp_remote_post($this->getPortalUrl() . '/api/oauth/revoke', [
+            'headers' => ['Authorization' => 'Bearer ' . $accessToken, 'Accept' => 'application/json'],
+            'timeout' => 10,
+        ]);
     }
 
     /**
