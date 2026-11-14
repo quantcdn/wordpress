@@ -5,7 +5,7 @@ Tags: static, cdn, static site generator, jamstack, search
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 2.0.3
+Stable tag: 2.0.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -92,6 +92,10 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 
 == Changelog ==
 
+= 2.0.4 =
+* Security: after you choose a project, the Quant login is limited to that project, so it can no longer read the publishing token of other projects in your organization. To choose another project, "Change Project" asks you to log in again.
+* Security: "Disconnect" now ends the Quant login at Quant, not only in WordPress.
+
 = 2.0.3 =
 * Fixed: on a Quant Search page, each result showed as a narrow card a quarter of the results column wide (one word per line in a block theme). Results are full-width rows again, with a line between rows and the thumbnail held in its row.
 * Fixed: the core Search block (the header search of block themes) now goes to the Quant Search page when "Send the WordPress search form to a Quant Search page" is on, so search works on the static site.
@@ -135,6 +139,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
 == Upgrade Notice ==
+
+= 2.0.4 =
+Limits the Quant login to the project you choose, and ends the login at Quant when you disconnect. Existing connections keep working.
 
 = 2.0.3 =
 Fixes the Quant Search results layout and the header search in block themes, and makes the push progress try again after a failed request. If you use "Send the WordPress search form to a Quant Search page", run "Push everything" once after the update.

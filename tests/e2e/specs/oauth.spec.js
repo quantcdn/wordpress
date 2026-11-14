@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { resetPlugin, optionJson, MOCK_URL } = require('../lib/wp');
+const { resetPlugin, optionJson, mockRequests, MOCK_URL } = require('../lib/wp');
 const { gotoQuant, screenshot, notice } = require('../lib/admin');
 
 /**
@@ -48,10 +48,21 @@ test.describe('oauth', () => {
     const oauth = optionJson('quant_oauth_token');
     expect(oauth.access_token).toBe('mock-access');
 
+    // The login is limited to the chosen project before the write token is read.
+    const limits = await mockRequests({ path: '/api/oauth/token/project', method: 'POST' });
+    expect(limits).toHaveLength(1);
+    expect(limits[0].body).toMatchObject({ organization: 'test-org', project: 'test-project' });
+    expect(optionJson('quant_oauth_project_limit')).toBe('test-org/test-project');
+
+    // A limited login cannot list projects: Change Project ends it and logs in again.
     await page.getByRole('button', { name: 'Change Project' }).click();
-    await expect(page.getByLabel('Organization')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Switch to This Project' })).toBeVisible();
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.waitForURL(/oauth=success/, { timeout: 60_000 });
+    await expect(notice(page, 'Connected to Quant. Now select a project below.')).toBeVisible();
+    expect(await mockRequests({ path: '/api/oauth/revoke', method: 'POST' })).toHaveLength(1);
+    await page.getByLabel('Organization').selectOption('test-org');
+    await page.getByLabel('Project').selectOption('test-project');
+    await page.getByRole('button', { name: 'Use This Project' }).click();
+    await expect(notice(page, 'Project selected.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Disconnect' }).click();
     await expect(notice(page, 'Disconnected from Quant')).toBeVisible();
@@ -61,5 +72,6 @@ test.describe('oauth', () => {
     expect(cleared.token).toBe('');
     expect(cleared.project).toBe('');
     expect(optionJson('quant_oauth_token')).toBeFalsy();
+    expect(await mockRequests({ path: '/api/oauth/revoke', method: 'POST' })).toHaveLength(2);
   });
 });

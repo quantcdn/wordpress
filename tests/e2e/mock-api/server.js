@@ -408,6 +408,9 @@ async function routeContentApi(req, res, url, raw) {
 // Portal / OAuth mock
 // ---------------------------------------------------------------------------
 
+// The project that POST /api/oauth/token/project limited the login to, or null.
+let oauthLimit = null;
+
 function hasBearer(req) {
   return header(req, 'authorization') === 'Bearer mock-access';
 }
@@ -429,6 +432,8 @@ function routePortal(req, res, url, raw) {
   }
   if (m === 'POST' && p === '/oauth/token') {
     if (body && body.code && body.code !== 'mock-code') return send(res, 400, { error: 'invalid_grant' });
+    // A new login is not limited to a project (portal OAuthTokenProjectController).
+    oauthLimit = null;
     return send(res, 200, { access_token: 'mock-access', token_type: 'Bearer', expires_in: 86400, scope: 'full_access' });
   }
   if (m === 'GET' && p === '/api/oauth/user') {
@@ -440,8 +445,22 @@ function routePortal(req, res, url, raw) {
       organizations: [{ id: 1, name: 'Test Org', machine_name: 'test-org' }],
     });
   }
+  if (m === 'POST' && p === '/api/oauth/token/project') {
+    if (!hasBearer(req)) return send(res, 401, { error: 'unauthorized' });
+    const wanted = `${body && body.organization}/${body && body.project}`;
+    if (oauthLimit && oauthLimit !== wanted) return send(res, 409, { error: true, code: 'TOKEN_ALREADY_LIMITED' });
+    oauthLimit = wanted;
+    return send(res, 200, { organization: body.organization, project: body.project, projects: [1] });
+  }
+  if (m === 'POST' && p === '/api/oauth/revoke') {
+    if (!hasBearer(req)) return send(res, 401, { error: 'unauthorized' });
+    oauthLimit = null;
+    return send(res, 200, { revoked: true });
+  }
   if (m === 'GET' && p === '/api/v2/organizations/test-org/projects') {
     if (!hasBearer(req)) return send(res, 401, { error: 'unauthorized' });
+    // A login limited to its project cannot list projects (portal TokenIsValid, PROJECT_LEVEL_ONLY).
+    if (oauthLimit) return send(res, 403, { error: true, code: 'PROJECT_LEVEL_ONLY' });
     return send(res, 200, { data: [{ name: 'Test Project', machine_name: 'test-project' }] });
   }
   if (m === 'GET' && p === '/api/v2/organizations/test-org/projects/test-project') {
@@ -470,6 +489,7 @@ function routeInspection(req, res, url, raw) {
   if (m === 'DELETE' && p === '/_mock/requests') {
     requests = [];
     state = freshState();
+    oauthLimit = null;
     failures.length = 0;
     return send(res, 200, { success: true });
   }
