@@ -38,7 +38,6 @@ final class TransportErrorTest extends TestCase
         return [
             'curl timeout' => ['http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received', TransportError::TIMEOUT],
             'fsockopen timeout' => ['http_request_failed', 'fsockopen: connection timed out', TransportError::TIMEOUT],
-            'other http_request_failed' => ['http_request_failed', 'A valid URL was not provided.', TransportError::TIMEOUT],
             'dns' => ['http_request_failed', 'cURL error 6: Could not resolve host: api.quantcdn.io', TransportError::DNS],
             'tls certificate' => ['http_request_failed', 'cURL error 60: SSL certificate problem: unable to get local issuer certificate', TransportError::TLS],
             'tls handshake' => ['http_request_failed', 'cURL error 35: OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to api.quantcdn.io:443', TransportError::TLS],
@@ -56,6 +55,32 @@ final class TransportErrorTest extends TestCase
         $this->assertSame($expected, $error['message']);
         $this->assertSame("{$code}: {$raw}", $error['detail']);
         $this->assertStringNotContainsString('cURL', $error['message']);
+        $this->assertTrue($error['transport']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function otherFailures(): array
+    {
+        return [
+            'not executed' => ['http_request_not_executed', 'User has blocked requests through HTTP.'],
+            'invalid url' => ['http_request_failed', 'A valid URL was not provided.'],
+            'too many redirects' => ['http_request_failed', 'Too many redirects.'],
+            'timeout text under another code' => ['http_request_not_executed', 'timed out'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('otherFailures')]
+    public function other_failures_get_a_neutral_message_and_are_not_transport_failures(string $code, string $raw): void
+    {
+        $error = TransportError::fromWpError(new \WP_Error($code, $raw));
+
+        $this->assertSame('The request to Quant failed.', $error['message']);
+        $this->assertSame(TransportError::FAILED, $error['message']);
+        $this->assertSame("{$code}: {$raw}", $error['detail']);
+        $this->assertFalse($error['transport']);
     }
 
     #[Test]

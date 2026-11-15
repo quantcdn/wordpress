@@ -394,6 +394,18 @@ final class QuantContentApiTest extends TestCase
     }
 
     #[Test]
+    public function a_non_transport_failure_is_not_retried_and_not_transient(): void
+    {
+        $this->http->alwaysRespond(['code' => 0, 'body' => '', 'error' => 'The request to Quant failed.', 'detail' => 'http_request_failed: Too many redirects.', 'transport' => false]);
+
+        $response = $this->apiWithRetry()->publish('/a', '<p>a</p>');
+
+        $this->assertCount(1, $this->http->calls);
+        $this->assertFalse($response->transient);
+        $this->assertSame('http_request_failed: Too many redirects.', $response->detail);
+    }
+
+    #[Test]
     public function a_failed_connection_test_says_to_test_again(): void
     {
         $this->http->respondWith(self::TIMEOUT);

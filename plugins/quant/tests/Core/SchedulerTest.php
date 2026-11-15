@@ -33,12 +33,19 @@ final class SchedulerTest extends TestCase
     private JobProcessor&Mockery\MockInterface $processor;
     private Seeder&Mockery\MockInterface $seeder;
 
+    /** @var array<string, mixed> */
+    private array $options = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         Monkey\setUp();
         $this->stubCommonWordPressFunctions();
         Functions\when('wp_get_schedules')->justReturn(['hourly' => [], 'daily' => [], 'weekly' => []]);
+        Functions\when('update_option')->alias(function (string $key, $value): bool {
+            $this->options[$key] = $value;
+            return true;
+        });
 
         $this->queue = Mockery::mock(SyncQueueInterface::class);
         $this->processor = Mockery::mock(JobProcessor::class);
@@ -138,6 +145,28 @@ final class SchedulerTest extends TestCase
         Functions\expect('wp_schedule_single_event')->once()->with(Mockery::type('int'), Scheduler::PROCESS_SOON_HOOK);
 
         $this->scheduler()->processQueue();
+    }
+
+    #[Test]
+    public function a_queue_run_records_when_it_ran(): void
+    {
+        $this->processor->shouldReceive('run')->once()->andReturn(new SyncResult(0, 0));
+
+        $this->scheduler()->processQueue();
+
+        $this->assertEqualsWithDelta(time(), $this->options[Scheduler::OPTION_LAST_RUN], 2);
+    }
+
+    #[Test]
+    public function background_processing_counts_as_on_when_wp_cron_runs_or_a_run_was_recent(): void
+    {
+        $now = 1_800_000_000;
+
+        $this->assertTrue(Scheduler::isBackgroundActive(false, 0, $now), 'WP-Cron enabled');
+        $this->assertTrue(Scheduler::isBackgroundActive(true, $now - 60, $now), 'a system cron ran a minute ago');
+        $this->assertTrue(Scheduler::isBackgroundActive(true, $now - 900, $now), 'a run 15 minutes ago');
+        $this->assertFalse(Scheduler::isBackgroundActive(true, $now - 901, $now), 'no run for over 15 minutes');
+        $this->assertFalse(Scheduler::isBackgroundActive(true, 0, $now), 'never ran');
     }
 
     #[Test]

@@ -197,6 +197,16 @@ final class WordPressHttpClientTest extends TestCase
     }
 
     #[Test]
+    public function a_failure_that_is_not_a_transport_failure_is_not_marked_for_retry(): void
+    {
+        Functions\when('wp_remote_request')->justReturn(new \WP_Error('http_request_failed', 'Too many redirects.'));
+
+        $response = WordPressHttpClient::withDefaults()->post('https://api.test/v1', [], ['url' => '/a']);
+
+        $this->assertSame(['code' => 0, 'body' => '', 'error' => 'The request to Quant failed.', 'detail' => 'http_request_failed: Too many redirects.', 'transport' => false], $response);
+    }
+
+    #[Test]
     public function it_keeps_the_configured_timeout_for_a_normal_json_publish(): void
     {
         $client = WordPressHttpClient::withDefaults(30, true);

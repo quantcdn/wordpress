@@ -195,7 +195,7 @@ class WordPressHttpClient implements HttpClientInterface
         if ($response instanceof WP_Error) {
             $error = TransportError::fromWpError($response);
 
-            return ['code' => 0, 'body' => '', 'error' => $error['message'], 'detail' => $error['detail'], 'transport' => true];
+            return ['code' => 0, 'body' => '', 'error' => $error['message'], 'detail' => $error['detail'], 'transport' => $error['transport']];
         }
 
         $headers = wp_remote_retrieve_headers($response);

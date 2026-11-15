@@ -138,7 +138,14 @@ Enable search for the project in the Quant dashboard, then open **QuantCDN > Sea
 
 = A push failed with "Quant did not answer in time" =
 
-The Quant API did not answer within the HTTP request timeout, or a gateway between your server and Quant was busy. The plugin sends a page or file again up to two times in the same run (after about 1 and 3 seconds). If it still fails, the job stays in the queue as failed. While the job has attempts left (three in total) and WP-Cron runs, the message ends with "The plugin will try again." and the background run tries it again, with a longer wait each time. When the job has used all attempts, or WP-Cron is disabled (`DISABLE_WP_CRON`), the message ends with "Select Retry failed on the dashboard.": select "Retry failed" on the QuantCDN dashboard (or in the push progress), or run `wp quant queue retry`. A failed connection test says "Test the connection again in a minute." The raw error text (for example the cURL error) is in the report from QuantCDN > Diagnostics > Download Report.
+The Quant API did not answer within the HTTP request timeout, or a gateway between your server and Quant was busy (HTTP 502, 503 or 504).
+
+* A page or file push that fails fast (a gateway error, or a refused or reset connection) is sent again up to two times in the same run, after about 1 and 3 seconds.
+* A request that timed out is sent again only when another attempt of the same length still fits in 45 seconds. With the default 30 second timeout it is not sent again in the same run; with a 10 second timeout it can be sent again twice.
+* All retries in one run share the same 45 seconds. When one push used both retries and still failed, the other pushes in the same run are not retried until a push works again.
+* Unpublish, purge, redirects and search records are not sent again in the same run.
+
+If the push still fails, the job stays in the queue as failed. While the job has attempts left (three in total) and the queue runs in the background, the message ends with "The plugin will try again." and the background run tries it again, with a longer wait each time. The queue runs in the background when WP-Cron is enabled, or when `DISABLE_WP_CRON` is set and a system cron ran the queue in the last 15 minutes. When the job has used all attempts, or nothing runs the queue in the background, the message ends with "Select Retry failed on the dashboard.": select "Retry failed" on the QuantCDN dashboard (or in the push progress), or run `wp quant queue retry`. A failed connection test says "Test the connection again in a minute." The raw error text (for example the cURL error) is in the report from QuantCDN > Diagnostics > Download Report.
 
 = Forms on a static site =
 
@@ -147,11 +154,13 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 == Changelog ==
 
 = 2.0.6 =
-* Fixed: when the Quant API did not answer, the push showed raw transport text such as "cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received". The dashboard queue card and the push progress now show a short message, for example "Quant did not answer in time. The plugin will try again." The message says "Select Retry failed on the dashboard." instead when the job has used all attempts or WP-Cron is disabled, and a failed connection test says "Test the connection again in a minute." The raw text is kept apart and is in the diagnostics report and in `wp quant queue errors`.
-* Fixed: one stalled request or gateway error (502, 503, 504) failed the page until the next background run, and the background run only happens when WP-Cron runs. A page or file push is now sent again up to two times in the same run, after about 1 and 3 seconds.
+* Fixed: when the Quant API did not answer, the push showed raw transport text such as "cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received". The dashboard queue card and the push progress now show a short message, for example "Quant did not answer in time. The plugin will try again." The message says "Select Retry failed on the dashboard." instead when the job has used all attempts or nothing runs the queue in the background (WP-Cron disabled and no system cron run in the last 15 minutes), and a failed connection test says "Test the connection again in a minute." The raw text is kept apart and is in the diagnostics report and in `wp quant queue errors`.
+* Fixed: one stalled request or gateway error (502, 503, 504) failed the page until the next background run, and the background run only happens when WP-Cron runs. A page or file push that fails fast is now sent again up to two times in the same run, after about 1 and 3 seconds. A request that timed out is sent again only when another attempt still fits in 45 seconds. All retries in one run share those 45 seconds, and after one push fails with both retries the others in the run are not retried.
+* Other request failures (for example too many redirects) show "The request to Quant failed." and are not sent again in the same run.
 * A page larger than 512 KB now gets the same 120 second minimum timeout as a file upload.
 * Readme: `QUANT_HTTP_REQUEST_TIMEOUT` is documented.
-* The queue table has a new column for the error detail. It is added automatically on the first request after the update.
+* The queue table has a new column for the error detail. It is added automatically on the first request after the update; the schema version is recorded only after the column exists.
+* Diagnostics: the report shows whether the queue runs in the background and when it last ran.
 
 = 2.0.5 =
 * Search page: a cleaner default style that still follows the theme. The checkboxes, counts, headings, tags, buttons and pagination have even spacing, every control has a visible focus outline, the "Clear refinements" button uses the theme text colour (it was pale blue), the result title is larger than its summary, and on a phone the facets move above the results. The InstantSearch widgets no longer turn the text navy.

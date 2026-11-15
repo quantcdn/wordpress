@@ -26,6 +26,8 @@ final class TransportError
     public const CONNECTION = 'The connection to Quant failed.';
     public const UNAVAILABLE = 'Quant is busy or unavailable (HTTP %d).';
     public const SERVER = 'Quant had a server error (HTTP %d).';
+    /** Any other WP_Error (request not executed, invalid URL, too many redirects): not a transport failure. */
+    public const FAILED = 'The request to Quant failed.';
 
     /** The job has attempts left and background processing runs. */
     public const NEXT_AUTOMATIC = 'The plugin will try again.';
@@ -47,16 +49,22 @@ final class TransportError
     ];
 
     /**
-     * @return array{message: string, detail: string}
+     * 'transport' is true only for an http_request_failed error whose text
+     * matches a known transport failure (timeout, DNS, TLS, connection).
+     * Only those can work when the same request is sent again.
+     *
+     * @return array{message: string, detail: string, transport: bool}
      */
     public static function fromWpError(WP_Error $error): array
     {
         $code = (string) $error->get_error_code();
         $raw = (string) $error->get_error_message();
+        $message = $code === 'http_request_failed' ? self::classify($raw) : null;
 
         return [
-            'message' => self::classify($raw),
+            'message' => $message ?? self::FAILED,
             'detail' => $code !== '' ? "{$code}: {$raw}" : $raw,
+            'transport' => $message !== null,
         ];
     }
 
@@ -73,7 +81,7 @@ final class TransportError
         return $status >= 500 && $status < 600 ? sprintf(self::SERVER, $status) : null;
     }
 
-    private static function classify(string $raw): string
+    private static function classify(string $raw): ?string
     {
         foreach (self::PATTERNS as $message => $pattern) {
             if (preg_match($pattern, $raw) === 1) {
@@ -81,7 +89,6 @@ final class TransportError
             }
         }
 
-        // Any other http_request_failed: the request did not complete.
-        return self::TIMEOUT;
+        return null;
     }
 }

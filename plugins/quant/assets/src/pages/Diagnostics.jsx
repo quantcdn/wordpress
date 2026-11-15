@@ -83,6 +83,13 @@ export function Diagnostics() {
 				data.environment?.php_max_execution_time || 'Unknown'
 			}`,
 			`Multisite: ${ data.environment?.is_multisite ? 'Yes' : 'No' }`,
+			`WP-Cron Disabled: ${
+				data.environment?.cron_disabled ? 'Yes' : 'No'
+			}`,
+			`Background Processing: ${
+				data.environment?.background_processing ? 'Yes' : 'No'
+			}`,
+			`Last Queue Run: ${ data.environment?.last_queue_run || 'Never' }`,
 			'',
 			'## Plugin Configuration',
 			`Mode: ${ data.plugin?.mode || 'Unknown' }`,

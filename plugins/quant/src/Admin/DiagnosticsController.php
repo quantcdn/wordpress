@@ -119,7 +119,9 @@ class DiagnosticsController
                 'php_memory_limit' => ini_get('memory_limit'),
                 'php_max_execution_time' => ini_get('max_execution_time'),
                 'is_multisite' => is_multisite(),
-                'cron_disabled' => !\Quant\Core\Scheduler::backgroundProcessingEnabled(),
+                'cron_disabled' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
+                'background_processing' => \Quant\Core\Scheduler::backgroundProcessingEnabled(),
+                'last_queue_run' => $this->lastQueueRun(),
                 'next_queue_run' => wp_next_scheduled('quant_process_queue') ?: null,
                 'permalink_structure' => get_option('permalink_structure') ?: 'plain',
             ],
@@ -166,5 +168,15 @@ class DiagnosticsController
             'needs_migration' => $needsMigration,
             'has_settings' => $this->detector->hasV2Settings(),
         ];
+    }
+
+    /**
+     * When the scheduled processor last ran the queue, in UTC, or null.
+     */
+    private function lastQueueRun(): ?string
+    {
+        $time = (int) get_option(\Quant\Core\Scheduler::OPTION_LAST_RUN, 0);
+
+        return $time > 0 ? gmdate('Y-m-d H:i:s', $time) . ' UTC' : null;
     }
 }

@@ -116,22 +116,95 @@ final class RetryPolicyTest extends TestCase
         $this->assertLessThanOrEqual(3400, $this->slept[1]);
     }
 
+    /**
+     * @param array<int, array<string, mixed>> $responses Answers in order; each attempt takes $seconds.
+     */
+    private function slow(float $seconds, array $responses, int &$calls): \Closure
+    {
+        return function () use ($seconds, &$responses, &$calls): array {
+            $calls++;
+            $this->now += $seconds;
+            return array_shift($responses) ?? self::TIMEOUT;
+        };
+    }
+
     #[Test]
-    public function it_does_not_start_a_retry_after_the_elapsed_limit(): void
+    public function a_request_that_used_the_full_30_s_timeout_is_not_retried(): void
     {
         $calls = 0;
-        $slow = function () use (&$calls): array {
-            $calls++;
-            $this->now += 30.0; // Each attempt waits for the full request timeout.
-            return self::TIMEOUT;
-        };
+        $response = $this->policy()->run($this->slow(30.0, [], $calls));
 
-        $response = $this->policy(maxElapsed: 45.0)->run($slow);
+        // 30 s + 1 s wait + another 30 s attempt does not fit in 45 s.
+        $this->assertSame(1, $calls);
+        $this->assertSame([], $this->slept);
+        $this->assertArrayNotHasKey('attempts', $response);
+    }
 
-        // 30 s + 1 s delay fits in 45 s; a second retry at 61 s + 3 s does not.
+    #[Test]
+    public function a_timed_out_request_is_retried_while_the_next_attempt_fits(): void
+    {
+        $calls = 0;
+        $this->policy()->run($this->slow(10.0, [], $calls));
+
+        // 10 + 1 + 10 = 21 s and 21 + 3 + 10 = 34 s both fit in 45 s.
+        $this->assertSame(3, $calls);
+        $this->assertSame([1000, 3000], $this->slept);
+
+        $calls = 0;
+        $this->slept = [];
+        $this->policy()->run($this->slow(15.0, [], $calls));
+
+        // 15 + 1 + 15 = 31 s fits; 31 + 3 + 15 = 49 s does not.
         $this->assertSame(2, $calls);
         $this->assertSame([1000], $this->slept);
-        $this->assertSame(2, $response['attempts']);
+    }
+
+    #[Test]
+    public function after_one_call_used_all_its_retries_later_calls_get_none(): void
+    {
+        $policy = $this->policy();
+        $calls = 0;
+        $busy = static function () use (&$calls): array {
+            $calls++;
+            return ['code' => 503, 'body' => ''];
+        };
+
+        for ($i = 0; $i < 10; $i++) {
+            $policy->run($busy);
+        }
+
+        // 3 attempts for the first upload, then 1 for each of the other 9.
+        $this->assertSame(12, $calls);
+        $this->assertSame([1000, 3000], $this->slept);
+    }
+
+    #[Test]
+    public function a_success_closes_the_breaker_again(): void
+    {
+        $policy = $this->policy();
+        $calls = 0;
+        $policy->run($this->answers([self::TIMEOUT, self::TIMEOUT, self::TIMEOUT], $calls));
+        $policy->run($this->answers([['code' => 200, 'body' => '{}']], $calls));
+        $policy->run($this->answers([self::TIMEOUT, ['code' => 200, 'body' => '{}']], $calls));
+
+        $this->assertSame(6, $calls);
+        $this->assertSame([1000, 3000, 1000], $this->slept);
+    }
+
+    #[Test]
+    public function all_calls_share_one_retry_time_budget(): void
+    {
+        $policy = $this->policy();
+        $calls = 0;
+        $results = [];
+        for ($i = 0; $i < 4; $i++) {
+            // Each attempt takes 5 s; the third attempt of each call works.
+            $results[] = $policy->run($this->slow(5.0, [['code' => 503, 'body' => ''], ['code' => 503, 'body' => ''], ['code' => 201, 'body' => '{}']], $calls))['code'];
+        }
+
+        // Retries cost (1 + 5) + (3 + 5) = 14 s per call: 14, 28, 42 s. The fourth call has no time left.
+        $this->assertSame([201, 201, 201, 503], $results);
+        $this->assertSame(10, $calls);
     }
 
     #[Test]

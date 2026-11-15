@@ -27,14 +27,27 @@ class Scheduler
     public const SCHEDULED_SYNC_HOOK = 'quant_scheduled_sync';
     public const INTERVAL = 'quant_every_minute';
 
+    /** Unix time of the last scheduled queue run (processQueue). */
+    public const OPTION_LAST_RUN = 'quant_last_queue_run';
+
+    /** A run within this many seconds means something runs the queue in the background. */
+    public const RECENT_RUN = 900;
+
     /**
-     * Whether WP-Cron runs the queue (and its retryDue backoff) in the
-     * background. The same check as the dashboard's "WP-Cron is disabled"
-     * warning (RestController, DiagnosticsController).
+     * Whether the queue (and its retryDue backoff) runs in the background:
+     * WP-Cron is enabled, or a scheduled run happened recently. The second
+     * case covers DISABLE_WP_CRON with a system cron that calls wp-cron.php.
      */
     public static function backgroundProcessingEnabled(): bool
     {
-        return !(defined('DISABLE_WP_CRON') && DISABLE_WP_CRON);
+        $cronDisabled = defined('DISABLE_WP_CRON') && DISABLE_WP_CRON;
+
+        return self::isBackgroundActive($cronDisabled, $cronDisabled ? (int) get_option(self::OPTION_LAST_RUN, 0) : 0, time());
+    }
+
+    public static function isBackgroundActive(bool $cronDisabled, int $lastRun, int $now): bool
+    {
+        return !$cronDisabled || ($lastRun > 0 && $now - $lastRun <= self::RECENT_RUN);
     }
 
     public function __construct(
@@ -127,6 +140,7 @@ class Scheduler
             return;
         }
 
+        update_option(self::OPTION_LAST_RUN, time(), false);
         $this->maintain();
 
         /** This filter is documented in v2.0.0; it sets how many jobs one cron run processes. */

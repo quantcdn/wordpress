@@ -65,7 +65,25 @@ class Activator
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
 
+        self::markSchemaCurrent($wpdb, $tableName);
+    }
+
+    /**
+     * Record the schema version only when the newest column exists, so a
+     * failed dbDelta (permissions, a locked table) runs again on the next
+     * request instead of being marked done.
+     */
+    public static function markSchemaCurrent(\wpdb $wpdb, string $tableName): bool
+    {
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
+        $column = $wpdb->get_var($wpdb->prepare("SHOW COLUMNS FROM `{$tableName}` LIKE %s", 'error_detail'));
+        if ($column !== 'error_detail') {
+            return false;
+        }
+
         update_option('quant_db_version', self::DB_VERSION);
+
+        return true;
     }
 
     private static function setDefaultOptions(): void
