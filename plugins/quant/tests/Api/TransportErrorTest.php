@@ -67,7 +67,7 @@ final class TransportErrorTest extends TestCase
             $this->assertStringNotContainsString('try again', $reason);
         }
         $this->assertSame('The plugin will try again.', TransportError::NEXT_AUTOMATIC);
-        $this->assertSame('Retry it from the queue.', TransportError::NEXT_MANUAL);
+        $this->assertSame('Select Retry failed on the dashboard.', TransportError::NEXT_MANUAL);
         $this->assertSame('Test the connection again in a minute.', TransportError::NEXT_TEST_AGAIN);
     }
 

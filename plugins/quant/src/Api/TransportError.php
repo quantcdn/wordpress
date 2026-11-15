@@ -30,7 +30,7 @@ final class TransportError
     /** The job has attempts left and background processing runs. */
     public const NEXT_AUTOMATIC = 'The plugin will try again.';
     /** The job used all attempts, or nothing runs the queue in the background. */
-    public const NEXT_MANUAL = 'Retry it from the queue.';
+    public const NEXT_MANUAL = 'Select Retry failed on the dashboard.';
     /** A failed connection test. */
     public const NEXT_TEST_AGAIN = 'Test the connection again in a minute.';
 

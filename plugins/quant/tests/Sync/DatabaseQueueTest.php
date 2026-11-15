@@ -222,7 +222,7 @@ final class DatabaseQueueTest extends TestCase
         $this->wpdb->shouldReceive('prepare')->once()->with(
             Mockery::type('string'),
             'failed',
-            'API error publishing /a: Quant did not answer in time. Retry it from the queue.',
+            'API error publishing /a: Quant did not answer in time. Select Retry failed on the dashboard.',
             $detail,
             Mockery::type('string'),
             'job-1',
@@ -230,7 +230,7 @@ final class DatabaseQueueTest extends TestCase
         )->andReturn('update_sql');
         $this->wpdb->shouldReceive('query')->once()->with('update_sql');
 
-        $this->queue->markFailed('job-1', 'API error publishing /a: Quant did not answer in time. Retry it from the queue.', $detail);
+        $this->queue->markFailed('job-1', 'API error publishing /a: Quant did not answer in time. Select Retry failed on the dashboard.', $detail);
     }
 
     #[Test]

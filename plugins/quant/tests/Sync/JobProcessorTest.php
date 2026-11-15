@@ -157,7 +157,7 @@ final class JobProcessorTest extends TestCase
     {
         // DatabaseQueue::retryDue only requeues while attempts < MAX_ATTEMPTS after this failure.
         $this->assertSame(
-            'API error publishing /a: Quant did not answer in time. Retry it from the queue.',
+            'API error publishing /a: Quant did not answer in time. Select Retry failed on the dashboard.',
             $this->failOnce($this->timeout(), DatabaseQueue::MAX_ATTEMPTS - 1, true)
         );
     }
@@ -166,7 +166,7 @@ final class JobProcessorTest extends TestCase
     public function without_background_processing_it_says_to_retry_from_the_queue(): void
     {
         $this->assertSame(
-            'API error publishing /a: Quant did not answer in time. Retry it from the queue.',
+            'API error publishing /a: Quant did not answer in time. Select Retry failed on the dashboard.',
             $this->failOnce($this->timeout(), 0, false)
         );
     }
@@ -184,7 +184,7 @@ final class JobProcessorTest extends TestCase
     {
         $busy = new QuantApiException('API error publishing /a: Quant is busy or unavailable (HTTP 503).', 'HTTP 503', true);
 
-        $this->assertSame('API error publishing /a: Quant is busy or unavailable (HTTP 503). Retry it from the queue.', $this->failOnce($busy, 2, true));
+        $this->assertSame('API error publishing /a: Quant is busy or unavailable (HTTP 503). Select Retry failed on the dashboard.', $this->failOnce($busy, 2, true));
     }
 
     #[Test]

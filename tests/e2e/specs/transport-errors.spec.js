@@ -62,7 +62,7 @@ test.describe('Quant API stalls and gateway errors', () => {
     expect(content).toMatch(/ {3}Detail: http_request_failed: cURL error 28: .* \(3 attempts\)/);
   });
 
-  test('on the last attempt the card says to retry from the queue', async ({ page }) => {
+  test('on the last attempt the card names the Retry failed button', async ({ page }) => {
     await mockFail({ path: '/v1', status: 503, times: 3 });
     await gotoQuant(page, 'content');
     await rest(page, '/sync', { method: 'POST', data: { items: [{ type: 'post', id: postIdBySlug('third-post') }], action: 'sync' } });
@@ -72,10 +72,10 @@ test.describe('Quant API stalls and gateway errors', () => {
 
     expect(await publishAttempts('/third-post')).toBe(3);
     const errors = await rest(page, '/queue/errors');
-    expect(errors[0].error_message).toBe('API error publishing /third-post: Quant is busy or unavailable (HTTP 503). Retry it from the queue.');
+    expect(errors[0].error_message).toBe('API error publishing /third-post: Quant is busy or unavailable (HTTP 503). Select Retry failed on the dashboard.');
 
     await gotoQuant(page, 'dashboard');
-    await expect(page.getByText('Quant is busy or unavailable (HTTP 503). Retry it from the queue.')).toBeVisible();
+    await expect(page.getByText('Quant is busy or unavailable (HTTP 503). Select Retry failed on the dashboard.')).toBeVisible();
     await expect(page.getByText(/will try again/)).toHaveCount(0);
   });
 });
