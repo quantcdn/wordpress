@@ -89,8 +89,8 @@ async function mockReset() {
   return (await mockFetch('DELETE', '/_mock/requests')).json;
 }
 
-async function mockFail({ path: p, status = 500, times = 1 }) {
-  return (await mockFetch('POST', '/_mock/fail', { path: p, status, times })).json;
+async function mockFail({ path: p, status = 500, times = 1, delayMs = 0 }) {
+  return (await mockFetch('POST', '/_mock/fail', { path: p, status, times, delayMs })).json;
 }
 
 /** Poll until predicate(state) is truthy or timeout. */
