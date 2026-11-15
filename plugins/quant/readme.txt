@@ -72,6 +72,50 @@ Version 2.0 requires PHP 8.2. Sites on older PHP are not offered the update and 
 
 Set these to configure the plugin without the admin UI (for example on Quant Cloud): `QUANT_API_ENDPOINT`, `QUANT_CUSTOMER`, `QUANT_PROJECT`, `QUANT_TOKEN`, `QUANT_WEBSERVER_URL`, `QUANT_WEBSERVER_HOST`, `QUANT_ENABLED`, `QUANT_PURGE_ON_SAVE`, `QUANT_DISABLE_TLS_VERIFY`, `QUANT_HTTP_REQUEST_TIMEOUT`, `QUANT_MODE`. The same names work as PHP constants in `wp-config.php`. Overridden fields are read-only in the UI.
 
+== Styling the search page ==
+
+The search page (the page the plugin creates, the "Quant Search" block and the `[quant_search]` shortcode) uses the theme's fonts and text colour. Result titles are in the text colour and are underlined on hover and focus. Lines, count badges, tags and secondary text are mixes of the text colour, so the page also works on a dark theme. The plugin's own rules apply only inside `.quant-search`; the bundled InstantSearch.js theme styles the `ais-` widget classes.
+
+To restyle the page, set these custom properties on `.quant-search` in the theme stylesheet or in Additional CSS (Appearance > Editor > Styles in a block theme, Appearance > Customize in a classic theme). The plugin defaults have no specificity, so a rule on `.quant-search` wins in any stylesheet order.
+
+`
+.quant-search {
+	--quant-search-accent: #1d4ed8;
+	--quant-search-gap: 1.25rem;
+	--quant-search-facets-width: 16rem;
+}
+`
+
+Spacing and layout:
+
+* `--quant-search-gap` (1rem): the base space. The other spaces are multiples of it, so a change here scales the page.
+* `--quant-search-gap-xs`, `-sm`, `-md`, `-lg`, `-xl` (0.25, 0.5, 0.75, 1.5 and 2.5 times the gap). `-xl` is the space between the facets and the results.
+* `--quant-search-facets-width` (14rem): the width of the facet column.
+* `--quant-search-content-min-width` (20rem): the results column is never narrower than this next to the facets.
+* `--quant-search-hit-image-width` (7.5rem): the result thumbnail width.
+* `--quant-search-radius` (0.375rem): the corner radius of the search box, buttons, pagination and thumbnails.
+
+Colours:
+
+* `--quant-search-accent`: the checked boxes, the search box border on focus, the current page and the focus ring. Default: the block theme's `contrast` colour, or the text colour.
+* `--quant-search-muted`: secondary text (result summaries, counts, tags, the result count). Default: 75% of the text colour.
+* `--quant-search-border`, `--quant-search-border-strong`: lines and control borders (18% and 45% of the text colour).
+* `--quant-search-surface`, `--quant-search-surface-hover`: the count badge and tag background, and the hover background (6% and 10% of the text colour).
+* `--quant-search-input-background` (transparent): the search box and select background.
+* `--quant-search-highlight`: the background of the matched words.
+* `--quant-search-focus-ring` (the accent) and `--quant-search-focus-width` (2px): the focus outline of every link, button and field.
+* `--quant-search-disabled-opacity` (0.55): disabled buttons and pagination links.
+
+Type (relative to the theme's text size):
+
+* `--quant-search-hit-title-size` (1.25em) and `--quant-search-hit-summary-size` (0.9375em): the result title and summary.
+* `--quant-search-facet-heading-size` (0.75em): the facet headings.
+* `--quant-search-font-size-small` (0.875em) and `--quant-search-font-size-xsmall` (0.8125em): the result count, the "Clear refinements" button, counts and tags.
+
+When the search area is narrower than 37.5rem (for example on a phone), the facets move above the results, side by side when there is room. A facet with no values for the current search is hidden with its heading.
+
+For larger changes, target the classes. They are stable: `quant-search`, `quant-search__description`, `quant-search__facets`, `quant-search__clear`, `quant-search__facet`, `quant-search__facet-heading`, `quant-search__content`, `quant-search__box`, `quant-search__stats`, `quant-search__hits`, `quant-search__hit`, `quant-search__hit-title`, `quant-search__hit-summary`, `quant-search__hit-tag`, `quant-search__pagination`, `quant-search__empty`, `quant-search__fallback` (the search form without JavaScript) and `quant-search--unavailable`. The widgets inside them use the InstantSearch.js `ais-` classes, for example `ais-SearchBox-input`, `ais-RefinementList-label`, `ais-RefinementList-count`, `ais-ClearRefinements-button` and `ais-Pagination-link`.
+
 == Frequently Asked Questions ==
 
 = Where do I find the project credentials? =
@@ -91,6 +135,11 @@ Enable search for the project in the Quant dashboard, then open **QuantCDN > Sea
 Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms). Contact Form 7 needs `define('WPCF7_LOAD_JS', false);`.
 
 == Changelog ==
+
+= 2.0.5 =
+* Search page: a cleaner default style that still follows the theme. The checkboxes, counts, headings, tags, buttons and pagination have even spacing, every control has a visible focus outline, the "Clear refinements" button uses the theme text colour (it was pale blue), the result title is larger than its summary, and on a phone the facets move above the results. The InstantSearch widgets no longer turn the text navy.
+* Search page: every size, space and colour is a CSS custom property (`--quant-search-gap`, `--quant-search-accent` and others). See "Styling the search page" in the readme.
+* Admin: the search settings, the search page form, the first-run form and the block settings had no space between their fields, checkboxes and toggles on current WordPress (7.x). They now use the block editor spacing.
 
 = 2.0.4 =
 * Security: after you choose a project, the Quant login is limited to that project, so it can no longer read the publishing token of other projects in your organization. To choose another project, "Change Project" asks you to log in again.
