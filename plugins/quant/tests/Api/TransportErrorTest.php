@@ -59,9 +59,16 @@ final class TransportErrorTest extends TestCase
     }
 
     #[Test]
-    public function the_timeout_message_says_the_plugin_tries_again(): void
+    public function the_reasons_do_not_promise_a_next_step(): void
     {
-        $this->assertSame('Quant did not answer in time. The plugin will try again.', TransportError::TIMEOUT);
+        // The caller adds the next step, because only the caller knows if it is true.
+        $this->assertSame('Quant did not answer in time.', TransportError::TIMEOUT);
+        foreach ([TransportError::TIMEOUT, TransportError::DNS, TransportError::TLS, TransportError::CONNECTION, TransportError::UNAVAILABLE, TransportError::SERVER] as $reason) {
+            $this->assertStringNotContainsString('try again', $reason);
+        }
+        $this->assertSame('The plugin will try again.', TransportError::NEXT_AUTOMATIC);
+        $this->assertSame('Retry it from the queue.', TransportError::NEXT_MANUAL);
+        $this->assertSame('Test the connection again in a minute.', TransportError::NEXT_TEST_AGAIN);
     }
 
     #[Test]

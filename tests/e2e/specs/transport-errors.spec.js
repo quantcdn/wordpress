@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { resetPlugin, configurePlugin, mockRequests, mockFail, wp, postIdBySlug } = require('../lib/wp');
+const { resetPlugin, configurePlugin, mockRequests, mockFail, wp, wpEval, postIdBySlug } = require('../lib/wp');
 const { processQueue, waitForMock } = require('../lib/queue');
 const { gotoQuant, rest } = require('../lib/admin');
 
@@ -60,5 +60,22 @@ test.describe('Quant API stalls and gateway errors', () => {
     expect(content).toContain('[post:');
     expect(content).toContain('Quant did not answer in time. The plugin will try again.');
     expect(content).toMatch(/ {3}Detail: http_request_failed: cURL error 28: .* \(3 attempts\)/);
+  });
+
+  test('on the last attempt the card says to retry from the queue', async ({ page }) => {
+    await mockFail({ path: '/v1', status: 503, times: 3 });
+    await gotoQuant(page, 'content');
+    await rest(page, '/sync', { method: 'POST', data: { items: [{ type: 'post', id: postIdBySlug('third-post') }], action: 'sync' } });
+    // As if WP-Cron had already tried the job twice.
+    wpEval('global $wpdb; $wpdb->query("UPDATE {$wpdb->prefix}quant_sync_queue SET attempts = 2 WHERE status = \'pending\'");');
+    processQueue();
+
+    expect(await publishAttempts('/third-post')).toBe(3);
+    const errors = await rest(page, '/queue/errors');
+    expect(errors[0].error_message).toBe('API error publishing /third-post: Quant is busy or unavailable (HTTP 503). Retry it from the queue.');
+
+    await gotoQuant(page, 'dashboard');
+    await expect(page.getByText('Quant is busy or unavailable (HTTP 503). Retry it from the queue.')).toBeVisible();
+    await expect(page.getByText(/will try again/)).toHaveCount(0);
   });
 });

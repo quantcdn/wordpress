@@ -190,7 +190,7 @@ final class WordPressHttpClientTest extends TestCase
         $this->assertSame([
             'code' => 0,
             'body' => '',
-            'error' => 'Quant did not answer in time. The plugin will try again.',
+            'error' => 'Quant did not answer in time.',
             'detail' => "http_request_failed: {$raw}",
             'transport' => true,
         ], $response);

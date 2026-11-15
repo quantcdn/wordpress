@@ -102,10 +102,12 @@ class Publisher
     {
         $errors = [];
         $details = [];
+        $transient = false;
         foreach (array_unique($paths) as $path) {
             $response = $this->api->unpublish($path);
             if (!$response->success) {
                 $errors[] = "{$path}: {$response->message}";
+                $transient = $transient || $response->transient;
                 if ($response->detail !== '') {
                     $details[] = "{$path}: {$response->detail}";
                 }
@@ -113,7 +115,7 @@ class Publisher
         }
 
         if ($errors !== []) {
-            throw new QuantApiException(esc_html('API error unpublishing: ' . implode('; ', $errors)), implode('; ', $details));
+            throw new QuantApiException(esc_html('API error unpublishing: ' . implode('; ', $errors)), implode('; ', $details), $transient);
         }
 
         $this->purgeVariants(array_values(array_unique($paths)));

@@ -27,7 +27,12 @@ class QuantContentApi implements ContentApiInterface
 
     public function ping(): ApiResponse
     {
-        return $this->parse($this->http->get($this->url('/ping'), $this->headers()));
+        $response = $this->parse($this->http->get($this->url('/ping'), $this->headers()));
+        if (!$response->transient) {
+            return $response;
+        }
+
+        return ApiResponse::error("{$response->message} " . TransportError::NEXT_TEST_AGAIN, $response->statusCode, $response->data, $response->detail, true);
     }
 
     public function publish(string $url, string $markup, array $info = [], array $options = []): ApiResponse
@@ -132,12 +137,14 @@ class QuantContentApi implements ContentApiInterface
     {
         $errors = [];
         $details = [];
+        $transient = false;
 
         foreach ($this->purgeVariants((array) $paths) as $variant) {
             $response = $this->http->post($this->url('/purge'), $this->headers(['Quant-Url' => $variant]));
             $parsed = $this->parse($response);
             if (!$parsed->success) {
                 $errors[] = "{$variant}: {$parsed->message}";
+                $transient = $transient || $parsed->transient;
                 if ($parsed->detail !== '') {
                     $details[] = "{$variant}: {$parsed->detail}";
                 }
@@ -145,7 +152,7 @@ class QuantContentApi implements ContentApiInterface
         }
 
         if ($errors !== []) {
-            return ApiResponse::error('Failed to purge: ' . implode('; ', $errors), 400, [], implode('; ', $details));
+            return ApiResponse::error('Failed to purge: ' . implode('; ', $errors), 400, [], implode('; ', $details), $transient);
         }
 
         return ApiResponse::success([], 'Cache purged successfully');
@@ -320,7 +327,7 @@ class QuantContentApi implements ContentApiInterface
     private function parse(array $response): ApiResponse
     {
         if (isset($response['error'])) {
-            return ApiResponse::error((string) $response['error'], 0, [], $this->withAttempts((string) ($response['detail'] ?? ''), $response));
+            return ApiResponse::error((string) $response['error'], 0, [], $this->withAttempts((string) ($response['detail'] ?? ''), $response), !empty($response['transport']));
         }
 
         $code = (int) ($response['code'] ?? 0);
@@ -340,7 +347,7 @@ class QuantContentApi implements ContentApiInterface
         // A 5xx answer is often a proxy's HTML page: show the short message, keep the text.
         $detail = $message ?? trim("HTTP {$code}: " . $this->excerpt((string) ($response['body'] ?? '')), ': ');
 
-        return ApiResponse::error($friendly, $code, $body, $this->withAttempts($detail, $response));
+        return ApiResponse::error($friendly, $code, $body, $this->withAttempts($detail, $response), true);
     }
 
     /**

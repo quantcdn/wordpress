@@ -15,9 +15,13 @@ use RuntimeException;
  */
 final class QuantApiException extends RuntimeException
 {
+    /**
+     * @param bool $transient Quant did not answer or answered 5xx; the job can work on a later attempt.
+     */
     public function __construct(
         string $message,
-        public readonly string $detail = ''
+        public readonly string $detail = '',
+        public readonly bool $transient = false
     ) {
         parent::__construct($message);
     }
@@ -29,6 +33,6 @@ final class QuantApiException extends RuntimeException
     {
         $message = $context === '' ? $response->message : "{$context}: {$response->message}";
 
-        return new self(esc_html($message), $response->detail);
+        return new self(esc_html($message), $response->detail, $response->transient);
     }
 }

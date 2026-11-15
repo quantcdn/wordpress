@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Admin;
 
 use Quant\Api\ContentApiInterface;
+use Quant\Core\Scheduler;
 use Quant\Core\Settings;
 use Quant\Core\SiteTime;
 use Quant\Redirects\RedirectProvider;
@@ -121,7 +122,7 @@ class RestController
             ],
             'next_cron' => $nextCron,
             'next_cron_label' => $nextCron === null ? null : SiteTime::time($nextCron),
-            'cron_disabled' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
+            'cron_disabled' => !Scheduler::backgroundProcessingEnabled(),
         ];
     }
 

@@ -151,7 +151,7 @@ final class DatabaseQueueTest extends TestCase
     public function it_claims_pending_jobs_atomically_and_returns_them_with_meta(): void
     {
         $rows = [
-            ['job_id' => 'job-1', 'type' => 'taxonomy', 'object_id' => '7', 'action' => 'publish', 'created_at' => '2026-01-15 10:00:00', 'meta' => '{"taxonomy":"category","page":1}'],
+            ['job_id' => 'job-1', 'type' => 'taxonomy', 'object_id' => '7', 'action' => 'publish', 'created_at' => '2026-01-15 10:00:00', 'meta' => '{"taxonomy":"category","page":1}', 'attempts' => '1'],
             ['job_id' => 'job-2', 'type' => 'page', 'object_id' => '9', 'action' => 'unpublish', 'created_at' => '2026-01-15 10:01:00', 'meta' => null],
         ];
 
@@ -159,7 +159,7 @@ final class DatabaseQueueTest extends TestCase
             ->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'SET status = %s, claim = %s') && str_contains($sql, 'ORDER BY id ASC') && str_contains($sql, 'LIMIT %d')))
             ->andReturn(2);
         $this->wpdb->shouldReceive('get_results')->once()
-            ->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'WHERE claim = %s AND status = %s')), ARRAY_A)
+            ->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'WHERE claim = %s AND status = %s') && str_contains($sql, 'meta, attempts')), ARRAY_A)
             ->andReturn($rows);
 
         $jobs = $this->queue->fetchPending(10);
@@ -167,6 +167,8 @@ final class DatabaseQueueTest extends TestCase
         $this->assertCount(2, $jobs);
         $this->assertSame(SyncType::Taxonomy, $jobs[0]->type);
         $this->assertSame(['taxonomy' => 'category', 'page' => 1], $jobs[0]->meta);
+        $this->assertSame(1, $jobs[0]->attempts);
+        $this->assertSame(0, $jobs[1]->attempts);
         $this->assertSame([], $jobs[1]->meta);
         $this->assertSame(SyncAction::Unpublish, $jobs[1]->action);
     }
@@ -220,7 +222,7 @@ final class DatabaseQueueTest extends TestCase
         $this->wpdb->shouldReceive('prepare')->once()->with(
             Mockery::type('string'),
             'failed',
-            'API error publishing /a: Quant did not answer in time. The plugin will try again.',
+            'API error publishing /a: Quant did not answer in time. Retry it from the queue.',
             $detail,
             Mockery::type('string'),
             'job-1',
@@ -228,7 +230,7 @@ final class DatabaseQueueTest extends TestCase
         )->andReturn('update_sql');
         $this->wpdb->shouldReceive('query')->once()->with('update_sql');
 
-        $this->queue->markFailed('job-1', 'API error publishing /a: Quant did not answer in time. The plugin will try again.', $detail);
+        $this->queue->markFailed('job-1', 'API error publishing /a: Quant did not answer in time. Retry it from the queue.', $detail);
     }
 
     #[Test]

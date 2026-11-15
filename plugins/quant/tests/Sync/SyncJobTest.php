@@ -55,9 +55,11 @@ final class SyncJobTest extends TestCase
             'action' => 'publish',
             'created_at' => '2026-01-15 10:00:00',
             'meta' => '{"to":"/new","code":301}',
+            'attempts' => '2',
         ]);
 
         $this->assertSame('abc', $job->id);
+        $this->assertSame(2, $job->attempts);
         $this->assertSame(SyncType::Redirect, $job->type);
         $this->assertSame(['to' => '/new', 'code' => 301], $job->meta);
         $this->assertSame('2026-01-15 10:00:00', $job->createdAt->format('Y-m-d H:i:s'));

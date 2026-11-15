@@ -110,7 +110,7 @@ final class DatabaseQueue implements SyncQueueInterface
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
         $select = $this->wpdb->prepare(
-            "SELECT job_id, type, object_id, action, created_at, meta
+            "SELECT job_id, type, object_id, action, created_at, meta, attempts
              FROM {$this->tableName}
              WHERE claim = %s AND status = %s
              ORDER BY id ASC",

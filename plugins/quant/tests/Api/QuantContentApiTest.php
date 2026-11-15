@@ -274,7 +274,7 @@ final class QuantContentApiTest extends TestCase
 
         $this->http->respondWith(['code' => 500, 'body' => 'not json']);
         $server = $this->api->ping();
-        $this->assertSame(sprintf(TransportError::SERVER, 500), $server->message);
+        $this->assertSame(sprintf(TransportError::SERVER, 500) . ' ' . TransportError::NEXT_TEST_AGAIN, $server->message);
         $this->assertSame('HTTP 500: not json', $server->detail);
         $this->assertSame(500, $server->statusCode);
 
@@ -346,7 +346,8 @@ final class QuantContentApiTest extends TestCase
 
         $this->assertFalse($response->success);
         $this->assertCount(3, $this->http->calls);
-        $this->assertSame('Quant did not answer in time. The plugin will try again.', $response->message);
+        $this->assertSame('Quant did not answer in time.', $response->message);
+        $this->assertTrue($response->transient);
         $this->assertSame(self::TIMEOUT['detail'] . ' (3 attempts)', $response->detail);
         $this->assertSame(0, $response->statusCode);
     }
@@ -376,6 +377,7 @@ final class QuantContentApiTest extends TestCase
         $this->assertCount(1, $this->http->calls);
         $this->assertSame('Bad content', $response->message);
         $this->assertSame('', $response->detail);
+        $this->assertFalse($response->transient);
     }
 
     #[Test]
@@ -386,8 +388,32 @@ final class QuantContentApiTest extends TestCase
         $response = $this->apiWithRetry()->publish('/a', '<p>a</p>');
 
         $this->assertSame(sprintf(TransportError::UNAVAILABLE, 502), $response->message);
+        $this->assertTrue($response->transient);
         $this->assertSame('HTTP 502: 502 Bad Gateway (3 attempts)', $response->detail);
         $this->assertSame(502, $response->statusCode);
+    }
+
+    #[Test]
+    public function a_failed_connection_test_says_to_test_again(): void
+    {
+        $this->http->respondWith(self::TIMEOUT);
+        $this->assertSame('Quant did not answer in time. Test the connection again in a minute.', $this->api->ping()->message);
+
+        $this->http->respondWith(['code' => 503, 'body' => '']);
+        $this->assertSame('Quant is busy or unavailable (HTTP 503). Test the connection again in a minute.', $this->api->ping()->message);
+
+        $this->http->respondWith(['code' => 403, 'body' => json_encode(['errorMsg' => 'Invalid credentials'])]);
+        $this->assertSame('Invalid credentials', $this->api->ping()->message);
+    }
+
+    #[Test]
+    public function a_failed_purge_is_transient_when_one_variant_was(): void
+    {
+        $this->http->respondOk()->respondWith(['code' => 504, 'body' => '']);
+        $this->assertTrue($this->api->purge('/x')->transient);
+
+        $this->http->respondOk()->respondWith(['code' => 400, 'body' => json_encode(['message' => 'bad'])]);
+        $this->assertFalse($this->api->purge('/x')->transient);
     }
 
     #[Test]

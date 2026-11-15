@@ -12,15 +12,27 @@ use WP_Error;
  * The raw transport text ("cURL error 28: Operation timed out after ...")
  * helps support but means nothing to an editor. The admin shows the short
  * message; the raw text is kept as a detail for diagnostics.
+ *
+ * The reasons do not say what happens next. Only the caller knows that, so
+ * the caller adds one of the NEXT_* sentences: the queue adds NEXT_AUTOMATIC
+ * or NEXT_MANUAL (Quant\Sync\JobProcessor), the connection test adds
+ * NEXT_TEST_AGAIN (QuantContentApi::ping).
  */
 final class TransportError
 {
-    public const TIMEOUT = 'Quant did not answer in time. The plugin will try again.';
-    public const DNS = 'The Quant API address could not be found (DNS lookup failed). The plugin will try again.';
-    public const TLS = 'A secure connection to Quant could not be made (TLS error). The plugin will try again.';
-    public const CONNECTION = 'The connection to Quant failed. The plugin will try again.';
-    public const UNAVAILABLE = 'Quant is busy or unavailable (HTTP %d). The plugin will try again.';
-    public const SERVER = 'Quant had a server error (HTTP %d). The plugin will try again.';
+    public const TIMEOUT = 'Quant did not answer in time.';
+    public const DNS = 'The Quant API address could not be found (DNS lookup failed).';
+    public const TLS = 'A secure connection to Quant could not be made (TLS error).';
+    public const CONNECTION = 'The connection to Quant failed.';
+    public const UNAVAILABLE = 'Quant is busy or unavailable (HTTP %d).';
+    public const SERVER = 'Quant had a server error (HTTP %d).';
+
+    /** The job has attempts left and background processing runs. */
+    public const NEXT_AUTOMATIC = 'The plugin will try again.';
+    /** The job used all attempts, or nothing runs the queue in the background. */
+    public const NEXT_MANUAL = 'Retry it from the queue.';
+    /** A failed connection test. */
+    public const NEXT_TEST_AGAIN = 'Test the connection again in a minute.';
 
     /**
      * Patterns over the raw message, checked in order. WordPress reports all

@@ -45,7 +45,7 @@ final class FileHandler implements HandlerInterface
     {
         $result = $this->media->sync($attachmentId);
         if (!$result->success) {
-            throw new QuantApiException(esc_html($result->message), $result->detail);
+            throw new QuantApiException(esc_html($result->message), $result->detail, $result->transient);
         }
     }
 
@@ -54,7 +54,7 @@ final class FileHandler implements HandlerInterface
         $failures = array_filter($this->themeAssets->syncActiveTheme(), static fn($r): bool => !$r->success);
         if ($failures !== []) {
             $first = reset($failures);
-            throw new QuantApiException(esc_html(count($failures) . " theme assets failed, first: {$first->path}: {$first->message}"), $first->detail);
+            throw new QuantApiException(esc_html(count($failures) . " theme assets failed, first: {$first->path}: {$first->message}"), $first->detail, $first->transient);
         }
     }
 

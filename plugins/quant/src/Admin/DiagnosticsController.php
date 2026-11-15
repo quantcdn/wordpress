@@ -119,7 +119,7 @@ class DiagnosticsController
                 'php_memory_limit' => ini_get('memory_limit'),
                 'php_max_execution_time' => ini_get('max_execution_time'),
                 'is_multisite' => is_multisite(),
-                'cron_disabled' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
+                'cron_disabled' => !\Quant\Core\Scheduler::backgroundProcessingEnabled(),
                 'next_queue_run' => wp_next_scheduled('quant_process_queue') ?: null,
                 'permalink_structure' => get_option('permalink_structure') ?: 'plain',
             ],

@@ -27,6 +27,16 @@ class Scheduler
     public const SCHEDULED_SYNC_HOOK = 'quant_scheduled_sync';
     public const INTERVAL = 'quant_every_minute';
 
+    /**
+     * Whether WP-Cron runs the queue (and its retryDue backoff) in the
+     * background. The same check as the dashboard's "WP-Cron is disabled"
+     * warning (RestController, DiagnosticsController).
+     */
+    public static function backgroundProcessingEnabled(): bool
+    {
+        return !(defined('DISABLE_WP_CRON') && DISABLE_WP_CRON);
+    }
+
     public function __construct(
         private readonly Settings $settings,
         private readonly SyncQueueInterface $queue,
@@ -97,7 +107,7 @@ class Scheduler
         // Not from WP-CLI: there the site URL is the stored (often public, static)
         // domain, and spawn_cron() would only set a lock that delays the next run.
         $cli = defined('WP_CLI') && WP_CLI;
-        if (!$this->spawnRequested && !$cli && !wp_doing_cron() && !(defined('DISABLE_WP_CRON') && DISABLE_WP_CRON)) {
+        if (!$this->spawnRequested && !$cli && !wp_doing_cron() && self::backgroundProcessingEnabled()) {
             $this->spawnRequested = true;
             add_action('shutdown', [$this, 'spawnCron'], 100);
         }
