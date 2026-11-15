@@ -12,6 +12,19 @@ use WP_Error;
  */
 class WordPressHttpClient implements HttpClientInterface
 {
+    /** Uploads and large publish bodies get at least this timeout (seconds). */
+    public const UPLOAD_MIN_TIMEOUT = 120;
+
+    /**
+     * A JSON body this size or larger gets UPLOAD_MIN_TIMEOUT. A typical page
+     * is 50-300 KB of HTML. At a slow 256 kbit/s uplink (32 KB/s), 512 KB
+     * takes about 16 s to send, which leaves about half of the default 30 s
+     * timeout for Quant to process the page (find_attachments parses all of
+     * it). A larger body could time out on the upload alone, so it gets the
+     * same allowance as a file upload.
+     */
+    public const LARGE_BODY_BYTES = 512 * 1024;
+
     /**
      * @param Closure(): array{timeout: int, sslverify: bool} $options Resolved per request so settings changes apply immediately.
      */
@@ -104,7 +117,7 @@ class WordPressHttpClient implements HttpClientInterface
 
     /**
      * @param array<string, string> $headers
-     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string}
+     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string, detail?: string, transport?: bool}
      */
     private function uploadBuffered(string $url, array $headers, string $filePath, string $fieldName): array
     {
@@ -126,7 +139,7 @@ class WordPressHttpClient implements HttpClientInterface
             'Content-Type' => "multipart/form-data; boundary={$boundary}",
         ]));
         $args['body'] = $payload;
-        $args['timeout'] = max($args['timeout'], 120);
+        $args['timeout'] = max($args['timeout'], self::UPLOAD_MIN_TIMEOUT);
 
         return $this->send($url, $args);
     }
@@ -134,14 +147,17 @@ class WordPressHttpClient implements HttpClientInterface
     /**
      * @param array<string, string> $headers
      * @param array<mixed> $body
-     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string}
+     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string, detail?: string, transport?: bool}
      */
     private function request(string $method, string $url, array $headers, array $body = []): array
     {
         $args = $this->baseArgs($method, array_merge(['Content-Type' => 'application/json'], $headers));
 
         if ($body !== []) {
-            $args['body'] = wp_json_encode($body);
+            $args['body'] = (string) wp_json_encode($body);
+            if (strlen($args['body']) >= self::LARGE_BODY_BYTES) {
+                $args['timeout'] = max($args['timeout'], self::UPLOAD_MIN_TIMEOUT);
+            }
         }
 
         return $this->send($url, $args);
@@ -164,15 +180,22 @@ class WordPressHttpClient implements HttpClientInterface
     }
 
     /**
+     * WordPress does not pass a connect timeout to its transport, so the
+     * Requests library default applies (10 s, for cURL and fsockopen alike).
+     * A host that does not accept the connection fails after 10 s, not after
+     * the full request timeout.
+     *
      * @param array<string, mixed> $args
-     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string}
+     * @return array{code: int, body: string, headers?: array<string, mixed>, error?: string, detail?: string, transport?: bool}
      */
     private function send(string $url, array $args): array
     {
         $response = wp_remote_request($url, $args);
 
         if ($response instanceof WP_Error) {
-            return ['code' => 0, 'body' => '', 'error' => $response->get_error_message()];
+            $error = TransportError::fromWpError($response);
+
+            return ['code' => 0, 'body' => '', 'error' => $error['message'], 'detail' => $error['detail'], 'transport' => $error['transport']];
         }
 
         $headers = wp_remote_retrieve_headers($response);

@@ -27,6 +27,29 @@ class Scheduler
     public const SCHEDULED_SYNC_HOOK = 'quant_scheduled_sync';
     public const INTERVAL = 'quant_every_minute';
 
+    /** Unix time of the last scheduled queue run (processQueue). */
+    public const OPTION_LAST_RUN = 'quant_last_queue_run';
+
+    /** A run within this many seconds means something runs the queue in the background. */
+    public const RECENT_RUN = 900;
+
+    /**
+     * Whether the queue (and its retryDue backoff) runs in the background:
+     * WP-Cron is enabled, or a scheduled run happened recently. The second
+     * case covers DISABLE_WP_CRON with a system cron that calls wp-cron.php.
+     */
+    public static function backgroundProcessingEnabled(): bool
+    {
+        $cronDisabled = defined('DISABLE_WP_CRON') && DISABLE_WP_CRON;
+
+        return self::isBackgroundActive($cronDisabled, $cronDisabled ? (int) get_option(self::OPTION_LAST_RUN, 0) : 0, time());
+    }
+
+    public static function isBackgroundActive(bool $cronDisabled, int $lastRun, int $now): bool
+    {
+        return !$cronDisabled || ($lastRun > 0 && $now - $lastRun <= self::RECENT_RUN);
+    }
+
     public function __construct(
         private readonly Settings $settings,
         private readonly SyncQueueInterface $queue,
@@ -97,7 +120,7 @@ class Scheduler
         // Not from WP-CLI: there the site URL is the stored (often public, static)
         // domain, and spawn_cron() would only set a lock that delays the next run.
         $cli = defined('WP_CLI') && WP_CLI;
-        if (!$this->spawnRequested && !$cli && !wp_doing_cron() && !(defined('DISABLE_WP_CRON') && DISABLE_WP_CRON)) {
+        if (!$this->spawnRequested && !$cli && !wp_doing_cron() && self::backgroundProcessingEnabled()) {
             $this->spawnRequested = true;
             add_action('shutdown', [$this, 'spawnCron'], 100);
         }
@@ -117,6 +140,7 @@ class Scheduler
             return;
         }
 
+        update_option(self::OPTION_LAST_RUN, time(), false);
         $this->maintain();
 
         /** This filter is documented in v2.0.0; it sets how many jobs one cron run processes. */

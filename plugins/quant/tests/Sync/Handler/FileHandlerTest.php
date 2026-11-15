@@ -20,6 +20,7 @@ use Quant\Sync\SyncJob;
 use Quant\Sync\SyncType;
 use Quant\Sync\ThemeAssetSync;
 use Quant\Tests\Support\WordPressStubs;
+use Quant\Sync\Exception\QuantApiException;
 use RuntimeException;
 
 #[CoversClass(FileHandler::class)]
@@ -103,6 +104,41 @@ final class FileHandlerTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('too large');
         $this->handler->handle(new SyncJob(SyncType::Media, '9', SyncAction::Publish));
+    }
+
+    #[Test]
+    public function it_carries_the_raw_detail_of_a_failed_media_upload(): void
+    {
+        $attachment = $this->makePost(9, 'attachment');
+        $attachment->post_mime_type = 'application/pdf';
+        Functions\when('get_post')->justReturn($attachment);
+        Functions\when('get_attached_file')->justReturn($this->file);
+        Functions\when('wp_get_attachment_url')->justReturn('https://example.com/wp-content/uploads/doc.pdf');
+        Functions\when('wp_get_attachment_metadata')->justReturn([]);
+        $this->api->shouldReceive('uploadFile')->once()->andReturn(ApiResponse::error('Quant did not answer in time.', 0, [], 'raw transport text', true));
+
+        try {
+            $this->handler->handle(new SyncJob(SyncType::Media, '9', SyncAction::Publish));
+            $this->fail('Expected an exception');
+        } catch (QuantApiException $e) {
+            $this->assertSame('Quant did not answer in time.', $e->getMessage());
+            $this->assertSame('raw transport text', $e->detail);
+            $this->assertTrue($e->transient);
+        }
+    }
+
+    #[Test]
+    public function it_carries_the_raw_detail_of_a_failed_file_upload(): void
+    {
+        $this->api->shouldReceive('uploadFile')->once()->andReturn(ApiResponse::error('busy', 503, [], 'HTTP 503: down'));
+
+        try {
+            $this->handler->handle(new SyncJob(SyncType::File, '/style.css', SyncAction::Publish, ['file' => $this->file, 'url' => '/style.css']));
+            $this->fail('Expected an exception');
+        } catch (QuantApiException $e) {
+            $this->assertSame('API error uploading /style.css: busy', $e->getMessage());
+            $this->assertSame('HTTP 503: down', $e->detail);
+        }
     }
 
     #[Test]

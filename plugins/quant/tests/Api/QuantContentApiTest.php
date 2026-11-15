@@ -11,6 +11,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Quant\Api\ApiResponse;
 use Quant\Api\QuantContentApi;
+use Quant\Api\RetryPolicy;
+use Quant\Api\TransportError;
 use Quant\Tests\Support\FakeHttpClient;
 use Quant\Tests\Support\WordPressStubs;
 
@@ -37,7 +39,7 @@ final class QuantContentApiTest extends TestCase
             'project' => 'site',
             'token' => 'secret',
             'endpoint' => 'https://api.quantcdn.io/',
-        ]), $this->http);
+        ]), $this->http, RetryPolicy::none());
 
         $this->file = tempnam(sys_get_temp_dir(), 'quant');
         file_put_contents($this->file, 'hello');
@@ -230,7 +232,8 @@ final class QuantContentApiTest extends TestCase
         $response = $this->api->purge('/x');
 
         $this->assertFalse($response->success);
-        $this->assertSame('Failed to purge: /x/: edge down', $response->message);
+        $this->assertSame('Failed to purge: /x/: ' . sprintf(TransportError::SERVER, 500), $response->message);
+        $this->assertSame('/x/: edge down', $response->detail);
     }
 
     #[Test]
@@ -270,7 +273,10 @@ final class QuantContentApiTest extends TestCase
         $this->assertSame(403, $forbidden->statusCode);
 
         $this->http->respondWith(['code' => 500, 'body' => 'not json']);
-        $this->assertSame('HTTP 500', $this->api->ping()->message);
+        $server = $this->api->ping();
+        $this->assertSame(sprintf(TransportError::SERVER, 500) . ' ' . TransportError::NEXT_TEST_AGAIN, $server->message);
+        $this->assertSame('HTTP 500: not json', $server->detail);
+        $this->assertSame(500, $server->statusCode);
 
         $this->http->respondWith(['code' => 200, 'body' => json_encode(['error' => 'Project deleted'])]);
         $this->assertSame('Project deleted', $this->api->ping()->message);
@@ -280,5 +286,160 @@ final class QuantContentApiTest extends TestCase
         $this->assertFalse($transport->success);
         $this->assertSame('cURL error 7', $transport->message);
         $this->assertSame(0, $transport->statusCode);
+    }
+
+    /** @var array<int> */
+    private array $slept = [];
+
+    private function apiWithRetry(): QuantContentApi
+    {
+        return new QuantContentApi($this->mockSettings(credentials: [
+            'organization' => 'acme',
+            'project' => 'site',
+            'token' => 'secret',
+            'endpoint' => 'https://api.quantcdn.io/',
+        ]), $this->http, new RetryPolicy(maxJitterMs: 0, sleep: function (int $ms): void {
+            $this->slept[] = $ms;
+        }));
+    }
+
+    private const TIMEOUT = [
+        'code' => 0,
+        'body' => '',
+        'error' => TransportError::TIMEOUT,
+        'detail' => 'http_request_failed: cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received',
+        'transport' => true,
+    ];
+
+    #[Test]
+    public function it_retries_a_publish_after_a_gateway_error(): void
+    {
+        $this->http->respondWith(['code' => 503, 'body' => ''])->respondWith(['code' => 502, 'body' => ''])->respondOk(['ok' => true]);
+
+        $response = $this->apiWithRetry()->publish('/a', '<p>a</p>');
+
+        $this->assertTrue($response->success);
+        $this->assertCount(3, $this->http->calls);
+        $this->assertSame([1000, 3000], $this->slept);
+    }
+
+    #[Test]
+    public function it_retries_file_uploads_after_a_transport_failure(): void
+    {
+        $api = $this->apiWithRetry();
+
+        $this->http->respondWith(self::TIMEOUT)->respondOk();
+        $this->assertTrue($api->uploadFile('/a.txt', $this->file)->success);
+
+        $this->http->respondWith(self::TIMEOUT)->respondOk();
+        $this->assertTrue($api->uploadContents('/sitemap.xml', '<urlset/>')->success);
+
+        $this->assertSame(['UPLOAD', 'UPLOAD', 'UPLOAD_CONTENTS', 'UPLOAD_CONTENTS'], array_column($this->http->calls, 'method'));
+    }
+
+    #[Test]
+    public function it_gives_up_after_two_retries_with_a_short_message_and_the_raw_detail(): void
+    {
+        $this->http->alwaysRespond(self::TIMEOUT);
+
+        $response = $this->apiWithRetry()->publish('/a', '<p>a</p>');
+
+        $this->assertFalse($response->success);
+        $this->assertCount(3, $this->http->calls);
+        $this->assertSame('Quant did not answer in time.', $response->message);
+        $this->assertTrue($response->transient);
+        $this->assertSame(self::TIMEOUT['detail'] . ' (3 attempts)', $response->detail);
+        $this->assertSame(0, $response->statusCode);
+    }
+
+    #[Test]
+    public function it_does_not_retry_calls_that_are_not_publish_or_upload(): void
+    {
+        $api = $this->apiWithRetry();
+        $this->http->alwaysRespond(['code' => 503, 'body' => '']);
+
+        $api->unpublish('/a');
+        $api->createRedirect('/a', '/b');
+        $api->ping();
+        $api->sendSearchRecords([['url' => '/a']]);
+
+        $this->assertCount(4, $this->http->calls);
+        $this->assertSame([], $this->slept);
+    }
+
+    #[Test]
+    public function it_does_not_retry_a_client_error(): void
+    {
+        $this->http->alwaysRespond(['code' => 400, 'body' => json_encode(['message' => 'Bad content'])]);
+
+        $response = $this->apiWithRetry()->publish('/a', '<p>a</p>');
+
+        $this->assertCount(1, $this->http->calls);
+        $this->assertSame('Bad content', $response->message);
+        $this->assertSame('', $response->detail);
+        $this->assertFalse($response->transient);
+    }
+
+    #[Test]
+    public function it_hides_a_gateway_error_page_behind_a_short_message(): void
+    {
+        $this->http->alwaysRespond(['code' => 502, 'body' => "<html><body>\n<h1>502 Bad Gateway</h1>\n</body></html>"]);
+
+        $response = $this->apiWithRetry()->publish('/a', '<p>a</p>');
+
+        $this->assertSame(sprintf(TransportError::UNAVAILABLE, 502), $response->message);
+        $this->assertTrue($response->transient);
+        $this->assertSame('HTTP 502: 502 Bad Gateway (3 attempts)', $response->detail);
+        $this->assertSame(502, $response->statusCode);
+    }
+
+    #[Test]
+    public function a_non_transport_failure_is_not_retried_and_not_transient(): void
+    {
+        $this->http->alwaysRespond(['code' => 0, 'body' => '', 'error' => 'The request to Quant failed.', 'detail' => 'http_request_failed: Too many redirects.', 'transport' => false]);
+
+        $response = $this->apiWithRetry()->publish('/a', '<p>a</p>');
+
+        $this->assertCount(1, $this->http->calls);
+        $this->assertFalse($response->transient);
+        $this->assertSame('http_request_failed: Too many redirects.', $response->detail);
+    }
+
+    #[Test]
+    public function a_failed_connection_test_says_to_test_again(): void
+    {
+        $this->http->respondWith(self::TIMEOUT);
+        $this->assertSame('Quant did not answer in time. Test the connection again in a minute.', $this->api->ping()->message);
+
+        $this->http->respondWith(['code' => 503, 'body' => '']);
+        $this->assertSame('Quant is busy or unavailable (HTTP 503). Test the connection again in a minute.', $this->api->ping()->message);
+
+        $this->http->respondWith(['code' => 403, 'body' => json_encode(['errorMsg' => 'Invalid credentials'])]);
+        $this->assertSame('Invalid credentials', $this->api->ping()->message);
+    }
+
+    #[Test]
+    public function a_failed_purge_is_transient_when_one_variant_was(): void
+    {
+        $this->http->respondOk()->respondWith(['code' => 504, 'body' => '']);
+        $this->assertTrue($this->api->purge('/x')->transient);
+
+        $this->http->respondOk()->respondWith(['code' => 400, 'body' => json_encode(['message' => 'bad'])]);
+        $this->assertFalse($this->api->purge('/x')->transient);
+    }
+
+    #[Test]
+    public function the_detail_is_added_in_brackets_only_for_administrators(): void
+    {
+        $this->assertSame('busy (HTTP 503: down)', ApiResponse::error('busy', 503, [], 'HTTP 503: down')->messageWithDetail());
+        $this->assertSame('Bad content', ApiResponse::error('Bad content')->messageWithDetail());
+    }
+
+    #[Test]
+    public function it_still_treats_an_unchanged_file_as_success_when_the_api_says_so(): void
+    {
+        $this->http->respondWith(['code' => 400, 'body' => json_encode(['message' => 'MD5 already matches'])]);
+
+        $this->assertTrue($this->api->uploadFile('/a.txt', $this->file)->success);
     }
 }

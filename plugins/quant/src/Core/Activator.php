@@ -8,7 +8,8 @@ use Quant\Sync\DatabaseQueue;
 
 class Activator
 {
-    public const DB_VERSION = '2.0.3';
+    /** Bump with every schema change; Upgrader runs dbDelta when it differs. 2.0.6 adds error_detail. */
+    public const DB_VERSION = '2.0.6';
 
     public static function activate(): void
     {
@@ -47,6 +48,7 @@ class Activator
             status VARCHAR(20) DEFAULT 'pending',
             attempts TINYINT DEFAULT 0,
             error_message TEXT NULL,
+            error_detail TEXT NULL,
             meta LONGTEXT NULL,
             claim VARCHAR(36) NULL,
             dedupe_key CHAR(32) NULL,
@@ -63,7 +65,25 @@ class Activator
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
 
+        self::markSchemaCurrent($wpdb, $tableName);
+    }
+
+    /**
+     * Record the schema version only when the newest column exists, so a
+     * failed dbDelta (permissions, a locked table) runs again on the next
+     * request instead of being marked done.
+     */
+    public static function markSchemaCurrent(\wpdb $wpdb, string $tableName): bool
+    {
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
+        $column = $wpdb->get_var($wpdb->prepare("SHOW COLUMNS FROM `{$tableName}` LIKE %s", 'error_detail'));
+        if ($column !== 'error_detail') {
+            return false;
+        }
+
         update_option('quant_db_version', self::DB_VERSION);
+
+        return true;
     }
 
     private static function setDefaultOptions(): void

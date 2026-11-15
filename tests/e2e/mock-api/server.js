@@ -10,6 +10,8 @@
  *   DELETE /_mock/requests                 clear requests AND state
  *   GET    /_mock/state                    published, files, redirects, search, facets, unpublished
  *   POST   /_mock/fail {path,status,times} fail the next N requests to path
+ *                                         (delayMs: wait that long first, to
+ *                                         make the plugin's request time out)
  *   POST   /_mock/platform {mode,custom_ranking,facets} "aws" makes the project
  *                                         a QuantGov (Typesense) search project;
  *                                         facets replaces the registered facets
@@ -383,7 +385,11 @@ async function routeContentApi(req, res, url, raw) {
   record(req, url, body);
 
   const fail = takeFailure(url.pathname);
-  if (fail) return send(res, fail.status, { error: true, errorMsg: 'Simulated failure' });
+  if (fail) {
+    if (fail.delayMs) await new Promise((resolve) => setTimeout(resolve, fail.delayMs));
+    if (res.destroyed || res.writableEnded) return;
+    return send(res, fail.status, { error: true, errorMsg: 'Simulated failure' });
+  }
 
   if (!isAuthorized(req)) return send(res, 403, { error: true, errorMsg: 'Invalid credentials' });
 
@@ -497,7 +503,7 @@ function routeInspection(req, res, url, raw) {
   if (m === 'POST' && p === '/_mock/fail') {
     const body = parseJson(raw) || {};
     if (!body.path) return send(res, 400, { error: 'path required' });
-    failures.push({ path: body.path, status: body.status || 500, times: body.times || 1 });
+    failures.push({ path: body.path, status: body.status || 500, times: body.times || 1, delayMs: Number(body.delayMs) || 0 });
     return send(res, 200, { success: true, failures });
   }
   if (m === 'POST' && p === '/_mock/platform') {

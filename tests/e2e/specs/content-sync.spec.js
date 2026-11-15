@@ -111,8 +111,10 @@ test.describe('content sync (static mode)', () => {
     await page.locator('#quant-admin-root h1').first().waitFor();
     await expect(page.locator('tr', { hasText: 'Third Post' }).locator('.quant-status-badge')).toHaveText('Failed');
 
+    // The card shows the short message; the API's own text is only in the diagnostics.
     await gotoQuant(page, 'dashboard');
-    await expect(page.getByText('Simulated failure')).toBeVisible();
+    await expect(page.getByText('Quant had a server error (HTTP 500). The plugin will try again.')).toBeVisible();
+    await expect(page.getByText('Simulated failure')).toHaveCount(0);
     await screenshot(page, 'dashboard-failed-job');
 
     await page.getByRole('button', { name: 'Retry failed' }).click();

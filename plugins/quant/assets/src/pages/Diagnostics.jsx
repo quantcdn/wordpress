@@ -9,6 +9,7 @@ import {
 } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
+import { errorReportLines } from './queueErrors';
 
 export function Diagnostics() {
 	const [ diagnostics, setDiagnostics ] = useState( null );
@@ -82,6 +83,13 @@ export function Diagnostics() {
 				data.environment?.php_max_execution_time || 'Unknown'
 			}`,
 			`Multisite: ${ data.environment?.is_multisite ? 'Yes' : 'No' }`,
+			`WP-Cron Disabled: ${
+				data.environment?.cron_disabled ? 'Yes' : 'No'
+			}`,
+			`Background Processing: ${
+				data.environment?.background_processing ? 'Yes' : 'No'
+			}`,
+			`Last Queue Run: ${ data.environment?.last_queue_run || 'Never' }`,
 			'',
 			'## Plugin Configuration',
 			`Mode: ${ data.plugin?.mode || 'Unknown' }`,
@@ -93,6 +101,9 @@ export function Diagnostics() {
 			'## API Connection',
 			`Connected: ${ data.api?.connected ? 'Yes' : 'No' }`,
 			data.api?.error ? `Error: ${ data.api.error }` : '',
+			data.api?.error_detail
+				? `Error detail: ${ data.api.error_detail }`
+				: null,
 			'',
 			'## Database',
 			`V2 Table Exists: ${
@@ -121,18 +132,7 @@ export function Diagnostics() {
 			'',
 		];
 
-		if ( data.recent_errors && data.recent_errors.length > 0 ) {
-			lines.push( '## Recent Errors' );
-			data.recent_errors.forEach( ( err, i ) => {
-				lines.push(
-					`${ i + 1 }. [${ err.type }:${ err.object_id }] ${
-						err.error_message
-					}`
-				);
-				lines.push( `   At: ${ err.processed_at }` );
-			} );
-			lines.push( '' );
-		}
+		lines.push( ...errorReportLines( data.recent_errors ) );
 
 		lines.push( '='.repeat( 60 ) );
 		lines.push( 'End of Report' );

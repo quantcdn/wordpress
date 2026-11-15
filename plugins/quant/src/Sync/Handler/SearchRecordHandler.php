@@ -6,10 +6,10 @@ namespace Quant\Sync\Handler;
 
 use Quant\Api\ContentApiInterface;
 use Quant\Search\SearchRecordBuilder;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\SyncAction;
 use Quant\Sync\SyncJob;
 use Quant\Sync\SyncType;
-use RuntimeException;
 use WP_Post;
 
 /**
@@ -42,7 +42,7 @@ final class SearchRecordHandler implements HandlerInterface
 
         $response = $this->api->sendSearchRecords([$record]);
         if (!$response->success) {
-            throw new RuntimeException(esc_html("API error indexing {$record['url']}: {$response->message}"));
+            throw QuantApiException::fromResponse("API error indexing {$record['url']}", $response);
         }
     }
 }

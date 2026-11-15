@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Sync\Handler;
 
 use Quant\Api\ContentApiInterface;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\Exception\RedirectResponseException;
 use Quant\Sync\Exception\UnpublishedContentException;
 use Quant\Sync\Paths;
@@ -89,7 +90,7 @@ final class RoutePublishHandler implements HandlerInterface
     {
         $response = $this->api->uploadFile(Paths::normalise(strtok($path, '?') ?: $path), $file);
         if (!$response->success) {
-            throw new RuntimeException(esc_html("API error uploading {$path}: {$response->message}"));
+            throw QuantApiException::fromResponse("API error uploading {$path}", $response);
         }
     }
 }

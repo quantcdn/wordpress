@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Quant\Sync\Handler;
 
 use Quant\Api\ContentApiInterface;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\SyncAction;
 use Quant\Sync\SyncJob;
-use RuntimeException;
 
 final class PurgeHandler implements HandlerInterface
 {
@@ -27,7 +27,7 @@ final class PurgeHandler implements HandlerInterface
         $response = $this->api->purge(array_values(array_filter($paths, 'is_string')));
 
         if (!$response->success) {
-            throw new RuntimeException(esc_html($response->message));
+            throw QuantApiException::fromResponse('', $response);
         }
     }
 }

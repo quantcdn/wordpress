@@ -30,9 +30,12 @@ interface SyncQueueInterface
     public function markCompleted(string $jobId): void;
 
     /**
-     * Mark a job as failed with an error message.
+     * Mark a job as failed.
+     *
+     * @param string $error Short message the admin shows.
+     * @param string $detail Raw transport or server text, kept for the diagnostics only.
      */
-    public function markFailed(string $jobId, string $error): void;
+    public function markFailed(string $jobId, string $error, string $detail = ''): void;
 
     public function getStatus(): QueueStatus;
 

@@ -11,6 +11,9 @@ use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Quant\Core\Scheduler;
+use Quant\Sync\DatabaseQueue;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\Handler\HandlerInterface;
 use Quant\Sync\JobProcessor;
 use Quant\Sync\SyncAction;
@@ -97,7 +100,7 @@ final class JobProcessorTest extends TestCase
         $this->queue->shouldReceive('recoverStale')->once();
         $this->queue->shouldReceive('fetchPending')->once()->with(20)->andReturn([$ok, $bad]);
         $this->queue->shouldReceive('markCompleted')->once()->with($ok->id);
-        $this->queue->shouldReceive('markFailed')->once()->with($bad->id, 'HTTP 500');
+        $this->queue->shouldReceive('markFailed')->once()->with($bad->id, 'HTTP 500', '');
         Actions\expectDone('quant_sync_job_failed')->once()->with($bad, Mockery::type(RuntimeException::class));
 
         $result = (new JobProcessor($this->queue, $this->mockSettings(), [$handler]))->run(20, 25);
@@ -105,6 +108,104 @@ final class JobProcessorTest extends TestCase
         $this->assertSame(1, $result->processed);
         $this->assertSame(1, $result->failed);
         $this->assertSame(['post 2: HTTP 500'], $result->errors);
+    }
+
+    /**
+     * Run one job that fails with $error and return the message stored for it.
+     */
+    private function failOnce(\Throwable $error, int $attempts, bool $background): string
+    {
+        $this->stubCommonWordPressFunctions();
+        $job = new SyncJob(SyncType::Post, '7', SyncAction::Publish, [], 'job-7', null, $attempts);
+        $handler = $this->handler(SyncType::Post, static function () use ($error): void {
+            throw $error;
+        });
+
+        $stored = null;
+        $this->queue->shouldReceive('recoverStale')->once();
+        $this->queue->shouldReceive('fetchPending')->once()->andReturn([$job]);
+        $this->queue->shouldReceive('markFailed')->once()->andReturnUsing(static function (string $id, string $message, string $detail) use (&$stored): void {
+            $stored = [$id, $message, $detail];
+        });
+        Actions\expectDone('quant_sync_job_failed')->once();
+
+        $result = (new JobProcessor($this->queue, $this->mockSettings(), [$handler], static fn(): bool => $background))->run(20, 25);
+
+        $this->assertSame('job-7', $stored[0]);
+        $this->assertSame(["post 7: {$stored[1]}"], $result->errors);
+        $this->assertSame($error instanceof QuantApiException ? $error->detail : '', $stored[2]);
+
+        return $stored[1];
+    }
+
+    private function timeout(): QuantApiException
+    {
+        return new QuantApiException('API error publishing /a: Quant did not answer in time.', 'http_request_failed: cURL error 28: timed out', true);
+    }
+
+    #[Test]
+    public function a_transient_failure_with_attempts_left_says_the_plugin_will_try_again(): void
+    {
+        $this->assertSame(
+            'API error publishing /a: Quant did not answer in time. The plugin will try again.',
+            $this->failOnce($this->timeout(), 0, true)
+        );
+    }
+
+    #[Test]
+    public function the_last_attempt_says_to_retry_from_the_queue(): void
+    {
+        // DatabaseQueue::retryDue only requeues while attempts < MAX_ATTEMPTS after this failure.
+        $this->assertSame(
+            'API error publishing /a: Quant did not answer in time. Select Retry failed on the dashboard.',
+            $this->failOnce($this->timeout(), DatabaseQueue::MAX_ATTEMPTS - 1, true)
+        );
+    }
+
+    #[Test]
+    public function without_background_processing_it_says_to_retry_from_the_queue(): void
+    {
+        $this->assertSame(
+            'API error publishing /a: Quant did not answer in time. Select Retry failed on the dashboard.',
+            $this->failOnce($this->timeout(), 0, false)
+        );
+    }
+
+    #[Test]
+    public function the_busy_message_follows_the_same_rule(): void
+    {
+        $busy = new QuantApiException('API error publishing /a: Quant is busy or unavailable (HTTP 503).', 'HTTP 503', true);
+
+        $this->assertSame('API error publishing /a: Quant is busy or unavailable (HTTP 503). The plugin will try again.', $this->failOnce($busy, 1, true));
+    }
+
+    #[Test]
+    public function the_busy_message_on_the_last_attempt_says_to_retry_from_the_queue(): void
+    {
+        $busy = new QuantApiException('API error publishing /a: Quant is busy or unavailable (HTTP 503).', 'HTTP 503', true);
+
+        $this->assertSame('API error publishing /a: Quant is busy or unavailable (HTTP 503). Select Retry failed on the dashboard.', $this->failOnce($busy, 2, true));
+    }
+
+    #[Test]
+    public function a_permanent_api_error_gets_no_next_step(): void
+    {
+        $this->assertSame('API error publishing /a: Invalid credentials', $this->failOnce(new QuantApiException('API error publishing /a: Invalid credentials'), 0, true));
+        $this->assertSame('HTTP 404 response for /gone', $this->failOnceAgain(new RuntimeException('HTTP 404 response for /gone')));
+    }
+
+    private function failOnceAgain(\Throwable $error): string
+    {
+        $this->queue = Mockery::mock(SyncQueueInterface::class);
+
+        return $this->failOnce($error, 0, true);
+    }
+
+    #[Test]
+    public function background_processing_follows_disable_wp_cron(): void
+    {
+        // DISABLE_WP_CRON is not defined in the unit tests.
+        $this->assertTrue(Scheduler::backgroundProcessingEnabled());
     }
 
     #[Test]

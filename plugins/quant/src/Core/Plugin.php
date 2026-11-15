@@ -63,9 +63,11 @@ class Plugin
             $c->get(Settings::class)
         ));
 
+        // One RetryPolicy per request: its circuit breaker and retry budget are request-wide.
         $c->singleton(Api\ContentApiInterface::class, static fn(Container $c): Api\ContentApiInterface => new Api\QuantContentApi(
             $c->get(Settings::class),
-            $c->get(Api\HttpClientInterface::class)
+            $c->get(Api\HttpClientInterface::class),
+            new Api\RetryPolicy()
         ));
 
         $c->singleton(Sync\SyncQueueInterface::class, static function (): Sync\SyncQueueInterface {

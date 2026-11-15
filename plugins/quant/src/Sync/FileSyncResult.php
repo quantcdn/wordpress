@@ -16,7 +16,9 @@ final class FileSyncResult
         public readonly bool $success,
         public readonly string $path,
         public readonly string $message = '',
-        public readonly array $meta = []
+        public readonly array $meta = [],
+        public readonly string $detail = '',
+        public readonly bool $transient = false
     ) {
     }
 
@@ -32,9 +34,12 @@ final class FileSyncResult
 
     /**
      * Create a failure result.
+     *
+     * @param string $detail Raw transport or server text for diagnostics.
+     * @param bool $transient The same upload can work later (see ApiResponse::$transient).
      */
-    public static function failure(string $path, string $message): self
+    public static function failure(string $path, string $message, string $detail = '', bool $transient = false): self
     {
-        return new self(false, $path, $message);
+        return new self(false, $path, $message, [], $detail, $transient);
     }
 }

@@ -75,7 +75,7 @@ final class ThemeAssetSync
         $response = $this->api->uploadFile($cdnPath, $localPath);
 
         if (!$response->success) {
-            return FileSyncResult::failure($cdnPath, $response->message);
+            return FileSyncResult::failure($cdnPath, $response->message, $response->detail, $response->transient);
         }
 
         return FileSyncResult::success($cdnPath);

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Quant\Sync;
 
+use Closure;
+use Quant\Api\TransportError;
+use Quant\Core\Scheduler;
 use Quant\Core\Settings;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\Handler\HandlerInterface;
 use RuntimeException;
 use Throwable;
@@ -17,15 +21,21 @@ class JobProcessor
     /** @var array<HandlerInterface> */
     private array $handlers;
 
+    /** @var Closure(): bool */
+    private readonly Closure $backgroundProcessing;
+
     /**
      * @param array<HandlerInterface> $handlers
+     * @param (Closure(): bool)|null $backgroundProcessing Whether WP-Cron retries failed jobs (injected in tests).
      */
     public function __construct(
         private readonly SyncQueueInterface $queue,
         private readonly Settings $settings,
-        array $handlers
+        array $handlers,
+        ?Closure $backgroundProcessing = null
     ) {
         $this->handlers = $handlers;
+        $this->backgroundProcessing = $backgroundProcessing ?? Scheduler::backgroundProcessingEnabled(...);
     }
 
     /**
@@ -92,7 +102,9 @@ class JobProcessor
         } catch (Throwable $e) {
             // Messages are HTML-escaped when thrown; store them as plain text.
             $message = $e->getMessage() !== '' ? html_entity_decode($e->getMessage(), ENT_QUOTES | ENT_HTML5) : get_class($e);
-            $this->queue->markFailed($job->id, $message);
+            $detail = $e instanceof QuantApiException ? $e->detail : '';
+            $message = $this->withNextStep($message, $job, $e);
+            $this->queue->markFailed($job->id, $message, $detail);
             $errors[] = "{$job->type->value} {$job->objectId}: {$message}";
 
             /** This action is documented in v2.0.0; it fires when a sync job fails. */
@@ -100,5 +112,22 @@ class JobProcessor
 
             return false;
         }
+    }
+
+    /**
+     * Tell the editor what happens next after a transient failure, and only
+     * what is true: DatabaseQueue::retryDue requeues a failed job while it has
+     * attempts left, but only when WP-Cron runs the queue.
+     */
+    private function withNextStep(string $message, SyncJob $job, Throwable $e): string
+    {
+        if (!$e instanceof QuantApiException || !$e->transient) {
+            return $message;
+        }
+
+        $attemptsLeft = $job->attempts + 1 < DatabaseQueue::MAX_ATTEMPTS;
+        $next = $attemptsLeft && ($this->backgroundProcessing)() ? TransportError::NEXT_AUTOMATIC : TransportError::NEXT_MANUAL;
+
+        return "{$message} {$next}";
     }
 }

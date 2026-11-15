@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Sync\Handler;
 
 use Quant\Api\ContentApiInterface;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\MediaSync;
 use Quant\Sync\Paths;
 use Quant\Sync\SyncAction;
@@ -44,7 +45,7 @@ final class FileHandler implements HandlerInterface
     {
         $result = $this->media->sync($attachmentId);
         if (!$result->success) {
-            throw new RuntimeException(esc_html($result->message));
+            throw new QuantApiException(esc_html($result->message), $result->detail, $result->transient);
         }
     }
 
@@ -53,7 +54,7 @@ final class FileHandler implements HandlerInterface
         $failures = array_filter($this->themeAssets->syncActiveTheme(), static fn($r): bool => !$r->success);
         if ($failures !== []) {
             $first = reset($failures);
-            throw new RuntimeException(esc_html(count($failures) . " theme assets failed, first: {$first->path}: {$first->message}"));
+            throw new QuantApiException(esc_html(count($failures) . " theme assets failed, first: {$first->path}: {$first->message}"), $first->detail, $first->transient);
         }
     }
 
@@ -71,7 +72,7 @@ final class FileHandler implements HandlerInterface
 
         $response = $this->api->uploadFile(Paths::normalise(strtok($url, '?') ?: $url), $file);
         if (!$response->success) {
-            throw new RuntimeException(esc_html("API error uploading {$url}: {$response->message}"));
+            throw QuantApiException::fromResponse("API error uploading {$url}", $response);
         }
     }
 }

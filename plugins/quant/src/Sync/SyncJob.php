@@ -14,6 +14,7 @@ final class SyncJob implements JsonSerializable
 
     /**
      * @param array<string, mixed> $meta
+     * @param int $attempts Failed or stalled runs so far (from the queue table).
      */
     public function __construct(
         public readonly SyncType $type,
@@ -22,6 +23,7 @@ final class SyncJob implements JsonSerializable
         public readonly array $meta = [],
         ?string $id = null,
         ?DateTimeImmutable $createdAt = null,
+        public readonly int $attempts = 0,
     ) {
         $this->id = $id ?? uniqid('', true);
         $this->createdAt = $createdAt ?? new DateTimeImmutable();
@@ -30,7 +32,7 @@ final class SyncJob implements JsonSerializable
     /**
      * Create a SyncJob from database row data.
      *
-     * @param array{job_id: string, type: string, object_id: string, action: string, created_at: string, meta?: string|null} $row
+     * @param array{job_id: string, type: string, object_id: string, action: string, created_at: string, meta?: string|null, attempts?: int|string} $row
      */
     public static function fromDatabaseRow(array $row): self
     {
@@ -41,6 +43,7 @@ final class SyncJob implements JsonSerializable
             meta: self::decodeMeta($row['meta'] ?? null),
             id: $row['job_id'],
             createdAt: new DateTimeImmutable($row['created_at']),
+            attempts: (int) ($row['attempts'] ?? 0),
         );
     }
 

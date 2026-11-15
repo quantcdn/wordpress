@@ -110,7 +110,7 @@ final class DatabaseQueue implements SyncQueueInterface
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
         $select = $this->wpdb->prepare(
-            "SELECT job_id, type, object_id, action, created_at, meta
+            "SELECT job_id, type, object_id, action, created_at, meta, attempts
              FROM {$this->tableName}
              WHERE claim = %s AND status = %s
              ORDER BY id ASC",
@@ -136,26 +136,33 @@ final class DatabaseQueue implements SyncQueueInterface
             [
                 'status' => self::STATUS_COMPLETED,
                 'error_message' => null,
+                'error_detail' => null,
                 'processed_at' => gmdate('Y-m-d H:i:s'),
             ],
             ['job_id' => $jobId, 'status' => self::STATUS_PROCESSING],
-            ['%s', '%s', '%s'],
+            ['%s', '%s', '%s', '%s'],
             ['%s', '%s']
         );
     }
 
-    public function markFailed(string $jobId, string $error): void
+    /**
+     * error_message holds the short text the admin shows; error_detail holds
+     * the raw transport or server text for the diagnostics (NULL when empty).
+     */
+    public function markFailed(string $jobId, string $error, string $detail = ''): void
     {
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
         $sql = $this->wpdb->prepare(
             "UPDATE {$this->tableName}
              SET status = %s,
                  error_message = %s,
+                 error_detail = NULLIF(%s, ''),
                  attempts = attempts + 1,
                  processed_at = %s
              WHERE job_id = %s AND status = %s",
             self::STATUS_FAILED,
             mb_substr($error, 0, 2000),
+            mb_substr($detail, 0, 4000),
             gmdate('Y-m-d H:i:s'),
             $jobId,
             self::STATUS_PROCESSING
@@ -216,6 +223,7 @@ final class DatabaseQueue implements SyncQueueInterface
              SET status = %s,
                  attempts = 0,
                  error_message = NULL,
+                 error_detail = NULL,
                  processed_at = NULL
              WHERE status = %s",
             self::STATUS_PENDING,
@@ -241,13 +249,15 @@ final class DatabaseQueue implements SyncQueueInterface
              SET attempts = attempts + 1,
                  claim = NULL,
                  status = IF(attempts >= %d, %s, %s),
-                 error_message = IF(attempts >= %d, %s, error_message)
+                 error_message = IF(attempts >= %d, %s, error_message),
+                 error_detail = IF(attempts >= %d, NULL, error_detail)
              WHERE status = %s AND (processed_at IS NULL OR processed_at < %s)",
             self::MAX_ATTEMPTS,
             self::STATUS_FAILED,
             self::STATUS_PENDING,
             self::MAX_ATTEMPTS,
             'Processing did not finish (timeout, memory limit or fatal error)',
+            self::MAX_ATTEMPTS,
             self::STATUS_PROCESSING,
             $cutoff
         );
@@ -334,15 +344,16 @@ final class DatabaseQueue implements SyncQueueInterface
     }
 
     /**
-     * Recent failures for diagnostics.
+     * Recent failures for diagnostics. error_message is for display;
+     * error_detail (raw transport text, may be NULL) is for the diagnostics report.
      *
-     * @return array<int, array{type: string, object_id: string, error_message: string, processed_at: string}>
+     * @return array<int, array{type: string, object_id: string, error_message: string, error_detail: ?string, processed_at: string}>
      */
     public function recentErrors(int $limit = 10): array
     {
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
         $sql = $this->wpdb->prepare(
-            "SELECT type, object_id, error_message, processed_at
+            "SELECT type, object_id, error_message, error_detail, processed_at
              FROM {$this->tableName}
              WHERE status = %s AND error_message IS NOT NULL
              ORDER BY processed_at DESC

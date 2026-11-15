@@ -270,7 +270,7 @@ export function Progress( {
 						) }
 						{ state !== 'active' && failedRun > 0 && (
 							<Button variant="secondary" onClick={ handleRetry }>
-								{ __( 'Retry Failed', 'quant' ) }
+								{ __( 'Retry failed', 'quant' ) }
 							</Button>
 						) }
 						{ state !== 'active' && (
