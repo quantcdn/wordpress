@@ -16,7 +16,8 @@ final class FileSyncResult
         public readonly bool $success,
         public readonly string $path,
         public readonly string $message = '',
-        public readonly array $meta = []
+        public readonly array $meta = [],
+        public readonly string $detail = ''
     ) {
     }
 
@@ -32,9 +33,11 @@ final class FileSyncResult
 
     /**
      * Create a failure result.
+     *
+     * @param string $detail Raw transport or server text for diagnostics.
      */
-    public static function failure(string $path, string $message): self
+    public static function failure(string $path, string $message, string $detail = ''): self
     {
-        return new self(false, $path, $message);
+        return new self(false, $path, $message, [], $detail);
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Sync;
 
 use Quant\Core\Settings;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\Handler\HandlerInterface;
 use RuntimeException;
 use Throwable;
@@ -92,7 +93,8 @@ class JobProcessor
         } catch (Throwable $e) {
             // Messages are HTML-escaped when thrown; store them as plain text.
             $message = $e->getMessage() !== '' ? html_entity_decode($e->getMessage(), ENT_QUOTES | ENT_HTML5) : get_class($e);
-            $this->queue->markFailed($job->id, $message);
+            $detail = $e instanceof QuantApiException ? $e->detail : '';
+            $this->queue->markFailed($job->id, $message, $detail);
             $errors[] = "{$job->type->value} {$job->objectId}: {$message}";
 
             /** This action is documented in v2.0.0; it fires when a sync job fails. */

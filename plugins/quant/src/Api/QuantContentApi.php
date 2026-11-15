@@ -12,12 +12,16 @@ use Quant\Core\Settings;
  * Paths follow the Quant Content API: markup and files go to POST /v1, files
  * as multipart with a Quant-File-Url header, unpublish is PATCH /v1/unpublish
  * with Quant-Url, purge is POST /v1/purge with Quant-Url.
+ *
+ * Publish and upload replace the content at a URL, so they are safe to send
+ * again: they go through the RetryPolicy. Other calls are sent once.
  */
 class QuantContentApi implements ContentApiInterface
 {
     public function __construct(
         private readonly Settings $settings,
-        private readonly HttpClientInterface $http
+        private readonly HttpClientInterface $http,
+        private readonly RetryPolicy $retry = new RetryPolicy()
     ) {
     }
 
@@ -47,7 +51,7 @@ class QuantContentApi implements ContentApiInterface
             }
         }
 
-        return $this->parse($this->http->post($this->url(''), $this->headers(), $body));
+        return $this->parse($this->retry->run(fn(): array => $this->http->post($this->url(''), $this->headers(), $body)));
     }
 
     public function unpublish(string $url): ApiResponse
@@ -73,15 +77,15 @@ class QuantContentApi implements ContentApiInterface
             return ApiResponse::error("File not found: {$localPath}");
         }
 
-        $response = $this->http->upload(
+        $response = $this->retry->run(fn(): array => $this->http->upload(
             $this->url(''),
             $this->headers(['Quant-File-Url' => $this->normalisePath($path)]),
             $localPath
-        );
+        ));
 
         $parsed = $this->parse($response);
 
-        if (!$parsed->success && str_contains(strtolower($parsed->message), 'md5 already matches')) {
+        if ($this->isUnchangedFile($parsed)) {
             return ApiResponse::success($parsed->data, 'File unchanged');
         }
 
@@ -93,14 +97,14 @@ class QuantContentApi implements ContentApiInterface
         $path = $this->normalisePath($path);
         $filename = basename(strtok($path, '?') ?: $path) ?: 'index.html';
 
-        $parsed = $this->parse($this->http->uploadContents(
+        $parsed = $this->parse($this->retry->run(fn(): array => $this->http->uploadContents(
             $this->url(''),
             $this->headers(['Quant-File-Url' => $path]),
             $contents,
             $filename
-        ));
+        )));
 
-        if (!$parsed->success && str_contains(strtolower($parsed->message), 'md5 already matches')) {
+        if ($this->isUnchangedFile($parsed)) {
             return ApiResponse::success($parsed->data, 'File unchanged');
         }
 
@@ -127,17 +131,21 @@ class QuantContentApi implements ContentApiInterface
     public function purge(string|array $paths): ApiResponse
     {
         $errors = [];
+        $details = [];
 
         foreach ($this->purgeVariants((array) $paths) as $variant) {
             $response = $this->http->post($this->url('/purge'), $this->headers(['Quant-Url' => $variant]));
             $parsed = $this->parse($response);
             if (!$parsed->success) {
                 $errors[] = "{$variant}: {$parsed->message}";
+                if ($parsed->detail !== '') {
+                    $details[] = "{$variant}: {$parsed->detail}";
+                }
             }
         }
 
         if ($errors !== []) {
-            return ApiResponse::error('Failed to purge: ' . implode('; ', $errors));
+            return ApiResponse::error('Failed to purge: ' . implode('; ', $errors), 400, [], implode('; ', $details));
         }
 
         return ApiResponse::success([], 'Cache purged successfully');
@@ -299,12 +307,20 @@ class QuantContentApi implements ContentApiInterface
     }
 
     /**
-     * @param array{code?: int, body?: string, error?: string} $response
+     * "MD5 already matches" means the file at Quant is the same: a success.
+     */
+    private function isUnchangedFile(ApiResponse $parsed): bool
+    {
+        return !$parsed->success && str_contains(strtolower($parsed->message . ' ' . $parsed->detail), 'md5 already matches');
+    }
+
+    /**
+     * @param array<string, mixed> $response
      */
     private function parse(array $response): ApiResponse
     {
         if (isset($response['error'])) {
-            return ApiResponse::error((string) $response['error'], 0);
+            return ApiResponse::error((string) $response['error'], 0, [], $this->withAttempts((string) ($response['detail'] ?? ''), $response));
         }
 
         $code = (int) ($response['code'] ?? 0);
@@ -315,11 +331,48 @@ class QuantContentApi implements ContentApiInterface
             return ApiResponse::success($body);
         }
 
-        $message = $body['message'] ?? $body['errorMsg'] ?? null;
-        if (!is_string($message) || $message === '') {
-            $message = is_string($body['error'] ?? null) ? $body['error'] : "HTTP {$code}";
+        $message = $this->apiMessage($body);
+        $friendly = TransportError::forStatus($code);
+        if ($friendly === null) {
+            return ApiResponse::error($message ?? "HTTP {$code}", $code, $body);
         }
 
-        return ApiResponse::error($message, $code, $body);
+        // A 5xx answer is often a proxy's HTML page: show the short message, keep the text.
+        $detail = $message ?? trim("HTTP {$code}: " . $this->excerpt((string) ($response['body'] ?? '')), ': ');
+
+        return ApiResponse::error($friendly, $code, $body, $this->withAttempts($detail, $response));
+    }
+
+    /**
+     * @param array<mixed> $body
+     */
+    private function apiMessage(array $body): ?string
+    {
+        $message = $body['message'] ?? $body['errorMsg'] ?? null;
+        if (is_string($message) && $message !== '') {
+            return $message;
+        }
+
+        return is_string($body['error'] ?? null) && $body['error'] !== '' ? $body['error'] : null;
+    }
+
+    /**
+     * The visible text of an error page, shortened for the diagnostics.
+     */
+    private function excerpt(string $body): string
+    {
+        $text = trim((string) preg_replace('/\s+/', ' ', strip_tags($body)));
+
+        return mb_substr($text, 0, 300);
+    }
+
+    /**
+     * @param array<string, mixed> $response
+     */
+    private function withAttempts(string $detail, array $response): string
+    {
+        $attempts = (int) ($response['attempts'] ?? 1);
+
+        return $attempts > 1 ? trim("{$detail} ({$attempts} attempts)") : $detail;
     }
 }

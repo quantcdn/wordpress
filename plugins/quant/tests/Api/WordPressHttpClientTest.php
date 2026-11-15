@@ -179,13 +179,51 @@ final class WordPressHttpClientTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_transport_errors(): void
+    public function it_returns_a_short_message_for_a_transport_error_and_keeps_the_raw_text_as_detail(): void
     {
-        Functions\when('wp_remote_request')->justReturn(new \WP_Error('http_request_failed', 'timed out'));
+        $raw = 'cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received';
+        Functions\when('wp_remote_request')->justReturn(new \WP_Error('http_request_failed', $raw));
         $client = WordPressHttpClient::withDefaults();
 
         $response = $client->patch('https://api.test/v1/unpublish', ['Quant-Url' => '/x']);
 
-        $this->assertSame(['code' => 0, 'body' => '', 'error' => 'timed out'], $response);
+        $this->assertSame([
+            'code' => 0,
+            'body' => '',
+            'error' => 'Quant did not answer in time. The plugin will try again.',
+            'detail' => "http_request_failed: {$raw}",
+            'transport' => true,
+        ], $response);
+    }
+
+    #[Test]
+    public function it_keeps_the_configured_timeout_for_a_normal_json_publish(): void
+    {
+        $client = WordPressHttpClient::withDefaults(30, true);
+
+        $client->post('https://api.test/v1', [], ['url' => '/a', 'content' => str_repeat('x', 100 * 1024)]);
+
+        $this->assertSame(30, $this->captured['args']['timeout']);
+    }
+
+    #[Test]
+    public function it_gives_a_large_json_body_the_upload_timeout(): void
+    {
+        $client = WordPressHttpClient::withDefaults(30, true);
+
+        $client->post('https://api.test/v1', [], ['url' => '/a', 'content' => str_repeat('x', WordPressHttpClient::LARGE_BODY_BYTES)]);
+
+        $this->assertSame(WordPressHttpClient::UPLOAD_MIN_TIMEOUT, $this->captured['args']['timeout']);
+        $this->assertSame(120, WordPressHttpClient::UPLOAD_MIN_TIMEOUT);
+    }
+
+    #[Test]
+    public function a_longer_configured_timeout_wins_over_the_large_body_minimum(): void
+    {
+        $client = WordPressHttpClient::withDefaults(300, true);
+
+        $client->post('https://api.test/v1', [], ['content' => str_repeat('x', WordPressHttpClient::LARGE_BODY_BYTES)]);
+
+        $this->assertSame(300, $this->captured['args']['timeout']);
     }
 }

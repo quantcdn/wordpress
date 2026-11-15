@@ -45,7 +45,7 @@ final class MediaSync
         // Upload the main file
         $response = $this->api->uploadFile($cdnPath, $localPath);
         if (!$response->success) {
-            return FileSyncResult::failure($cdnPath, $response->message);
+            return FileSyncResult::failure($cdnPath, $response->message, $response->detail);
         }
 
         // Sync image sizes if this is an image

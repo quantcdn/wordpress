@@ -20,6 +20,7 @@ use Quant\Sync\SyncJob;
 use Quant\Sync\SyncQueueInterface;
 use Quant\Sync\SyncType;
 use Quant\Tests\Support\WordPressStubs;
+use Quant\Sync\Exception\QuantApiException;
 use RuntimeException;
 
 #[CoversClass(Publisher::class)]
@@ -141,6 +142,37 @@ final class PublisherTest extends TestCase
         $this->expectExceptionMessage('API error publishing /x: Invalid credentials');
 
         $this->publisher()->publish(new RenderedContent('/x', 'y'));
+    }
+
+    #[Test]
+    public function it_carries_the_raw_detail_of_a_failed_publish(): void
+    {
+        $this->api->shouldReceive('publish')->once()->andReturn(
+            ApiResponse::error('Quant did not answer in time. The plugin will try again.', 0, [], 'http_request_failed: cURL error 28: timed out')
+        );
+
+        try {
+            $this->publisher()->publish(new RenderedContent('/x', 'y'));
+            $this->fail('Expected an exception');
+        } catch (QuantApiException $e) {
+            $this->assertSame('API error publishing /x: Quant did not answer in time. The plugin will try again.', $e->getMessage());
+            $this->assertSame('http_request_failed: cURL error 28: timed out', $e->detail);
+        }
+    }
+
+    #[Test]
+    public function it_carries_the_details_of_failed_unpublishes(): void
+    {
+        $this->api->shouldReceive('unpublish')->once()->with('/a')->andReturn(ApiResponse::error('busy', 503, [], 'HTTP 503: down'));
+        $this->api->shouldReceive('unpublish')->once()->with('/b')->andReturn(ApiResponse::error('nope'));
+
+        try {
+            $this->publisher()->unpublish(['/a', '/b']);
+            $this->fail('Expected an exception');
+        } catch (QuantApiException $e) {
+            $this->assertSame('API error unpublishing: /a: busy; /b: nope', $e->getMessage());
+            $this->assertSame('/a: HTTP 503: down', $e->detail);
+        }
     }
 
     #[Test]

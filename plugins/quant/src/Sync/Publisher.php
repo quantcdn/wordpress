@@ -6,6 +6,7 @@ namespace Quant\Sync;
 
 use Quant\Api\ContentApiInterface;
 use Quant\Core\Settings;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\Renderer\RenderedContent;
 use RuntimeException;
 
@@ -36,7 +37,7 @@ class Publisher
         $response = $this->api->publish($content->url, $content->markup, $content->info, $content->options);
 
         if (!$response->success) {
-            throw new RuntimeException(esc_html("API error publishing {$content->url}: {$response->message}"));
+            throw QuantApiException::fromResponse("API error publishing {$content->url}", $response);
         }
 
         $attachments = $response->data['attachments'] ?? null;
@@ -68,7 +69,7 @@ class Publisher
 
         $response = $this->api->uploadContents($content->url, $content->markup);
         if (!$response->success) {
-            throw new RuntimeException(esc_html("API error uploading {$content->url}: {$response->message}"));
+            throw QuantApiException::fromResponse("API error uploading {$content->url}", $response);
         }
 
         $this->purgeVariants([$content->url]);
@@ -100,15 +101,19 @@ class Publisher
     public function unpublish(array $paths): void
     {
         $errors = [];
+        $details = [];
         foreach (array_unique($paths) as $path) {
             $response = $this->api->unpublish($path);
             if (!$response->success) {
                 $errors[] = "{$path}: {$response->message}";
+                if ($response->detail !== '') {
+                    $details[] = "{$path}: {$response->detail}";
+                }
             }
         }
 
         if ($errors !== []) {
-            throw new RuntimeException(esc_html('API error unpublishing: ' . implode('; ', $errors)));
+            throw new QuantApiException(esc_html('API error unpublishing: ' . implode('; ', $errors)), implode('; ', $details));
         }
 
         $this->purgeVariants(array_values(array_unique($paths)));

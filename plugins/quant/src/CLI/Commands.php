@@ -82,7 +82,7 @@ class Commands
             $search = !empty($response->data['config']['search_enabled']) ? 'enabled' : 'disabled';
             WP_CLI::success("Connected to the Quant API (search {$search}).");
         } else {
-            WP_CLI::error("Connection failed: {$response->message}");
+            WP_CLI::error("Connection failed: {$response->messageWithDetail()}");
         }
     }
 
@@ -95,7 +95,7 @@ class Commands
     {
         $this->requireCredentials();
         $response = $this->api->ping();
-        $response->success ? WP_CLI::success('pong') : WP_CLI::error($response->message);
+        $response->success ? WP_CLI::success('pong') : WP_CLI::error($response->messageWithDetail());
     }
 
     /**
@@ -566,7 +566,7 @@ class Commands
             return;
         }
 
-        WP_CLI\Utils\format_items('table', $errors, ['type', 'object_id', 'error_message', 'processed_at']);
+        WP_CLI\Utils\format_items('table', $errors, ['type', 'object_id', 'error_message', 'error_detail', 'processed_at']);
     }
 
     /**

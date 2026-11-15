@@ -95,12 +95,13 @@ class DiagnosticsController
     {
         global $wp_version, $wpdb;
 
-        $api = ['connected' => false, 'error' => null, 'search_enabled' => false];
+        $api = ['connected' => false, 'error' => null, 'error_detail' => null, 'search_enabled' => false];
         if ($this->settings->hasValidCredentials()) {
             $response = $this->api->ping();
             $api = [
                 'connected' => $response->success,
                 'error' => $response->success ? null : $response->message,
+                'error_detail' => $response->success || $response->detail === '' ? null : $response->detail,
                 'search_enabled' => !empty($response->data['config']['search_enabled']),
             ];
         }

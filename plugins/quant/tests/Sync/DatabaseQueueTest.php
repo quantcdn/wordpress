@@ -185,9 +185,9 @@ final class DatabaseQueueTest extends TestCase
     {
         $this->wpdb->shouldReceive('update')->once()->with(
             $this->table,
-            Mockery::on(static fn(array $data): bool => $data['status'] === 'completed' && $data['error_message'] === null && isset($data['processed_at'])),
+            Mockery::on(static fn(array $data): bool => $data['status'] === 'completed' && $data['error_message'] === null && $data['error_detail'] === null && isset($data['processed_at'])),
             ['job_id' => 'job-1', 'status' => 'processing'],
-            ['%s', '%s', '%s'],
+            ['%s', '%s', '%s', '%s'],
             ['%s', '%s']
         );
 
@@ -198,9 +198,12 @@ final class DatabaseQueueTest extends TestCase
     public function it_marks_a_job_failed_and_increments_attempts(): void
     {
         $this->wpdb->shouldReceive('prepare')->once()->with(
-            Mockery::on(static fn(string $sql): bool => str_contains($sql, 'attempts = attempts + 1') && str_contains($sql, 'WHERE job_id = %s AND status = %s')),
+            Mockery::on(static fn(string $sql): bool => str_contains($sql, 'attempts = attempts + 1')
+                && str_contains($sql, "error_detail = NULLIF(%s, '')")
+                && str_contains($sql, 'WHERE job_id = %s AND status = %s')),
             'failed',
             'Boom',
+            '',
             Mockery::type('string'),
             'job-1',
             'processing'
@@ -211,19 +214,38 @@ final class DatabaseQueueTest extends TestCase
     }
 
     #[Test]
+    public function it_stores_the_short_message_and_the_detail_separately(): void
+    {
+        $detail = 'http_request_failed: cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received';
+        $this->wpdb->shouldReceive('prepare')->once()->with(
+            Mockery::type('string'),
+            'failed',
+            'API error publishing /a: Quant did not answer in time. The plugin will try again.',
+            $detail,
+            Mockery::type('string'),
+            'job-1',
+            'processing'
+        )->andReturn('update_sql');
+        $this->wpdb->shouldReceive('query')->once()->with('update_sql');
+
+        $this->queue->markFailed('job-1', 'API error publishing /a: Quant did not answer in time. The plugin will try again.', $detail);
+    }
+
+    #[Test]
     public function it_truncates_long_error_messages(): void
     {
         $this->wpdb->shouldReceive('prepare')->once()->with(
             Mockery::type('string'),
             'failed',
             Mockery::on(static fn(string $message): bool => mb_strlen($message) === 2000),
+            Mockery::on(static fn(string $detail): bool => mb_strlen($detail) === 4000),
             Mockery::type('string'),
             'job-1',
             'processing'
         )->andReturn('sql');
         $this->wpdb->shouldReceive('query')->once();
 
-        $this->queue->markFailed('job-1', str_repeat('x', 5000));
+        $this->queue->markFailed('job-1', str_repeat('x', 5000), str_repeat('y', 9000));
     }
 
     #[Test]
@@ -266,7 +288,7 @@ final class DatabaseQueueTest extends TestCase
     #[Test]
     public function it_retries_failed_jobs_and_returns_the_count(): void
     {
-        $this->wpdb->shouldReceive('query')->once()->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'error_message = NULL') && str_contains($sql, 'attempts = 0')));
+        $this->wpdb->shouldReceive('query')->once()->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'error_message = NULL') && str_contains($sql, 'error_detail = NULL') && str_contains($sql, 'attempts = 0')));
         $this->wpdb->rows_affected = 3;
 
         $this->assertSame(3, $this->queue->retry());
@@ -279,12 +301,14 @@ final class DatabaseQueueTest extends TestCase
             Mockery::on(static fn(string $sql): bool => str_contains($sql, 'attempts = attempts + 1')
                 && str_contains($sql, 'claim = NULL')
                 && str_contains($sql, 'status = IF(attempts >= %d, %s, %s)')
+                && str_contains($sql, 'error_detail = IF(attempts >= %d, NULL, error_detail)')
                 && str_contains($sql, 'processed_at IS NULL OR processed_at < %s')),
             DatabaseQueue::MAX_ATTEMPTS,
             'failed',
             'pending',
             DatabaseQueue::MAX_ATTEMPTS,
             Mockery::on(static fn(string $m): bool => str_contains($m, 'did not finish')),
+            DatabaseQueue::MAX_ATTEMPTS,
             'processing',
             Mockery::on(static function (string $cutoff): bool {
                 $age = time() - strtotime($cutoff . ' UTC');
@@ -377,9 +401,9 @@ final class DatabaseQueueTest extends TestCase
     #[Test]
     public function it_lists_recent_errors(): void
     {
-        $rows = [['type' => 'post', 'object_id' => '1', 'error_message' => 'HTTP 500', 'processed_at' => '2026-01-01 00:00:00']];
+        $rows = [['type' => 'post', 'object_id' => '1', 'error_message' => 'HTTP 500', 'error_detail' => 'raw', 'processed_at' => '2026-01-01 00:00:00']];
         $this->wpdb->shouldReceive('get_results')->once()
-            ->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'error_message IS NOT NULL')), ARRAY_A)
+            ->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'error_message IS NOT NULL') && str_contains($sql, 'error_message, error_detail, processed_at')), ARRAY_A)
             ->andReturn($rows);
 
         $this->assertSame($rows, $this->queue->recentErrors(5));

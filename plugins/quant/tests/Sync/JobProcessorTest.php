@@ -11,6 +11,7 @@ use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\Handler\HandlerInterface;
 use Quant\Sync\JobProcessor;
 use Quant\Sync\SyncAction;
@@ -97,7 +98,7 @@ final class JobProcessorTest extends TestCase
         $this->queue->shouldReceive('recoverStale')->once();
         $this->queue->shouldReceive('fetchPending')->once()->with(20)->andReturn([$ok, $bad]);
         $this->queue->shouldReceive('markCompleted')->once()->with($ok->id);
-        $this->queue->shouldReceive('markFailed')->once()->with($bad->id, 'HTTP 500');
+        $this->queue->shouldReceive('markFailed')->once()->with($bad->id, 'HTTP 500', '');
         Actions\expectDone('quant_sync_job_failed')->once()->with($bad, Mockery::type(RuntimeException::class));
 
         $result = (new JobProcessor($this->queue, $this->mockSettings(), [$handler]))->run(20, 25);
@@ -105,6 +106,29 @@ final class JobProcessorTest extends TestCase
         $this->assertSame(1, $result->processed);
         $this->assertSame(1, $result->failed);
         $this->assertSame(['post 2: HTTP 500'], $result->errors);
+    }
+
+    #[Test]
+    public function it_stores_the_detail_of_an_api_failure_apart_from_the_message(): void
+    {
+        $this->stubCommonWordPressFunctions();
+        $job = new SyncJob(SyncType::Post, '7', SyncAction::Publish);
+        $handler = $this->handler(SyncType::Post, static function (): void {
+            throw new QuantApiException('API error publishing /a: Quant did not answer in time. The plugin will try again.', 'http_request_failed: cURL error 28: timed out');
+        });
+
+        $this->queue->shouldReceive('recoverStale')->once();
+        $this->queue->shouldReceive('fetchPending')->once()->andReturn([$job]);
+        $this->queue->shouldReceive('markFailed')->once()->with(
+            $job->id,
+            'API error publishing /a: Quant did not answer in time. The plugin will try again.',
+            'http_request_failed: cURL error 28: timed out'
+        );
+        Actions\expectDone('quant_sync_job_failed')->once();
+
+        $result = (new JobProcessor($this->queue, $this->mockSettings(), [$handler]))->run(20, 25);
+
+        $this->assertSame(['post 7: API error publishing /a: Quant did not answer in time. The plugin will try again.'], $result->errors);
     }
 
     #[Test]

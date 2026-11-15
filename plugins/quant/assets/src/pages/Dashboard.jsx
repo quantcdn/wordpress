@@ -10,6 +10,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { useEffect, useState, useCallback } from '@wordpress/element';
 import apiFetch from '@wordpress/api-fetch';
 import { useNavigate } from 'react-router-dom';
+import { visibleErrors } from './queueErrors';
 
 function Stat( { label, value, tone } ) {
 	return (
@@ -343,14 +344,14 @@ export function Dashboard() {
 									</tr>
 								</thead>
 								<tbody>
-									{ errors.slice( 0, 5 ).map( ( e, i ) => (
+									{ visibleErrors( errors ).map( ( e, i ) => (
 										<tr key={ i }>
 											<td>{ e.type }</td>
 											<td>
-												<code>{ e.object_id }</code>
+												<code>{ e.objectId }</code>
 											</td>
 											<td style={ { color: '#721c24' } }>
-												{ e.error_message }
+												{ e.message }
 											</td>
 										</tr>
 									) ) }

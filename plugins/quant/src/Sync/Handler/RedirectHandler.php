@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quant\Sync\Handler;
 
 use Quant\Api\ContentApiInterface;
+use Quant\Sync\Exception\QuantApiException;
 use Quant\Sync\SyncAction;
 use Quant\Sync\SyncJob;
 use Quant\Sync\SyncType;
@@ -32,7 +33,7 @@ final class RedirectHandler implements HandlerInterface
         if ($job->action === SyncAction::Unpublish) {
             $response = $this->api->unpublish($from);
             if (!$response->success) {
-                throw new RuntimeException(esc_html("API error removing redirect {$from}: {$response->message}"));
+                throw QuantApiException::fromResponse("API error removing redirect {$from}", $response);
             }
             return;
         }
@@ -44,7 +45,7 @@ final class RedirectHandler implements HandlerInterface
 
         $response = $this->api->createRedirect($from, $to, (int) ($job->meta['code'] ?? 301));
         if (!$response->success) {
-            throw new RuntimeException(esc_html("API error publishing redirect {$from}: {$response->message}"));
+            throw QuantApiException::fromResponse("API error publishing redirect {$from}", $response);
         }
     }
 }

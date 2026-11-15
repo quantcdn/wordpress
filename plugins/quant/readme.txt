@@ -72,6 +72,12 @@ Version 2.0 requires PHP 8.2. Sites on older PHP are not offered the update and 
 
 Set these to configure the plugin without the admin UI (for example on Quant Cloud): `QUANT_API_ENDPOINT`, `QUANT_CUSTOMER`, `QUANT_PROJECT`, `QUANT_TOKEN`, `QUANT_WEBSERVER_URL`, `QUANT_WEBSERVER_HOST`, `QUANT_ENABLED`, `QUANT_PURGE_ON_SAVE`, `QUANT_DISABLE_TLS_VERIFY`, `QUANT_HTTP_REQUEST_TIMEOUT`, `QUANT_MODE`. The same names work as PHP constants in `wp-config.php`. Overridden fields are read-only in the UI.
 
+`QUANT_HTTP_REQUEST_TIMEOUT` is the time in seconds that the plugin waits for one answer from the Quant API (default 30, minimum 5). It is the same value as "HTTP request timeout" on the Settings page. File uploads, and pages larger than 512 KB, always get at least 120 seconds. The connection itself must open within 10 seconds (the WordPress HTTP API default). Increase the value if a slow network makes pushes fail with "Quant did not answer in time":
+
+`
+define('QUANT_HTTP_REQUEST_TIMEOUT', 60);
+`
+
 == Styling the search page ==
 
 The search page (the page the plugin creates, the "Quant Search" block and the `[quant_search]` shortcode) uses the theme's fonts and text colour. Result titles are in the text colour and are underlined on hover and focus. Lines, count badges, tags and secondary text are mixes of the text colour, so the page also works on a dark theme. The plugin's own rules apply only inside `.quant-search`; the bundled InstantSearch.js theme styles the `ais-` widget classes.
@@ -130,11 +136,22 @@ The plugin renders pages by requesting them from the web server. Set **Webserver
 
 Enable search for the project in the Quant dashboard, then open **QuantCDN > Search**, turn on search records and create a search page. Place the "Quant Search" block or `[quant_search]` shortcode on any page for more search pages, and the "Quant Search Autocomplete" block or `[quant_search_autocomplete]` shortcode in a header or sidebar.
 
+= A push failed with "Quant did not answer in time" =
+
+The Quant API did not answer within the HTTP request timeout, or a gateway between your server and Quant was busy. The plugin sends a page or file again up to two times in the same run (after about 1 and 3 seconds). If it still fails, the job stays in the queue as failed, and the background run (WP-Cron) tries it again up to three times, with a longer wait each time. You can also press "Retry failed". The raw error text (for example the cURL error) is in the report from QuantCDN > Diagnostics > Download Report.
+
 = Forms on a static site =
 
 Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms). Contact Form 7 needs `define('WPCF7_LOAD_JS', false);`.
 
 == Changelog ==
+
+= 2.0.6 =
+* Fixed: when the Quant API did not answer, the push showed raw transport text such as "cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received". The dashboard queue card and the push progress now show a short message (for example "Quant did not answer in time. The plugin will try again."). The raw text is kept apart and is in the diagnostics report and in `wp quant queue errors`.
+* Fixed: one stalled request or gateway error (502, 503, 504) failed the page until the next background run, and the background run only happens when WP-Cron runs. A page or file push is now sent again up to two times in the same run, after about 1 and 3 seconds.
+* A page larger than 512 KB now gets the same 120 second minimum timeout as a file upload.
+* Readme: `QUANT_HTTP_REQUEST_TIMEOUT` is documented.
+* The queue table has a new column for the error detail. It is added automatically on the first request after the update.
 
 = 2.0.5 =
 * Search page: a cleaner default style that still follows the theme. The checkboxes, counts, headings, tags, buttons and pagination have even spacing, every control has a visible focus outline, the "Clear refinements" button uses the theme text colour (it was pale blue), the result title is larger than its summary, and on a phone the facets move above the results. The InstantSearch widgets no longer turn the text navy.
