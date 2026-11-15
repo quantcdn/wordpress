@@ -16,6 +16,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { SearchPageEditor } from '../components/SearchPageEditor/SearchPageEditor';
 import { Progress } from '../components/Progress/Progress';
+import { FormStack, FieldGroup } from '../components/FormStack/FormStack';
 import { REFRESH_DELAYS, indexMayStillChange } from './indexRefresh';
 
 /**
@@ -172,20 +173,22 @@ function PagesTable( { pages, onEdit, onDelete } ) {
 								: __( 'Disabled', 'quant' ) }
 						</td>
 						<td>{ page.facets.length }</td>
-						<td style={ { textAlign: 'right' } }>
-							<Button
-								variant="link"
-								onClick={ () => onEdit( page ) }
-							>
-								{ __( 'Edit', 'quant' ) }
-							</Button>{ ' ' }
-							<Button
-								variant="link"
-								isDestructive
-								onClick={ () => onDelete( page ) }
-							>
-								{ __( 'Delete', 'quant' ) }
-							</Button>
+						<td>
+							<Flex justify="flex-end" gap={ 3 }>
+								<Button
+									variant="link"
+									onClick={ () => onEdit( page ) }
+								>
+									{ __( 'Edit', 'quant' ) }
+								</Button>
+								<Button
+									variant="link"
+									isDestructive
+									onClick={ () => onDelete( page ) }
+								>
+									{ __( 'Delete', 'quant' ) }
+								</Button>
+							</Flex>
 						</td>
 					</tr>
 				) ) }
@@ -460,148 +463,160 @@ export function Search() {
 						</h2>
 					</CardHeader>
 					<CardBody>
-						<ToggleControl
-							label={ __(
-								'Keep search records updated',
-								'quant'
-							) }
-							checked={ !! settings.enabled }
-							onChange={ ( v ) => updateSetting( 'enabled', v ) }
-							help={ __(
-								'Send a search record with every page push so the index follows your content.',
-								'quant'
-							) }
-						/>
-						<p>
-							<strong>
-								{ __( 'Indexed content types', 'quant' ) }
-							</strong>
-						</p>
-						{ config.post_types.map( ( type ) => (
-							<CheckboxControl
-								key={ type.name }
-								label={ type.label }
-								checked={ settings.post_types.includes(
-									type.name
+						<FormStack>
+							<ToggleControl
+								label={ __(
+									'Keep search records updated',
+									'quant'
 								) }
-								onChange={ ( checked ) =>
-									togglePostType( type.name, checked )
+								checked={ !! settings.enabled }
+								onChange={ ( v ) =>
+									updateSetting( 'enabled', v )
 								}
+								help={ __(
+									'Send a search record with every page push so the index follows your content.',
+									'quant'
+								) }
+								__nextHasNoMarginBottom
 							/>
-						) ) }
-						<SelectControl
-							label={ __( 'Summary source', 'quant' ) }
-							value={ settings.summary_source }
-							options={ [
-								{
-									label: __(
-										'Excerpt, or the first words of the content',
-										'quant'
-									),
-									value: 'excerpt',
-								},
-								{
-									label: __(
-										'First words of the content',
-										'quant'
-									),
-									value: 'content',
-								},
-							] }
-							onChange={ ( v ) =>
-								updateSetting( 'summary_source', v )
-							}
-						/>
-						<SelectControl
-							label={ __( 'Image size', 'quant' ) }
-							value={ settings.image_size }
-							options={ ( config.image_sizes || [] ).map(
-								( s ) => ( { label: s, value: s } )
-							) }
-							onChange={ ( v ) =>
-								updateSetting( 'image_size', v )
-							}
-							help={ __(
-								'Featured image size stored in the record.',
-								'quant'
-							) }
-						/>
-						<ToggleControl
-							label={ __(
-								'Send the WordPress search form to a Quant Search page',
-								'quant'
-							) }
-							checked={ !! settings.replace_wp_search }
-							onChange={ ( v ) =>
-								updateSetting( 'replace_wp_search', v )
-							}
-							help={ __(
-								'The theme search form and ?s= searches use the default search page below, so search works on the static site.',
-								'quant'
-							) }
-						/>
-						{ settings.replace_wp_search && (
+							<FieldGroup
+								label={ __( 'Indexed content types', 'quant' ) }
+							>
+								{ config.post_types.map( ( type ) => (
+									<CheckboxControl
+										key={ type.name }
+										label={ type.label }
+										checked={ settings.post_types.includes(
+											type.name
+										) }
+										onChange={ ( checked ) =>
+											togglePostType( type.name, checked )
+										}
+										__nextHasNoMarginBottom
+									/>
+								) ) }
+							</FieldGroup>
 							<SelectControl
-								label={ __( 'Default search page', 'quant' ) }
-								value={ settings.default_page }
+								label={ __( 'Summary source', 'quant' ) }
+								value={ settings.summary_source }
 								options={ [
 									{
 										label: __(
-											'First enabled page',
+											'Excerpt, or the first words of the content',
 											'quant'
 										),
-										value: '',
+										value: 'excerpt',
 									},
-								].concat(
-									pages.map( ( p ) => ( {
-										label: p.label,
-										value: p.id,
-									} ) )
+									{
+										label: __(
+											'First words of the content',
+											'quant'
+										),
+										value: 'content',
+									},
+								] }
+								onChange={ ( v ) =>
+									updateSetting( 'summary_source', v )
+								}
+								__nextHasNoMarginBottom
+							/>
+							<SelectControl
+								label={ __( 'Image size', 'quant' ) }
+								value={ settings.image_size }
+								options={ ( config.image_sizes || [] ).map(
+									( s ) => ( { label: s, value: s } )
 								) }
 								onChange={ ( v ) =>
-									updateSetting( 'default_page', v )
+									updateSetting( 'image_size', v )
 								}
+								help={ __(
+									'Featured image size stored in the record.',
+									'quant'
+								) }
+								__nextHasNoMarginBottom
 							/>
-						) }
-						<Flex
-							justify="flex-start"
-							gap={ 2 }
-							style={ { marginTop: '16px' } }
-						>
-							<FlexItem>
-								<Button
-									variant="primary"
-									onClick={ saveSettings }
-									disabled={ saving }
-									isBusy={ saving }
-								>
-									{ __( 'Save', 'quant' ) }
-								</Button>
-							</FlexItem>
-							<FlexItem>
-								<Button
-									variant="secondary"
-									onClick={ reindex }
-									disabled={
-										busy ||
-										! savedEnabled ||
-										! status?.enabled
+							<ToggleControl
+								label={ __(
+									'Send the WordPress search form to a Quant Search page',
+									'quant'
+								) }
+								checked={ !! settings.replace_wp_search }
+								onChange={ ( v ) =>
+									updateSetting( 'replace_wp_search', v )
+								}
+								help={ __(
+									'The theme search form and ?s= searches use the default search page below, so search works on the static site.',
+									'quant'
+								) }
+								__nextHasNoMarginBottom
+							/>
+							{ settings.replace_wp_search && (
+								<SelectControl
+									label={ __(
+										'Default search page',
+										'quant'
+									) }
+									value={ settings.default_page }
+									options={ [
+										{
+											label: __(
+												'First enabled page',
+												'quant'
+											),
+											value: '',
+										},
+									].concat(
+										pages.map( ( p ) => ( {
+											label: p.label,
+											value: p.id,
+										} ) )
+									) }
+									onChange={ ( v ) =>
+										updateSetting( 'default_page', v )
 									}
-								>
-									{ __( 'Rebuild index', 'quant' ) }
-								</Button>
-							</FlexItem>
-							<FlexItem>
-								<Button
-									variant="secondary"
-									isDestructive
-									onClick={ clearIndex }
-									disabled={ busy || ! status?.enabled }
-								>
-									{ __( 'Clear index', 'quant' ) }
-								</Button>
-							</FlexItem>
-						</Flex>
+									__nextHasNoMarginBottom
+								/>
+							) }
+							<Flex
+								justify="flex-start"
+								gap={ 2 }
+								className="quant-form-stack__actions"
+							>
+								<FlexItem>
+									<Button
+										variant="primary"
+										onClick={ saveSettings }
+										disabled={ saving }
+										isBusy={ saving }
+									>
+										{ __( 'Save', 'quant' ) }
+									</Button>
+								</FlexItem>
+								<FlexItem>
+									<Button
+										variant="secondary"
+										onClick={ reindex }
+										disabled={
+											busy ||
+											! savedEnabled ||
+											! status?.enabled
+										}
+									>
+										{ __( 'Rebuild index', 'quant' ) }
+									</Button>
+								</FlexItem>
+								<FlexItem>
+									<Button
+										variant="secondary"
+										isDestructive
+										onClick={ clearIndex }
+										disabled={ busy || ! status?.enabled }
+									>
+										{ __( 'Clear index', 'quant' ) }
+									</Button>
+								</FlexItem>
+							</Flex>
+						</FormStack>
 					</CardBody>
 				</Card>
 			) }
