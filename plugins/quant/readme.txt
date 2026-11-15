@@ -5,7 +5,7 @@ Tags: static, cdn, static site generator, jamstack, search
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 2.0.5
+Stable tag: 2.0.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -214,6 +214,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
 == Upgrade Notice ==
+
+= 2.0.6 =
+Short, clear messages when Quant does not answer, and a failed page or file push is sent again in the same run. The queue table gets a new column on the first request after the update.
 
 = 2.0.5 =
 A cleaner default Quant Search page that themes can restyle, and even spacing in the admin forms on current WordPress.
