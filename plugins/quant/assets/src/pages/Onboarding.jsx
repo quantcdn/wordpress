@@ -11,6 +11,7 @@ import {
 } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
+import { FormStack } from '../components/FormStack/FormStack';
 import { useNavigate } from 'react-router-dom';
 
 /**
@@ -301,143 +302,155 @@ export function Onboarding() {
 							</h2>
 						</CardHeader>
 						<CardBody>
-							{ error && (
-								<Notice
-									status="error"
-									onRemove={ () => setError( null ) }
-									isDismissible
-								>
-									{ error }
-								</Notice>
-							) }
-
-							<SelectControl
-								label={ __( 'Platform', 'quant' ) }
-								value={ platform }
-								options={ PLATFORMS.concat( [
-									{
-										label: __( 'Other endpoint', 'quant' ),
-										value: 'custom',
-									},
-								] ) }
-								onChange={ ( v ) => {
-									if ( v !== 'custom' ) {
-										updateSetting( 'endpoint', v );
-									}
-								} }
-								help={ __(
-									'Choose the dashboard you sign in to.',
-									'quant'
+							<FormStack>
+								{ error && (
+									<Notice
+										status="error"
+										onRemove={ () => setError( null ) }
+										isDismissible
+									>
+										{ error }
+									</Notice>
 								) }
-							/>
 
-							<div className="quant-onboarding__oauth">
-								<Button
-									variant="primary"
-									icon="admin-users"
-									onClick={ handleOAuthLogin }
-									disabled={ saving }
-									isBusy={ saving }
-								>
-									{ __( 'Login to Quant', 'quant' ) }
-								</Button>
-								<p style={ { color: '#666' } }>
+								<SelectControl
+									label={ __( 'Platform', 'quant' ) }
+									value={ platform }
+									options={ PLATFORMS.concat( [
+										{
+											label: __(
+												'Other endpoint',
+												'quant'
+											),
+											value: 'custom',
+										},
+									] ) }
+									onChange={ ( v ) => {
+										if ( v !== 'custom' ) {
+											updateSetting( 'endpoint', v );
+										}
+									} }
+									help={ __(
+										'Choose the dashboard you sign in to.',
+										'quant'
+									) }
+									__nextHasNoMarginBottom
+								/>
+
+								<div className="quant-onboarding__oauth">
+									<Button
+										variant="primary"
+										icon="admin-users"
+										onClick={ handleOAuthLogin }
+										disabled={ saving }
+										isBusy={ saving }
+									>
+										{ __( 'Login to Quant', 'quant' ) }
+									</Button>
+									<p style={ { color: '#666' } }>
+										{ __(
+											'Sign in and pick the project, or enter the project credentials below.',
+											'quant'
+										) }
+									</p>
+								</div>
+
+								<p style={ { color: '#666', marginTop: 0 } }>
 									{ __(
-										'Sign in and pick the project, or enter the project credentials below.',
+										'Or enter the project credentials. You can find them in the',
+										'quant'
+									) }{ ' ' }
+									<a
+										href={
+											platform ===
+											'https://api.quantgov.cloud'
+												? 'https://dash.quantgov.cloud'
+												: 'https://dashboard.quantcdn.io'
+										}
+										target="_blank"
+										rel="noopener noreferrer"
+									>
+										{ __( 'Quant dashboard', 'quant' ) }
+									</a>{ ' ' }
+									{ __(
+										'on the Integrations page of the project.',
 										'quant'
 									) }
 								</p>
-							</div>
 
-							<p style={ { color: '#666', marginTop: 0 } }>
-								{ __(
-									'Or enter the project credentials. You can find them in the',
-									'quant'
-								) }{ ' ' }
-								<a
-									href={
-										platform ===
-										'https://api.quantgov.cloud'
-											? 'https://dash.quantgov.cloud'
-											: 'https://dashboard.quantcdn.io'
+								<TextControl
+									label={ __( 'Organization', 'quant' ) }
+									value={ settings.organization }
+									onChange={ ( v ) =>
+										updateSetting( 'organization', v )
 									}
-									target="_blank"
-									rel="noopener noreferrer"
-								>
-									{ __( 'Quant dashboard', 'quant' ) }
-								</a>{ ' ' }
-								{ __(
-									'on the Integrations page of the project.',
-									'quant'
-								) }
-							</p>
-
-							<TextControl
-								label={ __( 'Organization', 'quant' ) }
-								value={ settings.organization }
-								onChange={ ( v ) =>
-									updateSetting( 'organization', v )
-								}
-								help={ __(
-									'Your QuantCDN organization identifier',
-									'quant'
-								) }
-							/>
-							<TextControl
-								label={ __( 'Project', 'quant' ) }
-								value={ settings.project }
-								onChange={ ( v ) =>
-									updateSetting( 'project', v )
-								}
-								help={ __(
-									'Your QuantCDN project name',
-									'quant'
-								) }
-							/>
-							<TextControl
-								label={ __( 'API Token', 'quant' ) }
-								type="password"
-								value={ settings.token }
-								onChange={ ( v ) =>
-									updateSetting( 'token', v )
-								}
-								help={ __( 'Your project API token', 'quant' ) }
-							/>
-							<TextControl
-								label={ __( 'API Endpoint', 'quant' ) }
-								value={ settings.endpoint }
-								onChange={ ( v ) =>
-									updateSetting( 'endpoint', v )
-								}
-								help={ __(
-									'https://api.quantcdn.io for QuantCDN, https://api.quantgov.cloud for QuantGov. Without /v1.',
-									'quant'
-								) }
-							/>
-
-							<div
-								style={ {
-									marginTop: '20px',
-									display: 'flex',
-									gap: '10px',
-								} }
-							>
-								<Button
-									variant="primary"
-									onClick={ handleSaveCredentials }
-									disabled={
-										saving ||
-										! settings.organization ||
-										! settings.project ||
-										! settings.token
+									help={ __(
+										'Your QuantCDN organization identifier',
+										'quant'
+									) }
+									__nextHasNoMarginBottom
+								/>
+								<TextControl
+									label={ __( 'Project', 'quant' ) }
+									value={ settings.project }
+									onChange={ ( v ) =>
+										updateSetting( 'project', v )
 									}
-									isBusy={ saving }
+									help={ __(
+										'Your QuantCDN project name',
+										'quant'
+									) }
+									__nextHasNoMarginBottom
+								/>
+								<TextControl
+									label={ __( 'API Token', 'quant' ) }
+									type="password"
+									value={ settings.token }
+									onChange={ ( v ) =>
+										updateSetting( 'token', v )
+									}
+									help={ __(
+										'Your project API token',
+										'quant'
+									) }
+									__nextHasNoMarginBottom
+								/>
+								<TextControl
+									label={ __( 'API Endpoint', 'quant' ) }
+									value={ settings.endpoint }
+									onChange={ ( v ) =>
+										updateSetting( 'endpoint', v )
+									}
+									help={ __(
+										'https://api.quantcdn.io for QuantCDN, https://api.quantgov.cloud for QuantGov. Without /v1.',
+										'quant'
+									) }
+									__nextHasNoMarginBottom
+								/>
+
+								<div
+									style={ {
+										display: 'flex',
+										gap: '10px',
+									} }
 								>
-									{ saving
-										? __( 'Saving…', 'quant' )
-										: __( 'Continue', 'quant' ) }
-								</Button>
-							</div>
+									<Button
+										variant="primary"
+										onClick={ handleSaveCredentials }
+										disabled={
+											saving ||
+											! settings.organization ||
+											! settings.project ||
+											! settings.token
+										}
+										isBusy={ saving }
+									>
+										{ saving
+											? __( 'Saving…', 'quant' )
+											: __( 'Continue', 'quant' ) }
+									</Button>
+								</div>
+							</FormStack>
 						</CardBody>
 					</Card>
 				);

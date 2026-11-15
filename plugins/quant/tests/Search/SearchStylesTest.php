@@ -56,6 +56,61 @@ final class SearchStylesTest extends TestCase
         $this->assertMatchesRegularExpression('/(^|;)display:flow-root(;|$)/', $this->rule('.quant-search__hit'));
     }
 
+    public function testTheDefaultsAreCustomPropertiesWithoutSpecificity(): void
+    {
+        // :where() has no specificity, so a theme rule on .quant-search wins in any stylesheet order.
+        $defaults = $this->rule(':where(.quant-search)');
+
+        $this->assertStringContainsString('--quant-search-gap:1rem', $defaults);
+        $this->assertStringContainsString('--quant-search-accent:var(--wp--preset--color--contrast,currentcolor)', $defaults);
+        $this->assertStringNotContainsString('--quant-search-gap:', $this->rule('.quant-search'), 'No default on the specific selector.');
+    }
+
+    public function testTheReadmeDocumentsEveryCustomProperty(): void
+    {
+        preg_match_all('/(--quant-search-[a-z-]+):/', $this->css(), $declared);
+        $readme = (string) file_get_contents(__DIR__ . '/../../readme.txt');
+        $this->assertStringContainsString('== Styling the search page ==', $readme);
+
+        foreach (array_unique($declared[1]) as $property) {
+            // The gap scale is documented as one item: `--quant-search-gap-xs`, `-sm`, `-md`, `-lg`, `-xl`.
+            $documented = str_contains($readme, '`' . $property . '`')
+                || (str_starts_with($property, '--quant-search-gap-') && str_contains($readme, '`-' . substr($property, 19) . '`'));
+            $this->assertTrue($documented, "readme.txt does not document {$property}.");
+        }
+    }
+
+    public function testTheWidgetsFollowTheThemeTextColour(): void
+    {
+        // instantsearch.css sets color:#3a4570 on every widget root.
+        foreach (['.ais-Hits', '.ais-RefinementList', '.ais-SearchBox', '.ais-ClearRefinements', '.ais-Pagination', '.ais-Stats'] as $widget) {
+            $this->assertMatchesRegularExpression('/(^|;)color:inherit(;|$)/', $this->rule('.quant-search ' . $widget), $widget);
+        }
+    }
+
+    public function testClearRefinementsIsANeutralButtonInTheTextColour(): void
+    {
+        // The theme button is white text on a pale blue (#0096db), below WCAG AA contrast.
+        $button = $this->rule('.quant-search .ais-ClearRefinements-button');
+
+        $this->assertMatchesRegularExpression('/(^|;)color:inherit(;|$)/', $button);
+        $this->assertMatchesRegularExpression('/(^|;)background:transparent(;|$)/', $button);
+    }
+
+    public function testEveryControlHasAFocusOutline(): void
+    {
+        $this->assertStringContainsString(
+            '.quant-search :where(a,button,input,select,[tabindex]):focus-visible{outline:var(--quant-search-focus-width) solid var(--quant-search-focus-ring)',
+            $this->css()
+        );
+    }
+
+    public function testCheckboxAndCountAreSpacedFromTheLabel(): void
+    {
+        $this->assertStringContainsString('gap:var(--quant-search-gap-sm)', $this->rule('.quant-search .ais-RefinementList-label'));
+        $this->assertStringContainsString('margin:0 0 0 auto', $this->rule('.quant-search .ais-RefinementList-count'));
+    }
+
     private function css(): string
     {
         $css = (string) file_get_contents(self::STYLESHEET);

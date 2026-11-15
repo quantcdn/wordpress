@@ -10,6 +10,7 @@ import {
 	FlexItem,
 } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
+import { FormStack, FieldGroup } from '../FormStack/FormStack';
 
 const EMPTY_FACET = {
 	facet_type: 'taxonomy',
@@ -169,8 +170,8 @@ export function SearchPageEditor( {
 		);
 
 	return (
-		<div className="quant-search-page-editor">
-			<h3 style={ { marginTop: 0 } }>
+		<FormStack className="quant-search-page-editor">
+			<h3 className="quant-form-stack__title">
 				{ page?.id
 					? __( 'Edit search page', 'quant' )
 					: __( 'New search page', 'quant' ) }
@@ -181,6 +182,7 @@ export function SearchPageEditor( {
 				value={ draft.label }
 				onChange={ ( v ) => set( 'label', v ) }
 				help={ __( 'Shown in the admin only.', 'quant' ) }
+				__nextHasNoMarginBottom
 			/>
 			<ToggleControl
 				label={ __( 'Enabled', 'quant' ) }
@@ -190,6 +192,7 @@ export function SearchPageEditor( {
 					'A disabled page is kept as a draft and removed from Quant.',
 					'quant'
 				) }
+				__nextHasNoMarginBottom
 			/>
 			<TextControl
 				label={ __( 'Route', 'quant' ) }
@@ -200,35 +203,38 @@ export function SearchPageEditor( {
 					'The plugin creates a WordPress page at this path that renders the search.',
 					'quant'
 				) }
+				__nextHasNoMarginBottom
 			/>
 			<TextControl
 				label={ __( 'Page title', 'quant' ) }
 				value={ draft.title }
 				onChange={ ( v ) => set( 'title', v ) }
+				__nextHasNoMarginBottom
 			/>
 			<TextareaControl
 				label={ __( 'Description', 'quant' ) }
 				value={ draft.description }
 				onChange={ ( v ) => set( 'description', v ) }
 				rows={ 2 }
+				__nextHasNoMarginBottom
 			/>
 
-			<p>
-				<strong>{ __( 'Content types to search', 'quant' ) }</strong>{ ' ' }
-				<span style={ { color: '#666' } }>
-					{ __( '(none selected = all indexed types)', 'quant' ) }
-				</span>
-			</p>
-			{ postTypes.map( ( type ) => (
-				<CheckboxControl
-					key={ type.name }
-					label={ type.label }
-					checked={ draft.post_types.includes( type.name ) }
-					onChange={ ( checked ) =>
-						togglePostType( type.name, checked )
-					}
-				/>
-			) ) }
+			<FieldGroup
+				label={ __( 'Content types to search', 'quant' ) }
+				help={ __( 'None selected = all indexed types.', 'quant' ) }
+			>
+				{ postTypes.map( ( type ) => (
+					<CheckboxControl
+						key={ type.name }
+						label={ type.label }
+						checked={ draft.post_types.includes( type.name ) }
+						onChange={ ( checked ) =>
+							togglePostType( type.name, checked )
+						}
+						__nextHasNoMarginBottom
+					/>
+				) ) }
+			</FieldGroup>
 
 			<TextControl
 				label={ __( 'Manual filters', 'quant' ) }
@@ -239,29 +245,37 @@ export function SearchPageEditor( {
 					"Appended to the page filters as written. Use the project's search syntax: Algolia on QuantCDN (category_en:'News'), Typesense on QuantGov (category_en:=`News`).",
 					'quant'
 				) }
+				__nextHasNoMarginBottom
 			/>
 
-			<h4>{ __( 'Display', 'quant' ) }</h4>
-			<ToggleControl
-				label={ __( 'Show the search box', 'quant' ) }
-				checked={ !! draft.display.display_search }
-				onChange={ ( v ) => setDisplay( 'display_search', v ) }
-			/>
-			<ToggleControl
-				label={ __( 'Show the result count', 'quant' ) }
-				checked={ !! draft.display.display_stats }
-				onChange={ ( v ) => setDisplay( 'display_stats', v ) }
-			/>
-			<ToggleControl
-				label={ __( 'Show "Clear refinements"', 'quant' ) }
-				checked={ !! draft.display.show_clear_refinements }
-				onChange={ ( v ) => setDisplay( 'show_clear_refinements', v ) }
-			/>
-			<ToggleControl
-				label={ __( 'Pagination', 'quant' ) }
-				checked={ !! draft.display.pagination_enabled }
-				onChange={ ( v ) => setDisplay( 'pagination_enabled', v ) }
-			/>
+			<FieldGroup label={ __( 'Display', 'quant' ) }>
+				<ToggleControl
+					label={ __( 'Show the search box', 'quant' ) }
+					checked={ !! draft.display.display_search }
+					onChange={ ( v ) => setDisplay( 'display_search', v ) }
+					__nextHasNoMarginBottom
+				/>
+				<ToggleControl
+					label={ __( 'Show the result count', 'quant' ) }
+					checked={ !! draft.display.display_stats }
+					onChange={ ( v ) => setDisplay( 'display_stats', v ) }
+					__nextHasNoMarginBottom
+				/>
+				<ToggleControl
+					label={ __( 'Show "Clear refinements"', 'quant' ) }
+					checked={ !! draft.display.show_clear_refinements }
+					onChange={ ( v ) =>
+						setDisplay( 'show_clear_refinements', v )
+					}
+					__nextHasNoMarginBottom
+				/>
+				<ToggleControl
+					label={ __( 'Pagination', 'quant' ) }
+					checked={ !! draft.display.pagination_enabled }
+					onChange={ ( v ) => setDisplay( 'pagination_enabled', v ) }
+					__nextHasNoMarginBottom
+				/>
+			</FieldGroup>
 			<TextControl
 				label={ __( 'Results per page', 'quant' ) }
 				type="number"
@@ -269,31 +283,38 @@ export function SearchPageEditor( {
 				onChange={ ( v ) =>
 					setDisplay( 'per_page', parseInt( v, 10 ) || 10 )
 				}
+				__nextHasNoMarginBottom
 			/>
 
-			<h4>{ __( 'Facets', 'quant' ) }</h4>
-			{ draft.facets.map( ( facet, index ) => (
-				<FacetRow
-					key={ index }
-					facet={ facet }
-					taxonomies={ taxonomies }
-					onChange={ ( f ) => setFacet( index, f ) }
-					onRemove={ () => removeFacet( index ) }
-				/>
-			) ) }
-			<Button
-				variant="secondary"
-				onClick={ () =>
-					set( 'facets', [ ...draft.facets, { ...EMPTY_FACET } ] )
-				}
-			>
-				{ __( 'Add facet', 'quant' ) }
-			</Button>
+			<FieldGroup label={ __( 'Facets', 'quant' ) }>
+				{ draft.facets.map( ( facet, index ) => (
+					<FacetRow
+						key={ index }
+						facet={ facet }
+						taxonomies={ taxonomies }
+						onChange={ ( f ) => setFacet( index, f ) }
+						onRemove={ () => removeFacet( index ) }
+					/>
+				) ) }
+				<div>
+					<Button
+						variant="secondary"
+						onClick={ () =>
+							set( 'facets', [
+								...draft.facets,
+								{ ...EMPTY_FACET },
+							] )
+						}
+					>
+						{ __( 'Add facet', 'quant' ) }
+					</Button>
+				</div>
+			</FieldGroup>
 
 			<Flex
 				justify="flex-start"
 				gap={ 2 }
-				style={ { marginTop: '24px' } }
+				className="quant-form-stack__actions"
 			>
 				<FlexItem>
 					<Button
@@ -315,6 +336,6 @@ export function SearchPageEditor( {
 					</Button>
 				</FlexItem>
 			</Flex>
-		</div>
+		</FormStack>
 	);
 }
