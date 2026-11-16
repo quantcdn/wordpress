@@ -5,7 +5,7 @@ Tags: static, cdn, static site generator, jamstack, search
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 2.0.6
+Stable tag: 2.0.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -153,6 +153,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 
 == Changelog ==
 
+= 2.0.7 =
+* Fixed: the push progress and the Search Rebuild progress counted only the items that the open admin page processed, so a run that WP-Cron, a system cron or WP-CLI also processed ended with too low a count (for example "114 completed" for 189 pushed, or "0 completed"). The progress now shows the result of the whole run. With `DISABLE_WP_CRON` set, the plugin no longer starts WP-Cron after content is queued.
+
 = 2.0.6 =
 * Fixed: when the Quant API did not answer, the push showed raw transport text such as "cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received". The dashboard queue card and the push progress now show a short message, for example "Quant did not answer in time. The plugin will try again." The message says "Select Retry failed on the dashboard." instead when the job has used all attempts or nothing runs the queue in the background (WP-Cron disabled and no system cron run in the last 15 minutes), and a failed connection test says "Test the connection again in a minute." The raw text is kept apart and is in the diagnostics report and in `wp quant queue errors`.
 * Fixed: one stalled request or gateway error (502, 503, 504) failed the page until the next background run, and the background run only happens when WP-Cron runs. A page or file push that fails fast is now sent again up to two times in the same run, after about 1 and 3 seconds. A request that timed out is sent again only when another attempt still fits in 45 seconds. All retries in one run share those 45 seconds, and after one push fails with both retries the others in the run are not retried.
@@ -214,6 +217,9 @@ Follow the [Forms documentation](https://docs.quantcdn.io/docs/dashboard/forms).
 * Updated minimum PHP requirement to 7.4 (previously stated 8.1).
 
 == Upgrade Notice ==
+
+= 2.0.7 =
+The push and Search Rebuild progress show the result of the whole run, and the plugin no longer starts WP-Cron when DISABLE_WP_CRON is set.
 
 = 2.0.6 =
 Short, clear messages when Quant does not answer, and a failed page or file push is sent again in the same run. The queue table gets a new column on the first request after the update.
