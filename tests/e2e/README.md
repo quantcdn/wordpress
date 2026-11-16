@@ -65,6 +65,7 @@ plugin's REST API through the logged-in page), `notice(page, text)`,
 | `oauth.spec.js` | Login through the (mock) portal, project selection, change project, disconnect |
 | `settings.spec.js` | Manual credentials, connection tests, toggle persistence, `QUANT_*` constant override |
 | `content-sync.spec.js` | Push everything, push/unpublish selected, failure → retry |
+| `push-progress.spec.js` | Push progress counts the whole run when WP-CLI or WP-Cron processes jobs too, and its failures |
 | `auto-sync.spec.js` | Save/rename/draft/delete posts, terms, media, Redirection items; WP-Cron drains the queue |
 | `cdn-only.spec.js` | Purge on save, Cache page purges |
 | `migration.spec.js` | Automatic 1.x migration, review page, cleanup, legacy settings URL |

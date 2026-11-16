@@ -454,4 +454,74 @@ final class DatabaseQueueTest extends TestCase
 
         $this->assertSame(11, $this->queue->pruneCompleted());
     }
+
+    #[Test]
+    public function the_run_status_counts_jobs_finished_since_the_run_started_whatever_processed_them(): void
+    {
+        $since = 1_800_000_000;
+        $boundary = gmdate('Y-m-d H:i:s', $since);
+
+        $this->wpdb->shouldReceive('prepare')->once()->with(
+            Mockery::on(static fn(string $sql): bool => str_contains($sql, 'WHERE status IN (%s, %s)')
+                && str_contains($sql, 'OR (status IN (%s, %s) AND processed_at >= %s)')
+                && str_contains($sql, 'GROUP BY status')
+                // Not per claim or per request: a WP-Cron, WP-CLI or browser run counts the same.
+                && !str_contains($sql, 'claim')),
+            'pending',
+            'processing',
+            'completed',
+            'failed',
+            $boundary
+        )->andReturn('run_sql');
+        $this->wpdb->shouldReceive('get_results')->once()->with('run_sql', ARRAY_A)->andReturn([
+            ['status' => 'pending', 'count' => '0'],
+            ['status' => 'completed', 'count' => '189'],
+        ]);
+        $this->wpdb->shouldNotReceive('get_col');
+
+        $run = $this->queue->runStatus($since);
+
+        $this->assertSame([
+            'since' => $since,
+            'pending' => 0,
+            'processing' => 0,
+            'completed' => 189,
+            'failed' => 0,
+            'remaining' => 0,
+            'total' => 189,
+            'finished' => true,
+            'errors' => [],
+        ], $run->toArray());
+    }
+
+    #[Test]
+    public function the_run_status_lists_the_newest_failures_of_the_run(): void
+    {
+        $since = 1_800_000_000;
+        $boundary = gmdate('Y-m-d H:i:s', $since);
+
+        $this->wpdb->shouldReceive('get_results')->once()->andReturn([
+            ['status' => 'processing', 'count' => '5'],
+            ['status' => 'pending', 'count' => '12'],
+            ['status' => 'completed', 'count' => '40'],
+            ['status' => 'failed', 'count' => '2'],
+        ]);
+        $this->wpdb->shouldReceive('prepare')->once()->with(
+            Mockery::on(static fn(string $sql): bool => str_contains($sql, 'SELECT error_message')
+                && str_contains($sql, 'WHERE status = %s AND processed_at >= %s AND error_message IS NOT NULL')
+                && str_contains($sql, 'LIMIT %d')),
+            'failed',
+            $boundary,
+            10
+        )->andReturn('errors_sql');
+        $this->wpdb->shouldReceive('get_col')->once()->with('errors_sql')->andReturn(['Quant had a server error (HTTP 500).', 'Not found']);
+
+        $run = $this->queue->runStatus($since)->toArray();
+
+        $this->assertSame(17, $run['remaining']);
+        $this->assertSame(59, $run['total']);
+        $this->assertSame(2, $run['failed']);
+        $this->assertFalse($run['finished']);
+        $this->assertSame(['Quant had a server error (HTTP 500).', 'Not found'], $run['errors']);
+    }
 }

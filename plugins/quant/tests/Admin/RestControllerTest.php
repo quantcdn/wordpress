@@ -186,4 +186,53 @@ final class RestControllerTest extends TestCase
 
         $this->assertSame('http://localhost', $this->options[Settings::OPTION_STATIC_CONFIG]['webserver_url']);
     }
+
+    #[Test]
+    public function the_queue_status_returns_the_server_time_and_no_run_without_since(): void
+    {
+        $this->wpdb->shouldReceive('get_results')->once()->andReturn([['status' => 'pending', 'count' => '3']]);
+
+        $result = $this->controller->getQueueStatus(new WP_REST_Request(['since' => 0]));
+
+        $this->assertSame(3, $result['pending']);
+        $this->assertEqualsWithDelta(time(), $result['now'], 2);
+        $this->assertArrayNotHasKey('run', $result);
+    }
+
+    #[Test]
+    public function the_queue_status_returns_the_outcome_of_the_run_since_its_start(): void
+    {
+        $since = time() - 30;
+        $this->wpdb->shouldReceive('prepare')->andReturnUsing(static fn(string $sql, ...$args): string => $sql);
+        $this->wpdb->shouldReceive('get_results')->once()
+            ->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'GROUP BY status') && !str_contains($sql, 'processed_at')), ARRAY_A)
+            ->andReturn([['status' => 'completed', 'count' => '900']]);
+        $this->wpdb->shouldReceive('get_results')->once()
+            ->with(Mockery::on(static fn(string $sql): bool => str_contains($sql, 'processed_at >= %s')), ARRAY_A)
+            ->andReturn([['status' => 'completed', 'count' => '189']]);
+
+        $result = $this->controller->getQueueStatus(new WP_REST_Request(['since' => $since]));
+
+        $this->assertSame(900, $result['completed'], 'The whole queue');
+        $this->assertSame($since, $result['run']['since']);
+        $this->assertSame(189, $result['run']['completed'], 'Only this run');
+        $this->assertTrue($result['run']['finished']);
+    }
+
+    #[Test]
+    public function a_retry_returns_the_start_of_the_new_run(): void
+    {
+        $this->wpdb->shouldReceive('prepare')->andReturnUsing(static fn(string $sql, ...$args): string => $sql);
+        $this->wpdb->shouldReceive('query')->once()->andReturnUsing(function (): int {
+            $this->wpdb->rows_affected = 2;
+            return 2;
+        });
+
+        $before = time();
+        $result = $this->controller->retryQueue(new WP_REST_Request());
+
+        $this->assertSame(2, $result['queued']);
+        $this->assertGreaterThanOrEqual($before, $result['run_since']);
+        $this->assertLessThanOrEqual(time(), $result['run_since']);
+    }
 }

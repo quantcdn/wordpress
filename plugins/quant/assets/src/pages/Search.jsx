@@ -206,6 +206,7 @@ export function Search() {
 	const [ saving, setSaving ] = useState( false );
 	const [ busy, setBusy ] = useState( false );
 	const [ progressRun, setProgressRun ] = useState( 0 );
+	const [ progressSince, setProgressSince ] = useState( 0 );
 	// The server checks the saved value, so actions follow it, not the draft.
 	const [ savedEnabled, setSavedEnabled ] = useState( false );
 
@@ -336,6 +337,7 @@ export function Search() {
 					response.queued
 				)
 			);
+			setProgressSince( response.run_since || 0 );
 			setProgressRun( ( n ) => n + 1 );
 		} catch ( e ) {
 			notify( 'error', e.message || __( 'Reindex failed', 'quant' ) );
@@ -447,6 +449,7 @@ export function Search() {
 			{ progressRun > 0 && (
 				<Progress
 					key={ progressRun }
+					since={ progressSince }
 					autoProcess
 					onFinished={ refreshAfterRun }
 					onComplete={ handleProgressDismiss }
