@@ -28,6 +28,8 @@ export function Content() {
 	const [ loadError, setLoadError ] = useState( null );
 	// One Progress card per run; `running` is true until the run ends.
 	const [ progressRun, setProgressRun ] = useState( null );
+	// Start of the run (server time), so the card counts only this run.
+	const [ progressSince, setProgressSince ] = useState( 0 );
 	const [ autoProcessing, setAutoProcessing ] = useState( false );
 	const [ refreshToken, setRefreshToken ] = useState( 0 );
 
@@ -53,8 +55,9 @@ export function Content() {
 			} );
 	}, [] );
 
-	const startProcessing = ( message ) => {
+	const startProcessing = ( message, since ) => {
 		setNotice( { status: 'success', message } );
+		setProgressSince( since || 0 );
 		setAutoProcessing( true );
 		setProgressRun( ( prev ) => ( prev ? prev + 1 : 1 ) );
 	};
@@ -87,7 +90,8 @@ export function Content() {
 					/* translators: %d: number of queued items */
 					__( 'Queued %d items. Processing…', 'quant' ),
 					response.queued
-				)
+				),
+				response.run_since
 			);
 		} catch ( error ) {
 			setNotice( {
@@ -123,7 +127,10 @@ export function Content() {
 							'Queued %d items. Processing…',
 							'quant'
 					  );
-			startProcessing( sprintf( template, response.queued ) );
+			startProcessing(
+				sprintf( template, response.queued ),
+				response.run_since
+			);
 		} catch ( error ) {
 			setNotice( {
 				status: 'error',
@@ -153,7 +160,8 @@ export function Content() {
 					/* translators: %d: number of pending items */
 					__( 'Processing %d pending items…', 'quant' ),
 					queue.pending
-				)
+				),
+				queue.now
 			);
 		} catch ( error ) {
 			setNotice( {
@@ -297,6 +305,7 @@ export function Content() {
 			{ progressRun && (
 				<Progress
 					key={ progressRun }
+					since={ progressSince }
 					autoProcess
 					onFinished={ handleRunFinished }
 					onComplete={ handleProgressDismiss }

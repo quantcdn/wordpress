@@ -70,7 +70,9 @@ class RestController
         register_rest_route(self::NAMESPACE, '/seed', $post('seed') + ['args' => [
             'types' => ['type' => 'array', 'default' => ['all'], 'items' => ['type' => 'string']],
         ]]);
-        register_rest_route(self::NAMESPACE, '/queue/status', $get('getQueueStatus'));
+        register_rest_route(self::NAMESPACE, '/queue/status', $get('getQueueStatus') + ['args' => [
+            'since' => ['type' => 'integer', 'default' => 0, 'minimum' => 0],
+        ]]);
         register_rest_route(self::NAMESPACE, '/queue/clear', $post('clearQueue'));
         register_rest_route(self::NAMESPACE, '/queue/retry', $post('retryQueue'));
         register_rest_route(self::NAMESPACE, '/queue/process', $post('processQueue') + ['args' => [
@@ -322,9 +324,10 @@ class RestController
             return new WP_Error('invalid_items', __('No items provided', 'quant'), ['status' => 400]);
         }
 
+        $since = time();
         $this->queue->pushBatch($jobs);
 
-        return ['success' => true, 'queued' => count($jobs)];
+        return ['success' => true, 'queued' => count($jobs), 'run_since' => $since];
     }
 
     /**
@@ -337,27 +340,40 @@ class RestController
         }
 
         $types = array_values(array_filter(array_map('sanitize_key', (array) $request->get_param('types'))));
+        $since = time();
         $result = $this->seeder->seed($types === [] ? ['all'] : $types);
 
-        return ['success' => true] + $result;
+        return ['success' => true, 'run_since' => $since] + $result;
     }
 
     // ---------------------------------------------------------------- queue
 
     /**
-     * @return array<string, int>
+     * Counts for the whole queue, the server time (`now`, the start of a run
+     * that begins now) and, with `since`, the outcome of the run that started
+     * then (`run`, see QueueRun).
+     *
+     * @return array<string, mixed>
      */
     public function getQueueStatus(WP_REST_Request $request): array
     {
         $status = $this->queue->getStatus();
+        $since = (int) $request->get_param('since');
 
-        return [
+        $response = [
             'pending' => $status->pending,
             'processing' => $status->processing,
             'failed' => $status->failed,
             'completed' => $status->total - $status->pending - $status->processing - $status->failed,
             'total' => $status->total,
+            'now' => time(),
         ];
+
+        if ($since > 0) {
+            $response['run'] = $this->queue->runStatus($since)->toArray();
+        }
+
+        return $response;
     }
 
     /**
@@ -375,7 +391,9 @@ class RestController
      */
     public function retryQueue(WP_REST_Request $request): array
     {
-        return ['success' => true, 'queued' => $this->queue->retry()];
+        $since = time();
+
+        return ['success' => true, 'queued' => $this->queue->retry(), 'run_since' => $since];
     }
 
     /**

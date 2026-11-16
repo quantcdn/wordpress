@@ -171,9 +171,10 @@ class SearchController
             return new WP_Error('search_disabled', __('Enable Quant Search records first.', 'quant'), ['status' => 400]);
         }
 
+        $since = time();
         $result = $this->seeder->seed(['search']);
 
-        return ['success' => true, 'queued' => $result['queued']];
+        return ['success' => true, 'queued' => $result['queued'], 'run_since' => $since];
     }
 
     /**

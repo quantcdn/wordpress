@@ -40,7 +40,7 @@ class Scheduler
      */
     public static function backgroundProcessingEnabled(): bool
     {
-        $cronDisabled = defined('DISABLE_WP_CRON') && DISABLE_WP_CRON;
+        $cronDisabled = self::wpCronDisabled();
 
         return self::isBackgroundActive($cronDisabled, $cronDisabled ? (int) get_option(self::OPTION_LAST_RUN, 0) : 0, time());
     }
@@ -117,13 +117,36 @@ class Scheduler
             wp_schedule_single_event(time(), self::PROCESS_SOON_HOOK);
         }
 
-        // Not from WP-CLI: there the site URL is the stored (often public, static)
-        // domain, and spawn_cron() would only set a lock that delays the next run.
-        $cli = defined('WP_CLI') && WP_CLI;
-        if (!$this->spawnRequested && !$cli && !wp_doing_cron() && self::backgroundProcessingEnabled()) {
+        if (!$this->spawnRequested && self::shouldSpawnCron(defined('WP_CLI') && WP_CLI, wp_doing_cron(), self::wpCronDisabled())) {
             $this->spawnRequested = true;
             add_action('shutdown', [$this, 'spawnCron'], 100);
         }
+    }
+
+    /**
+     * True when the site owner turned WP-Cron off with DISABLE_WP_CRON.
+     */
+    public static function wpCronDisabled(): bool
+    {
+        return defined('DISABLE_WP_CRON') && DISABLE_WP_CRON;
+    }
+
+    /**
+     * Whether to start WP-Cron at the end of this request.
+     *
+     * - Not from WP-CLI: there the site URL is the stored (often public,
+     *   static) domain, and spawn_cron() would only set a lock that delays
+     *   the next run.
+     * - Not inside a cron run.
+     * - Not when DISABLE_WP_CRON is set. The site owner turned off the
+     *   request-time cron; a system cron that calls wp-cron.php (or the
+     *   admin's progress card) runs the queue instead. A recent system cron
+     *   run makes backgroundProcessingEnabled() true, but it is not consent
+     *   to start WP-Cron from a web request.
+     */
+    public static function shouldSpawnCron(bool $cli, bool $doingCron, bool $cronDisabled): bool
+    {
+        return !$cli && !$doingCron && !$cronDisabled;
     }
 
     /**

@@ -3,6 +3,7 @@ import { Button, Card, CardBody } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { shouldRetry, retryDelay } from './retry';
+import { pollRun, summarizeRun } from './runProgress';
 import './Progress.scss';
 
 const DEFAULT_INTERVAL = 2000;
@@ -11,28 +12,30 @@ const DEFAULT_INTERVAL = 2000;
  * Progress of one processing run.
  *
  * Polls the queue with a self-scheduling loop, so requests never overlap.
- * Progress and failures are counted for this run only, not for the whole
- * queue history. The card stays visible after the run until it is dismissed.
+ * The counts come from the server for this run only (jobs finished since
+ * `since`, and jobs still waiting), so jobs that WP-Cron or WP-CLI processed
+ * count the same as jobs that this card processed. The card stays visible
+ * after the run until it is dismissed.
  *
  * @param {Object}   props              Component props.
+ * @param {number}   props.since        Start of the run (Unix time from the server, `run_since`).
  * @param {Function} props.onComplete   Called when the user dismisses the card.
  * @param {Function} props.onFinished   Called once when the run ends (refresh lists).
  * @param {number}   props.pollInterval Delay between polls in ms.
  * @param {boolean}  props.autoProcess  Process batches (true) or only watch the status.
  */
 export function Progress( {
+	since,
 	onComplete,
 	onFinished,
 	pollInterval = DEFAULT_INTERVAL,
 	autoProcess = false,
 } ) {
-	const [ status, setStatus ] = useState( null );
-	const [ startPending, setStartPending ] = useState( null );
-	const [ processedRun, setProcessedRun ] = useState( 0 );
-	const [ failedRun, setFailedRun ] = useState( 0 );
-	const [ runErrors, setRunErrors ] = useState( [] );
+	const [ run, setRun ] = useState( null );
 	const [ state, setState ] = useState( 'active' ); // active | done | stopped | error
 	const [ error, setError ] = useState( null );
+	const [ runSince, setRunSince ] = useState( since || 0 );
+	// A retry in the same second keeps `runSince`; the id restarts the poll.
 	const [ runId, setRunId ] = useState( 0 );
 	const [ retrying, setRetrying ] = useState( false );
 
@@ -54,50 +57,36 @@ export function Progress( {
 	useEffect( () => {
 		let cancelled = false;
 		let timer = null;
-		let started = false;
 		let failures = 0;
+		// Without a start from the caller, the run starts at the first status read.
+		let start = runSince;
 
 		const tick = async () => {
 			if ( stopRef.current ) {
 				return;
 			}
 			try {
-				if ( autoProcess ) {
-					const result = await apiFetch( {
-						path: '/quant/v1/queue/process',
-						method: 'POST',
-						data: { limit: 5 },
+				if ( ! start ) {
+					const first = await apiFetch( {
+						path: '/quant/v1/queue/status',
 					} );
-					if ( cancelled ) {
-						return;
-					}
-					setProcessedRun( ( n ) => n + ( result.processed || 0 ) );
-					setFailedRun( ( n ) => n + ( result.failed || 0 ) );
-					if ( result.errors && result.errors.length ) {
-						setRunErrors( ( prev ) =>
-							prev.concat( result.errors ).slice( -10 )
-						);
-					}
+					start = first.now;
 				}
 
-				const response = await apiFetch( {
-					path: '/quant/v1/queue/status',
-				} );
+				const { response, summary } = await pollRun(
+					apiFetch,
+					start,
+					autoProcess
+				);
 				if ( cancelled || stopRef.current ) {
 					return;
 				}
 
 				failures = 0;
 				setRetrying( false );
-				setStatus( response );
-				if ( ! started ) {
-					started = true;
-					setStartPending(
-						( response.pending || 0 ) + ( response.processing || 0 )
-					);
-				}
+				setRun( response.run );
 
-				if ( response.pending === 0 && response.processing === 0 ) {
+				if ( summary.finished ) {
 					finish( 'done' );
 					return;
 				}
@@ -132,7 +121,7 @@ export function Progress( {
 				clearTimeout( timer );
 			}
 		};
-	}, [ autoProcess, pollInterval, runId, finish ] );
+	}, [ autoProcess, pollInterval, runSince, runId, finish ] );
 
 	const handleStop = () => {
 		stopRef.current = true;
@@ -141,12 +130,13 @@ export function Progress( {
 
 	const handleRetry = async () => {
 		try {
-			await apiFetch( { path: '/quant/v1/queue/retry', method: 'POST' } );
-			setStatus( null );
-			setStartPending( null );
-			setProcessedRun( 0 );
-			setFailedRun( 0 );
-			setRunErrors( [] );
+			const response = await apiFetch( {
+				path: '/quant/v1/queue/retry',
+				method: 'POST',
+			} );
+			// The retry starts a new run; its counts start from the retry.
+			setRun( null );
+			setRunSince( response.run_since || 0 );
 			setRunId( ( id ) => id + 1 );
 		} catch ( err ) {
 			setError( err.message || __( 'Failed to retry', 'quant' ) );
@@ -159,13 +149,14 @@ export function Progress( {
 		}
 	};
 
-	const pending = status ? status.pending + status.processing : 0;
-	const total = startPending || 0;
-	const done = Math.max( 0, Math.min( total, total - pending ) );
-	const percent =
-		state === 'done' || total === 0
-			? 100
-			: Math.round( ( done / total ) * 100 );
+	const counts = summarizeRun( run );
+	const pending = run ? counts.remaining : 0;
+	const failedRun = counts.failed;
+	const runErrors = counts.errors;
+	let percent = run ? counts.percent : 0;
+	if ( state === 'done' ) {
+		percent = 100;
+	}
 
 	let barState = state;
 	if ( state === 'done' && failedRun > 0 ) {
@@ -198,7 +189,7 @@ export function Progress( {
 								) }
 							</span>
 						) }
-						{ state === 'active' && ! retrying && status && (
+						{ state === 'active' && ! retrying && run && (
 							<span className="quant-progress__processing">
 								{ sprintf(
 									/* translators: %d: number of pending items */
@@ -227,7 +218,7 @@ export function Progress( {
 							{ sprintf(
 								/* translators: %d: number of items */
 								__( '%d completed', 'quant' ),
-								autoProcess ? processedRun : done
+								counts.completed
 							) }
 						</span>
 						{ pending > 0 && (

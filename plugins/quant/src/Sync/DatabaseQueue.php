@@ -206,6 +206,72 @@ final class DatabaseQueue implements SyncQueueInterface
         );
     }
 
+    /**
+     * The outcome of the run that started at $since (Unix time), whatever
+     * processed its jobs. See QueueRun for what belongs to a run.
+     */
+    public function runStatus(int $since, int $errorLimit = 10): QueueRun
+    {
+        $boundary = gmdate('Y-m-d H:i:s', $since);
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
+        $sql = $this->wpdb->prepare(
+            "SELECT status, COUNT(*) AS count
+             FROM {$this->tableName}
+             WHERE status IN (%s, %s)
+                OR (status IN (%s, %s) AND processed_at >= %s)
+             GROUP BY status",
+            self::STATUS_PENDING,
+            self::STATUS_PROCESSING,
+            self::STATUS_COMPLETED,
+            self::STATUS_FAILED,
+            $boundary
+        );
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query is prepared above
+        $rows = $this->wpdb->get_results($sql, ARRAY_A) ?: [];
+        $counts = array_fill_keys([self::STATUS_PENDING, self::STATUS_PROCESSING, self::STATUS_COMPLETED, self::STATUS_FAILED], 0);
+        foreach ($rows as $row) {
+            if (isset($counts[$row['status']])) {
+                $counts[$row['status']] = (int) $row['count'];
+            }
+        }
+
+        return new QueueRun(
+            since: $since,
+            pending: $counts[self::STATUS_PENDING],
+            processing: $counts[self::STATUS_PROCESSING],
+            completed: $counts[self::STATUS_COMPLETED],
+            failed: $counts[self::STATUS_FAILED],
+            errors: $counts[self::STATUS_FAILED] > 0 ? $this->runErrors($boundary, $errorLimit) : [],
+        );
+    }
+
+    /**
+     * Short messages of the newest jobs that failed at or after $boundary.
+     *
+     * @return array<int, string>
+     */
+    private function runErrors(string $boundary, int $limit): array
+    {
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is safely constructed
+        $sql = $this->wpdb->prepare(
+            "SELECT error_message
+             FROM {$this->tableName}
+             WHERE status = %s AND processed_at >= %s AND error_message IS NOT NULL
+             ORDER BY processed_at DESC, id DESC
+             LIMIT %d",
+            self::STATUS_FAILED,
+            $boundary,
+            $limit
+        );
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query is prepared above
+        $messages = $this->wpdb->get_col($sql) ?: [];
+
+        return array_values(array_map('strval', $messages));
+    }
+
     public function clear(): void
     {
         $this->wpdb->delete(
