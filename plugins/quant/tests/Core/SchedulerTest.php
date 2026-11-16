@@ -10,6 +10,8 @@ use Brain\Monkey\Functions;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Quant\Core\Scheduler;
@@ -237,5 +239,37 @@ final class SchedulerTest extends TestCase
 
         $this->scheduler(['enabled' => false])->runScheduledSync();
         $this->scheduler(['enabled' => true], Settings::MODE_CDN_ONLY)->runScheduledSync();
+    }
+
+    #[Test]
+    public function cron_is_spawned_only_from_a_web_request_with_wp_cron_on(): void
+    {
+        $this->assertTrue(Scheduler::shouldSpawnCron(false, false, false), 'web request, WP-Cron on');
+        $this->assertFalse(Scheduler::shouldSpawnCron(true, false, false), 'WP-CLI');
+        $this->assertFalse(Scheduler::shouldSpawnCron(false, true, false), 'inside a cron run');
+        $this->assertFalse(Scheduler::shouldSpawnCron(false, false, true), 'DISABLE_WP_CRON');
+    }
+
+    /**
+     * DISABLE_WP_CRON with a system cron that ran a minute ago: background
+     * processing is on (retry messages say so), but queueing jobs must not
+     * start WP-Cron from the web request.
+     */
+    #[Test]
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function with_disable_wp_cron_queueing_does_not_spawn_cron_even_after_a_recent_system_cron_run(): void
+    {
+        define('DISABLE_WP_CRON', true);
+        Functions\when('get_option')->alias(static fn(string $key, $default = false) => $key === Scheduler::OPTION_LAST_RUN ? time() - 60 : $default);
+        Functions\when('wp_next_scheduled')->justReturn(false);
+        Functions\when('wp_doing_cron')->justReturn(false);
+        Functions\expect('wp_schedule_single_event')->once()->with(Mockery::type('int'), Scheduler::PROCESS_SOON_HOOK);
+        Actions\expectAdded('shutdown')->never();
+
+        $this->scheduler()->ensureProcessing();
+
+        $this->assertTrue(Scheduler::wpCronDisabled());
+        $this->assertTrue(Scheduler::backgroundProcessingEnabled(), 'the system cron still runs the queue');
     }
 }
